@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  output: "standalone", // компактный автономный сервер для Docker
   experimental: {
     optimizePackageImports: ["@tabler/icons-react"],
   },

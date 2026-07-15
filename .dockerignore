@@ -1,0 +1,17 @@
+node_modules
+.next
+.git
+.vercel
+.env
+.env.local
+.env*.local
+npm-debug.log*
+*.tsbuildinfo
+.DS_Store
+
+# отдельный автономный тестовый стенд — не часть этого образа
+oidc-stand
+
+# служебные каталоги, не нужны в билд-контексте
+.claude
+docs
