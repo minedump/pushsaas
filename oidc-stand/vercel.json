@@ -1,0 +1,10 @@
+{
+  "rewrites": [
+    { "source": "/.well-known/openid-configuration", "destination": "/api/discovery" },
+    { "source": "/.well-known/jwks.json", "destination": "/api/jwks" },
+    { "source": "/auth", "destination": "/api/auth" },
+    { "source": "/token", "destination": "/api/token" },
+    { "source": "/userinfo", "destination": "/api/userinfo" },
+    { "source": "/:path*", "destination": "/api/catchall" }
+  ]
+}

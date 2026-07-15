@@ -1,0 +1,415 @@
+<title>Роли и права доступа — как это устроено</title>
+<style>
+  :root {
+    --paper: #faf9f7;
+    --surface: #ffffff;
+    --surface-2: #f2f1ee;
+    --border: #e3e0da;
+    --ink: #16191e;
+    --ink-muted: #5b6470;
+    --ink-faint: #8b93a0;
+    --ledger: #2c4a66;
+    --ledger-tint: #e7eef3;
+    --ledger-line: #9db6c8;
+    --good: #1e7a4c;
+    --good-tint: #e6f3ec;
+    --warn: #9a6400;
+    --warn-tint: #f8efdc;
+    --bad: #b03a2e;
+    --bad-tint: #fbe9e6;
+    --font-display: Georgia, "Iowan Old Style", "Times New Roman", ui-serif, serif;
+    --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+
+  :root[data-theme="dark"] {
+    --paper: #14171b;
+    --surface: #1a1e23;
+    --surface-2: #20252b;
+    --border: #2c333b;
+    --ink: #ecedf0;
+    --ink-muted: #9aa3ad;
+    --ink-faint: #6c7580;
+    --ledger: #86b1d3;
+    --ledger-tint: #1f2c37;
+    --ledger-line: #3c5568;
+    --good: #4fbe86;
+    --good-tint: #17281f;
+    --warn: #d9a441;
+    --warn-tint: #2b2313;
+    --bad: #e2685a;
+    --bad-tint: #2c1c1a;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #14171b;
+      --surface: #1a1e23;
+      --surface-2: #20252b;
+      --border: #2c333b;
+      --ink: #ecedf0;
+      --ink-muted: #9aa3ad;
+      --ink-faint: #6c7580;
+      --ledger: #86b1d3;
+      --ledger-tint: #1f2c37;
+      --ledger-line: #3c5568;
+      --good: #4fbe86;
+      --good-tint: #17281f;
+      --warn: #d9a441;
+      --warn-tint: #2b2313;
+      --bad: #e2685a;
+      --bad-tint: #2c1c1a;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 64px 24px 120px;
+  }
+
+  header.doc-head { margin-bottom: 40px; }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ledger);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .eyebrow::before { content: ""; width: 22px; height: 1px; background: var(--ledger); display: inline-block; }
+
+  h1 {
+    font-family: var(--font-display);
+    font-size: clamp(32px, 4.4vw, 44px);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+
+  .dek { color: var(--ink-muted); font-size: 16.5px; max-width: 64ch; margin: 0; }
+
+  nav.toc {
+    margin-top: 32px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    padding: 18px 22px;
+  }
+  nav.toc .toc-label {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 10px;
+    display: block;
+  }
+  nav.toc ol { list-style: none; margin: 0; padding: 0; columns: 2; column-gap: 28px; }
+  nav.toc li { break-inside: avoid; margin-bottom: 6px; }
+  nav.toc a { color: var(--ink); text-decoration: none; font-size: 14px; border-bottom: 1px solid transparent; }
+  nav.toc a:hover { border-bottom-color: var(--ledger-line); color: var(--ledger); }
+  nav.toc a:focus-visible { outline: 2px solid var(--ledger); outline-offset: 3px; border-radius: 2px; }
+
+  section { margin-top: 56px; scroll-margin-top: 24px; }
+  section > h2 {
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 600;
+    margin: 0 0 6px;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  section > h2 .num { font-family: var(--font-mono); font-size: 13px; color: var(--ink-faint); font-weight: 400; }
+  section > .lede { color: var(--ink-muted); max-width: 68ch; margin: 0 0 22px; }
+
+  p { max-width: 70ch; }
+  h3 { font-family: var(--font-body); font-size: 15px; font-weight: 700; margin: 28px 0 8px; }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    padding: 0.1em 0.4em;
+    border-radius: 4px;
+    color: var(--ledger);
+  }
+  a { color: var(--ledger); }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; margin: 18px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; min-width: 560px; }
+  thead th {
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    background: var(--surface-2);
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  tbody td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--surface-2); }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    padding: 2px 8px;
+    border-radius: 20px;
+    white-space: nowrap;
+  }
+  .chip.good { background: var(--good-tint); color: var(--good); }
+  .chip.warn { background: var(--warn-tint); color: var(--warn); }
+  .chip.bad { background: var(--bad-tint); color: var(--bad); }
+  .chip.neutral { background: var(--surface-2); color: var(--ink-muted); }
+  .chip::before { content: "●"; font-size: 8px; }
+
+  .diagram-frame {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    padding: 20px 8px 8px;
+    margin: 22px 0 10px;
+    overflow-x: auto;
+  }
+  .diagram-frame svg { display: block; min-width: 720px; margin: 0 auto; }
+  .diagram-note { font-size: 12.5px; color: var(--ink-faint); padding: 10px 18px 4px; margin: 0; }
+
+  .callout {
+    border-left: 3px solid var(--ledger);
+    background: var(--ledger-tint);
+    border-radius: 0 8px 8px 0;
+    padding: 14px 18px;
+    margin: 18px 0;
+    font-size: 14px;
+  }
+  .callout p { margin: 0; max-width: none; }
+  .callout strong { color: var(--ledger); }
+
+  footer.doc-foot {
+    margin-top: 72px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    color: var(--ink-faint);
+    font-size: 12.5px;
+    font-family: var(--font-mono);
+  }
+
+  ::selection { background: var(--ledger-line); color: var(--ink); }
+</style>
+
+<div class="page">
+
+  <header class="doc-head">
+    <div class="eyebrow">TryVice · внутренняя документация</div>
+    <h1>Роли и права доступа</h1>
+    <p class="dek">Как разведены два уровня прав — клиент/владелец магазина и суперадмин платформы: где хранится роль, что реально её проверяет (UI, edge-мидлварь, RLS в Postgres), а что проверяет только для вида.</p>
+
+    <nav class="toc" aria-label="Оглавление">
+      <span class="toc-label">Оглавление</span>
+      <ol>
+        <li><a href="#roles">1. Две роли</a></li>
+        <li><a href="#ownership">2. Модель владения магазином</a></li>
+        <li><a href="#layers">3. Четыре уровня защиты</a></li>
+        <li><a href="#ui">4. UI-уровень</a></li>
+        <li><a href="#middleware">5. Edge-мидлварь</a></li>
+        <li><a href="#rls">6. RLS в Postgres</a></li>
+        <li><a href="#superadmin">7. Возможности суперадмина</a></li>
+        <li><a href="#api">8. API-роуты</a></li>
+      </ol>
+    </nav>
+  </header>
+
+  <section id="roles">
+    <h2><span class="num">01</span> Две роли</h2>
+    <p class="lede">Роль — это одно текстовое поле в одной таблице. Всё остальное построено поверх него.</p>
+    <p>Роль пользователя хранится в <code>profiles.role</code> и принимает одно из двух значений: <code>client</code> (по умолчанию, обычный владелец магазина) или <code>admin</code> (суперадмин платформы). Триггер, создающий профиль при регистрации, всегда проставляет <code>client</code> — подменить это значением из метаданных при <code>signUp()</code> нельзя, роль назначается только напрямую в базе. Готового интерфейса для выдачи прав администратора в приложении нет.</p>
+    <p>На клиенте роль превращается в булево значение <code>isSuperAdmin</code> — оно вычисляется один раз при загрузке сессии и пересчитывается при каждой смене состояния авторизации, сбрасываясь в <code>false</code> при выходе. Само по себе это значение ничего не защищает — это просто удобный флаг для рендера интерфейса; реальные границы описаны в разделах 5 и 6.</p>
+  </section>
+
+  <section id="ownership">
+    <h2><span class="num">02</span> Модель владения магазином</h2>
+    <p class="lede">Владение — это внешний ключ, а не роль.</p>
+    <p><code>shops.owner_id</code> ссылается на <code>auth.users(id)</code> — обычная одиночная FK-колонка без ограничения уникальности. Из этого следует:</p>
+    <ul>
+      <li>у одного магазина — ровно один владелец (или <code>NULL</code>, хотя намеренно так никто не выставляет);</li>
+      <li>один аккаунт может владеть несколькими магазинами — поэтому в приложении всегда есть выбор «текущего» магазина, а не просто «магазин пользователя».</li>
+    </ul>
+    <p><code>owner_id</code> выставляется равным id текущего пользователя только при создании магазина — форма настроек намеренно не отправляет это поле при сохранении уже существующего магазина. Суперадмину экран создания магазина недоступен напрямую — попытка открыть его с параметром «новый магазин» перенаправляет в раздел клиентов суперадминки, где создание организовано иначе.</p>
+    <p><code>owner_id</code> дополнительно защищён на уровне самой базы: триггер на <code>UPDATE</code> принудительно возвращает старое значение этого поля независимо от того, что пришло в запросе. Это защита не столько от злонамеренного клиента (RLS и так решает, кому вообще разрешён <code>UPDATE</code>), сколько от собственных багов приложения — например, если форма где-то случайно отправит это поле при сохранении чужого магазина, смены владельца всё равно не произойдёт. Единственный способ сменить владельца — прямое обращение к базе в обход триггера; отдельного пользовательского флоу «передать магазин» в приложении нет.</p>
+  </section>
+
+  <section id="layers">
+    <h2><span class="num">03</span> Четыре уровня защиты</h2>
+    <p class="lede">Не все уровни одинаково настоящие. Это стоит проговаривать явно в любом проекте с ролями — иначе легко принять UI-скрытие кнопки за реальную защиту.</p>
+
+    <div class="diagram-frame">
+      <svg viewBox="0 0 860 400" role="img" aria-label="Четыре уровня проверки прав: UI, edge-мидлварь, RLS, API-роуты">
+        <defs>
+          <marker id="arrowR" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--ink-faint)"></path>
+          </marker>
+        </defs>
+
+        <line x1="430" y1="72" x2="430" y2="98" stroke="var(--ink-faint)" stroke-width="1.5" marker-end="url(#arrowR)"></line>
+        <line x1="430" y1="168" x2="430" y2="194" stroke="var(--ink-faint)" stroke-width="1.5" marker-end="url(#arrowR)"></line>
+        <line x1="430" y1="264" x2="430" y2="290" stroke="var(--ink-faint)" stroke-width="1.5" marker-end="url(#arrowR)"></line>
+
+        <g>
+          <rect x="30" y="12" width="800" height="60" rx="10" fill="var(--surface-2)" stroke="var(--border)"></rect>
+          <text x="50" y="34" font-family="var(--font-body)" font-weight="700" font-size="14" fill="var(--ink)">UI: AppWrapper / Sidebar / ShopContext</text>
+          <text x="50" y="54" font-family="var(--font-mono)" font-size="11" fill="var(--ink-faint)">Удобство интерфейса — прячет пункты меню и редиректит. Не защита.</text>
+          <rect x="705" y="24" width="105" height="24" rx="12" fill="var(--warn-tint)"></rect>
+          <text x="757" y="40" text-anchor="middle" font-family="var(--font-mono)" font-size="10.5" fill="var(--warn)">не граница</text>
+        </g>
+
+        <g>
+          <rect x="30" y="108" width="800" height="60" rx="10" fill="var(--good-tint)" stroke="var(--good)"></rect>
+          <text x="50" y="130" font-family="var(--font-body)" font-weight="700" font-size="14" fill="var(--good)">Edge-мидлварь (middleware.ts)</text>
+          <text x="50" y="150" font-family="var(--font-mono)" font-size="11" fill="var(--good)">Проверяет сессию и role='admin' до рендера страницы -- но только для /admin/* и /superadmin/*.</text>
+          <rect x="705" y="120" width="105" height="24" rx="12" fill="var(--good-tint)" stroke="var(--good)"></rect>
+          <text x="757" y="136" text-anchor="middle" font-family="var(--font-mono)" font-size="10.5" fill="var(--good)">граница</text>
+        </g>
+
+        <g>
+          <rect x="30" y="204" width="800" height="60" rx="10" fill="var(--good-tint)" stroke="var(--good)"></rect>
+          <text x="50" y="226" font-family="var(--font-body)" font-weight="700" font-size="14" fill="var(--good)">RLS в Postgres (is_admin() / owner_id)</text>
+          <text x="50" y="246" font-family="var(--font-mono)" font-size="11" fill="var(--good)">Проверяет каждый прямой запрос к БД -- работает независимо от того, что показал UI.</text>
+          <rect x="705" y="216" width="105" height="24" rx="12" fill="var(--good-tint)" stroke="var(--good)"></rect>
+          <text x="757" y="232" text-anchor="middle" font-family="var(--font-mono)" font-size="10.5" fill="var(--good)">граница</text>
+        </g>
+
+        <g>
+          <rect x="30" y="300" width="800" height="60" rx="10" fill="var(--good-tint)" stroke="var(--good)"></rect>
+          <text x="50" y="322" font-family="var(--font-body)" font-weight="700" font-size="14" fill="var(--good)">API-роуты /api/admin/*</text>
+          <text x="50" y="342" font-family="var(--font-mono)" font-size="11" fill="var(--good)">Вне матчера мидлвари (совпадает /admin/*, а не /api/admin/*) -- каждый роут проверяет сессию и владение сам.</text>
+          <rect x="705" y="312" width="105" height="24" rx="12" fill="var(--good-tint)" stroke="var(--good)"></rect>
+          <text x="757" y="328" text-anchor="middle" font-family="var(--font-mono)" font-size="10.5" fill="var(--good)">граница</text>
+        </g>
+      </svg>
+      <p class="diagram-note">Отдельно: <code>/api/widget/*</code> публичны и не аутентифицированы намеренно — их вызывает виджет с чужого сайта без входа пользователя, это не пробел.</p>
+    </div>
+  </section>
+
+  <section id="ui">
+    <h2><span class="num">04</span> UI-уровень</h2>
+    <p class="lede">Три компонента формируют то, что видит пользователь — ни один из них не может быть единственной защитой, потому что весь их код уже загружен в браузер.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Состояние</th><th>Что видно в боковом меню</th></tr></thead>
+        <tbody>
+          <tr><td>Суперадмин, магазин не выбран</td><td>Клиенты / Промпты AI / Тарифы</td></tr>
+          <tr><td>Суперадмин, зашёл в магазин («Войти»)</td><td>Полное меню владельца — как у обычного клиента</td></tr>
+          <tr><td>Владелец, активный магазин</td><td>Дашборд / История / Товары / Аналитика / Биллинг / Настройки</td></tr>
+          <tr><td>Владелец, магазин заблокирован</td><td>Только Биллинг</td></tr>
+          <tr><td>Владелец без магазина</td><td>Только «Создать магазин»</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p><code>ShopContext</code> определяет, какие магазины вообще видны: суперадмин получает все строки, которые пропускает RLS-политика на <code>shops</code> (то есть все), обычный пользователь — запрос дополнительно фильтруется по <code>owner_id = user.id</code> уже на клиенте, хотя RLS всё равно перепроверит это на сервере независимо от того, что отправил браузер.</p>
+
+    <p>Блокировка по неактивной подписке (redirect на биллинг, скрытие разделов) целиком снимается для суперадмина одной строчкой в начале проверки — суперадмин никогда не видит на себе последствия блокировки чужого магазина, даже «зайдя» в него.</p>
+  </section>
+
+  <section id="middleware">
+    <h2><span class="num">05</span> Edge-мидлварь</h2>
+    <p class="lede">Первая настоящая граница — раньше, чем страница вообще начинает рендериться.</p>
+    <p>Мидлварь перехватывает каждый запрос к путям <code>/admin/*</code> и <code>/superadmin/*</code>: если сессии нет — редирект на главную; если путь начинается с <code>/superadmin</code> — дополнительно читается <code>profiles.role</code> для этой сессии, и при значении, отличном от <code>admin</code>, снова редирект. Это реальная серверная проверка, а не то же самое, что клиентский layout-компонент, который тоже редиректит, но только после того, как JS-бандл страницы уже загрузился.</p>
+    <div class="callout">
+      <p><strong>Область действия важна:</strong> список путей мидлвари покрывает только сами страницы (<code>/admin/*</code>, <code>/superadmin/*</code>), но не API-роуты под <code>/api/admin/*</code> — это два разных префикса, и совпадение по маске одного не означает совпадение другого. См. раздел 8.</p>
+    </div>
+  </section>
+
+  <section id="rls">
+    <h2><span class="num">06</span> RLS в Postgres</h2>
+    <p class="lede">Вторая настоящая граница — единственная, которая работает независимо от того, через какой клиент пришёл запрос.</p>
+    <p>Все политики сводятся к одной из двух форм: <code>owner_id = auth.uid()</code> (или тот же вывод через цепочку внешних ключей — например, для изображений товара это <code>product_id → products.shop_id → shops.owner_id</code>) для владельца, и <code>public.is_admin()</code> — для суперадмина, объединённых через <code>OR</code>. Обе формы проверки роли, инлайновая и через функцию, встречавшиеся в разных таблицах по историческим причинам, приведены к единственной — вызову <code>is_admin()</code> — чтобы определение «кто такой админ» существовало в проекте ровно в одном месте.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Таблица</th><th>Доступ владельца</th><th>Доступ суперадмина</th></tr></thead>
+        <tbody>
+          <tr><td>shops</td><td>свои магазины (SELECT/UPDATE/INSERT)</td><td>все магазины</td></tr>
+          <tr><td>products, product_images</td><td>товары своих магазинов</td><td>товары всех магазинов</td></tr>
+          <tr><td>generations, transactions</td><td>записи своих магазинов, только чтение</td><td>все записи</td></tr>
+          <tr><td>analytics_events</td><td>события своих магазинов</td><td>все события</td></tr>
+          <tr><td>profiles</td><td>только собственный профиль</td><td>все профили</td></tr>
+          <tr><td>tariffs</td><td>чтение (не приватные данные)</td><td>чтение и полный CRUD</td></tr>
+          <tr><td>platform_settings</td><td>нет доступа</td><td>чтение и обновление</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Проверка роли, которая не проверяет себя саму</h3>
+    <p>Проверка admin-доступа вынесена в отдельную SQL-функцию <code>is_admin()</code>, а не написана как inline-подзапрос прямо в политике. Причина не стилистическая: если политика на таблице <code>profiles</code> сама содержит подзапрос <code>SELECT role FROM profiles WHERE id = auth.uid()</code>, Postgres обнаруживает, что политика читает ту же таблицу, которую защищает, и это триггерит бесконечную рекурсию — запрос падает с ошибкой независимо от того, что реально пытался прочитать пользователь.</p>
+    <p>Решение — обернуть проверку в функцию с модификатором <code>SECURITY DEFINER</code>: такая функция выполняет свой внутренний запрос от имени владельца функции, минуя RLS, поэтому обращение к <code>profiles</code> изнутри неё не запускает те же политики повторно. Политика после этого просто вызывает <code>public.is_admin()</code> вместо того, чтобы инлайнить подзапрос — рекурсия невозможна в принципе, а не просто маловероятна.</p>
+    <div class="callout">
+      <p>Это общий паттерн, не специфичный для этого проекта: любая RLS-политика, которой нужно свериться с ролью или правами того же пользователя через ту же (или связанную с самоссылкой) таблицу, рискует получить точно такую же рекурсию. <code>SECURITY DEFINER</code>-функция — стандартный обход.</p>
+    </div>
+  </section>
+
+  <section id="superadmin">
+    <h2><span class="num">07</span> Возможности суперадмина</h2>
+    <p class="lede">Сводка того, что доступно только с ролью <code>admin</code>.</p>
+    <ul>
+      <li><strong>Тарифы</strong> — полный CRUD над глобальной таблицей тарифов (создание, редактирование, архивирование, удаление); обычный владелец только выбирает тариф из списка.</li>
+      <li><strong>Промпты AI</strong> — редактирование единственной строки платформенных настроек: модель и текст промпта для генерации, модерации и классификации, общие для всей платформы.</li>
+      <li><strong>Клиенты</strong> — список всех магазинов платформы с возможностью включить/выключить любой из них и «войти» в панель управления любого магазина как если бы это делал его владелец.</li>
+      <li><strong>Ручные операции биллинга</strong> — активация любого тарифа любому магазину с произвольным количеством начисляемых примерок (без автоматического расчёта) и начисление бонусных примерок без оплаты. Обе операции реализованы как SQL-функции, которые сами проверяют <code>is_admin()</code> внутри себя и потому единственные из всех функций, изменяющих баланс, выданы роли <code>authenticated</code> напрямую — все прочие похожие функции (продление тарифа, начисление пакета) остаются доступны только сервисной роли, потому что не содержат такой проверки и слепо доверяют переданному <code>shop_id</code>.</li>
+    </ul>
+    <p>Каждая такая операция пишет в <code>transactions.performed_by</code> id вызвавшего её администратора — колонка служебная, в интерфейсе нигде не отображается, нужна только чтобы при появлении более одного администратора можно было поднять из данных, кто именно выполнил конкретное действие.</p>
+    <div class="callout">
+      <p>Этот же паттерн — <code>SECURITY DEFINER</code> + проверка <code>is_admin()</code> в начале тела функции + выдача <code>authenticated</code> вместо <code>service_role</code> — стоит использовать для любой новой операции, которую должен выполнять администратор напрямую из браузера, а не через доверенный серверный процесс.</p>
+    </div>
+  </section>
+
+  <section id="api">
+    <h2><span class="num">08</span> API-роуты</h2>
+    <p class="lede">Мидлварь не покрывает <code>/api/admin/*</code> (её маска — <code>/admin/*</code>, другой префикс), поэтому каждый такой роут отвечает за проверку сам.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Роут</th><th>Проверка</th></tr></thead>
+        <tbody>
+          <tr><td>/api/admin/billing/renew-subscriptions</td><td>секретный ключ в query-параметре (крон)</td></tr>
+          <tr><td>/api/admin/products/sync-all</td><td>секретный ключ в query-параметре (крон)</td></tr>
+          <tr><td>/api/admin/shops/validate-feed</td><td>проверка сессии</td></tr>
+          <tr><td>/api/admin/products/sync</td><td>сессия + владение магазином через RLS-запрос к <code>shops</code></td></tr>
+          <tr><td>/api/admin/products/analyze</td><td>сессия + владение магазином через RLS-запрос к <code>shops</code></td></tr>
+          <tr><td>/api/admin/shops/upload-logo</td><td>сессия + владение магазином через RLS-запрос к <code>shops</code>, затем бизнес-правила (активный платный тариф)</td></tr>
+          <tr><td>/api/widget/*</td><td>намеренно публично, без входа — ключ доступа это сам <code>shop_id</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Проверка владения в последних трёх роутах не дублирует логику вручную, а переиспользует уже существующую RLS-политику на <code>shops</code>: запрос выполняется тем же клиентом, что несёт куки сессии пользователя (не сервисным ключом) — если политика не пропускает эту строку, значит и действие с этим магазином не разрешено, будь то попытка чужого владельца или анонимный запрос без сессии вовсе. Сама привилегированная операция (синхронизация фида, AI-анализ, загрузка файла) после этой проверки по-прежнему выполняется через сервисный ключ. Крон (<code>sync-all</code>) на эту проверку не завязан — он вызывает библиотечную функцию синхронизации напрямую, в процессе, а не ходит на <code>/api/admin/products/sync</code> по HTTP.</p>
+    <p>Отдельного пространства <code>/api/superadmin/*</code> в проекте нет — все действия суперадмина идут либо напрямую в Supabase из браузера (и упираются в RLS/<code>is_admin()</code>), либо через две RPC-функции из раздела 7.</p>
+  </section>
+
+  <footer class="doc-foot">TryVice · roles &amp; access control reference</footer>
+
+</div>

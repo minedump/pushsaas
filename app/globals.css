@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+/* ---- Design tokens (light) ---- */
+:root {
+  --paper: #faf9f7;
+  --surface: #ffffff;
+  --surface-2: #f2f1ee;
+  --border: #e3e0da;
+  --ink: #16191e;
+  --ink-muted: #5b6470;
+  --ink-faint: #8b93a0;
+  --accent: #2c4a66;
+  --accent-tint: #e7eef3;
+  --accent-line: #9db6c8;
+  --good: #1e7a4c;
+  --good-tint: #e6f3ec;
+  --warn: #9a6400;
+  --warn-tint: #f8efdc;
+  --bad: #b03a2e;
+  --bad-tint: #fbe9e6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #14171b;
+    --surface: #1a1e23;
+    --surface-2: #20252b;
+    --border: #2c333b;
+    --ink: #ecedf0;
+    --ink-muted: #9aa3ad;
+    --ink-faint: #6c7580;
+    --accent: #86b1d3;
+    --accent-tint: #1f2c37;
+    --accent-line: #3c5568;
+    --good: #4fbe86;
+    --good-tint: #17281f;
+    --warn: #d9a441;
+    --warn-tint: #2b2313;
+    --bad: #e2685a;
+    --bad-tint: #2c1c1a;
+  }
+}
+
+/* ---- Map tokens to Tailwind utilities (bg-surface, text-ink-muted, border-border, …) ---- */
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-accent: var(--accent);
+  --color-accent-tint: var(--accent-tint);
+  --color-accent-line: var(--accent-line);
+  --color-good: var(--good);
+  --color-good-tint: var(--good-tint);
+  --color-warn: var(--warn);
+  --color-warn-tint: var(--warn-tint);
+  --color-bad: var(--bad);
+  --color-bad-tint: var(--bad-tint);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+html, body {
+  padding: 0;
+  margin: 0;
+}
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* modal enter animation */
+@keyframes ui-pop {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes ui-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PushSaaS — OIDC тестовый стенд</title>
+<style>
+  body{font:16px/1.6 system-ui,sans-serif;max-width:640px;margin:2rem auto;padding:0 1rem;color:#111}
+  code{background:#f4f4f5;padding:.15rem .4rem;border-radius:4px}
+  table{border-collapse:collapse;width:100%}
+  td,th{border:1px solid #ddd;padding:.4rem .6rem;text-align:left;font-size:14px}
+</style></head><body>
+<h1>OIDC тестовый стенд</h1>
+<p>Минимальный OpenID Connect провайдер для проверки авторизации покупателя InSales
+с <code>phone_number</code> в claims. Код подтверждения в тест-режиме показывается на странице входа.</p>
+<h2>Значения для OAuth-приложения в админке InSales</h2>
+<table>
+  <tr><th>Поле</th><th>Значение</th></tr>
+  <tr><td>ID приложения (client_id)</td><td><code>pushsaas-stand</code></td></tr>
+  <tr><td>API token (client_secret)</td><td>задаётся в env <code>STAND_CLIENT_SECRET</code></td></tr>
+  <tr><td>Issuer</td><td>адрес этого деплоя, напр. <code>https://&lt;домен&gt;</code></td></tr>
+</table>
+<h2>Endpoints</h2>
+<ul>
+  <li><a href="/.well-known/openid-configuration">/.well-known/openid-configuration</a></li>
+  <li><a href="/.well-known/jwks.json">/.well-known/jwks.json</a></li>
+  <li><code>/auth</code> — страница входа (открывает InSales с параметрами)</li>
+  <li><code>/token</code> — обмен кода на ID Token (server-to-server)</li>
+</ul>
+</body></html>

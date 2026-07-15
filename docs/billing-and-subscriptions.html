@@ -1,0 +1,666 @@
+<title>Подписки и биллинг — как это устроено</title>
+<style>
+  :root {
+    --paper: #faf9f7;
+    --surface: #ffffff;
+    --surface-2: #f2f1ee;
+    --border: #e3e0da;
+    --ink: #16191e;
+    --ink-muted: #5b6470;
+    --ink-faint: #8b93a0;
+    --ledger: #2c4a66;
+    --ledger-tint: #e7eef3;
+    --ledger-line: #9db6c8;
+    --good: #1e7a4c;
+    --good-tint: #e6f3ec;
+    --warn: #9a6400;
+    --warn-tint: #f8efdc;
+    --bad: #b03a2e;
+    --bad-tint: #fbe9e6;
+    --font-display: Georgia, "Iowan Old Style", "Times New Roman", ui-serif, serif;
+    --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+
+  :root[data-theme="dark"] {
+    --paper: #14171b;
+    --surface: #1a1e23;
+    --surface-2: #20252b;
+    --border: #2c333b;
+    --ink: #ecedf0;
+    --ink-muted: #9aa3ad;
+    --ink-faint: #6c7580;
+    --ledger: #86b1d3;
+    --ledger-tint: #1f2c37;
+    --ledger-line: #3c5568;
+    --good: #4fbe86;
+    --good-tint: #17281f;
+    --warn: #d9a441;
+    --warn-tint: #2b2313;
+    --bad: #e2685a;
+    --bad-tint: #2c1c1a;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #14171b;
+      --surface: #1a1e23;
+      --surface-2: #20252b;
+      --border: #2c333b;
+      --ink: #ecedf0;
+      --ink-muted: #9aa3ad;
+      --ink-faint: #6c7580;
+      --ledger: #86b1d3;
+      --ledger-tint: #1f2c37;
+      --ledger-line: #3c5568;
+      --good: #4fbe86;
+      --good-tint: #17281f;
+      --warn: #d9a441;
+      --warn-tint: #2b2313;
+      --bad: #e2685a;
+      --bad-tint: #2c1c1a;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 64px 24px 120px;
+  }
+
+  header.doc-head {
+    margin-bottom: 40px;
+  }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ledger);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .eyebrow::before {
+    content: "";
+    width: 22px;
+    height: 1px;
+    background: var(--ledger);
+    display: inline-block;
+  }
+
+  h1 {
+    font-family: var(--font-display);
+    font-size: clamp(32px, 4.4vw, 44px);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+
+  .dek {
+    color: var(--ink-muted);
+    font-size: 16.5px;
+    max-width: 62ch;
+    margin: 0;
+  }
+
+  nav.toc {
+    margin-top: 32px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    padding: 18px 22px;
+  }
+
+  nav.toc .toc-label {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 10px;
+    display: block;
+  }
+
+  nav.toc ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    columns: 2;
+    column-gap: 28px;
+  }
+
+  nav.toc li { break-inside: avoid; margin-bottom: 6px; }
+
+  nav.toc a {
+    color: var(--ink);
+    text-decoration: none;
+    font-size: 14px;
+    border-bottom: 1px solid transparent;
+  }
+  nav.toc a:hover { border-bottom-color: var(--ledger-line); color: var(--ledger); }
+  nav.toc a:focus-visible { outline: 2px solid var(--ledger); outline-offset: 3px; border-radius: 2px; }
+
+  section {
+    margin-top: 56px;
+    scroll-margin-top: 24px;
+  }
+
+  section > h2 {
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 600;
+    margin: 0 0 6px;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+
+  section > h2 .num {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--ink-faint);
+    font-weight: 400;
+  }
+
+  section > .lede {
+    color: var(--ink-muted);
+    max-width: 66ch;
+    margin: 0 0 22px;
+  }
+
+  p { max-width: 68ch; }
+  h3 {
+    font-family: var(--font-body);
+    font-size: 15px;
+    font-weight: 700;
+    margin: 28px 0 8px;
+  }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    padding: 0.1em 0.4em;
+    border-radius: 4px;
+    color: var(--ledger);
+  }
+
+  a { color: var(--ledger); }
+
+  /* balance cards */
+  .balance-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 20px 0 8px;
+  }
+  @media (max-width: 640px) { .balance-grid { grid-template-columns: 1fr; } }
+
+  .balance-card {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 20px 22px;
+  }
+  .balance-card .field {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ledger);
+    background: var(--ledger-tint);
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 5px;
+    margin-bottom: 10px;
+  }
+  .balance-card h4 {
+    margin: 0 0 6px;
+    font-size: 16px;
+  }
+  .balance-card p { margin: 0; font-size: 14px; color: var(--ink-muted); max-width: none; }
+  .balance-card ul { margin: 10px 0 0; padding-left: 18px; font-size: 13.5px; color: var(--ink-muted); }
+  .balance-card li { margin-bottom: 4px; }
+
+  /* tables */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; margin: 18px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; min-width: 560px; }
+  thead th {
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    background: var(--surface-2);
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--surface-2); }
+  td.num, th.num { font-variant-numeric: tabular-nums; }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    padding: 2px 8px;
+    border-radius: 20px;
+    white-space: nowrap;
+  }
+  .chip.good { background: var(--good-tint); color: var(--good); }
+  .chip.warn { background: var(--warn-tint); color: var(--warn); }
+  .chip.bad { background: var(--bad-tint); color: var(--bad); }
+  .chip.neutral { background: var(--surface-2); color: var(--ink-muted); }
+  .chip::before { content: "●"; font-size: 8px; }
+
+  /* diagram */
+  .diagram-frame {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    padding: 20px 8px 8px;
+    margin: 22px 0 10px;
+    overflow-x: auto;
+  }
+  .diagram-frame svg { display: block; min-width: 720px; margin: 0 auto; }
+  .diagram-note {
+    font-size: 12.5px;
+    color: var(--ink-faint);
+    padding: 10px 18px 4px;
+    margin: 0;
+  }
+
+  /* callouts */
+  .callout {
+    border-left: 3px solid var(--ledger);
+    background: var(--ledger-tint);
+    border-radius: 0 8px 8px 0;
+    padding: 14px 18px;
+    margin: 18px 0;
+    font-size: 14px;
+  }
+  .callout p { margin: 0; max-width: none; }
+  .callout strong { color: var(--ledger); }
+
+  footer.doc-foot {
+    margin-top: 72px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    color: var(--ink-faint);
+    font-size: 12.5px;
+    font-family: var(--font-mono);
+  }
+
+  ::selection { background: var(--ledger-line); color: var(--ink); }
+</style>
+
+<div class="page">
+
+  <header class="doc-head">
+    <div class="eyebrow">TryVice · внутренняя документация</div>
+    <h1>Подписки, баланс и блокировки</h1>
+    <p class="dek">Полный разбор того, как устроен биллинг магазина: два баланса, откуда берутся примерки, что происходит при обнулении, как работает продление и ретраи, когда магазин блокируется и разблокируется, и что умеет суперадмин.</p>
+
+    <nav class="toc" aria-label="Оглавление">
+      <span class="toc-label">Оглавление</span>
+      <ol>
+        <li><a href="#overview">1. Два баланса</a></li>
+        <li><a href="#granting">2. Откуда берутся примерки</a></li>
+        <li><a href="#switching">3. Смена тарифа</a></li>
+        <li><a href="#spending">4. Как списывается баланс</a></li>
+        <li><a href="#zero">5. Баланс закончился — что дальше</a></li>
+        <li><a href="#renewal">6. Продление и три попытки</a></li>
+        <li><a href="#blocking">7. Блокировка и разблокировка</a></li>
+        <li><a href="#unsubscribe">8. Отписка</a></li>
+        <li><a href="#superadmin">9. Возможности суперадмина</a></li>
+        <li><a href="#matrix">10. Сводная таблица</a></li>
+      </ol>
+    </nav>
+  </header>
+
+  <section id="overview">
+    <h2><span class="num">01</span> Два баланса</h2>
+    <p class="lede">Видимое поле <code>remaining_generations</code> — это не отдельная колонка, а вычисляемая сумма двух независимых счётчиков. Они ведут себя по-разному, и вся логика блокировок построена на этом различии.</p>
+
+    <div class="balance-grid">
+      <div class="balance-card">
+        <span class="field">tariff_generations_remaining</span>
+        <h4>Тарифный остаток</h4>
+        <p>Выдаётся на один расчётный период (месяц). Сгорает.</p>
+        <ul>
+          <li>Перезаписывается, не суммируется, при каждом продлении</li>
+          <li>Обнуляется («сжигается») при блокировке магазина</li>
+          <li>Тратится первым при каждой примерке</li>
+        </ul>
+      </div>
+      <div class="balance-card">
+        <span class="field">package_generations_remaining</span>
+        <h4>Пакетный остаток</h4>
+        <p>Разовые начисления. Не сгорает никогда.</p>
+        <ul>
+          <li>Всегда только прибавляется, никогда не перезаписывается</li>
+          <li>Не трогается блокировкой, продлением или сменой тарифа</li>
+          <li>Тратится вторым, когда тарифный остаток исчерпан</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout">
+      <p><strong>Важная деталь:</strong> примерки нового магазина при создании (<code>handle_new_shop_defaults</code>) кладутся сразу в <code>package_generations_remaining</code>, а не в тарифный остаток — то есть стартовые бесплатные примерки изначально не сгораемые.</p>
+    </div>
+  </section>
+
+  <section id="granting">
+    <h2><span class="num">02</span> Откуда берутся примерки</h2>
+    <p class="lede">Шесть разных путей начисления, каждый со своей логикой округления и своим RPC.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Источник</th>
+            <th>Куда зачисляется</th>
+            <th>Как считается сумма</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Создание магазина</td>
+            <td>Пакетный остаток</td>
+            <td>Лимит тарифа «Старт» (динамически, не хардкод)</td>
+          </tr>
+          <tr>
+            <td>Оплата тарифа впервые / продление / смена тарифа (виджет оплаты)</td>
+            <td>Тарифный остаток <em>(перезапись)</em></td>
+            <td>Пропорционально дням до 1-го числа следующего месяца — считает вебхук на своих часах, клиенту не доверяет</td>
+          </tr>
+          <tr>
+            <td>Автопродление (крон, та же карта)</td>
+            <td>Тарифный остаток <em>(перезапись)</em></td>
+            <td>Полный лимит тарифа, без пропорции — период уже начался с 1-го числа</td>
+          </tr>
+          <tr>
+            <td>Ручная активация суперадмином</td>
+            <td>Тарифный остаток <em>(перезапись)</em></td>
+            <td>Любое число, вводится вручную — автоматического расчёта нет</td>
+          </tr>
+          <tr>
+            <td>Перенос остатка при смене тарифа</td>
+            <td>Пакетный остаток <em>(прибавление)</em></td>
+            <td>Весь неизрасходованный остаток прежнего тарифа целиком — см. раздел 3</td>
+          </tr>
+          <tr>
+            <td>Покупка пакета (виджет оплаты)</td>
+            <td>Пакетный остаток <em>(прибавление)</em></td>
+            <td>Фиксированные пакеты 100 / 500 / 1000 примерок</td>
+          </tr>
+          <tr>
+            <td>Ручное начисление суперадмином</td>
+            <td>Пакетный остаток <em>(прибавление)</em></td>
+            <td>Любое число и описание, вводятся вручную, без оплаты</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="switching">
+    <h2><span class="num">03</span> Смена тарифа</h2>
+    <p class="lede">Переход на другой тариф посреди расчётного периода не должен стоить клиенту уже оплаченных примерок.</p>
+    <p>Если на момент смены тарифа в тарифном остатке ещё что-то есть, это количество переносится в пакетный остаток — то есть перестаёт сгорать — и только после этого тарифный остаток перезаписывается на новый тариф. Правило действия одно: перенос происходит, только если новый тариф отличается от текущего. Рутинное продление того же тарифа (например, автопродление кроном) по-прежнему полностью перезаписывает тарифный остаток без переноса — это ожидаемое «сгорание» неиспользованного за период, а не смена тарифа.</p>
+    <p>Правило применяется одинаково независимо от того, как оформлена смена — оплатой через виджет или ручной активацией суперадмином.</p>
+  </section>
+
+  <section id="spending">
+    <h2><span class="num">04</span> Как списывается баланс</h2>
+    <p class="lede">Слот на примерку резервируется атомарно до начала генерации, а не после её успешного завершения.</p>
+    <p>При запросе на примерку баланс проверяется и сразу списывается одной операцией под блокировкой строки магазина — сначала из тарифного остатка, и только когда он равен нулю, из пакетного. Только после этого начинается собственно генерация (обращение к AI, сохранение результата). Если генерация не удалась по любой причине, зарезервированный слот возвращается в тот же баланс, откуда был списан.</p>
+    <div class="callout">
+      <p>Порядок списания фиксирован: <strong>тариф → пакет</strong>. Оплаченные вручную «бонусные» примерки и купленные пакеты остаются нетронутыми, пока не израсходован текущий тарифный период — они всегда играют роль подушки на потом, а не первой линии.</p>
+    </div>
+  </section>
+
+  <section id="zero">
+    <h2><span class="num">05</span> Баланс закончился — что дальше</h2>
+    <p class="lede">Ничего не блокируется. Обнуление баланса и блокировка магазина — это два не связанных друг с другом события.</p>
+    <p>Если у активного платного магазина <code>remaining_generations</code> дошёл до нуля в середине периода, в базе не происходит вообще ничего — <code>is_active</code> остаётся <code>true</code>, магазин по-прежнему числится «Активен» на странице биллинга. Единственное, что меняется — на витрине у покупателя: точка входа в виджет отвечает «не активен», и виджет просто не рендерит кнопку примерки — никакого сообщения покупателю не показывается.</p>
+    <p>То есть с точки зрения покупателя виджет как будто «выключился» без объяснений, а хозяин магазина видит в биллинге, что тариф активен — только примерки закончились до конца периода. Разблокировка тут и не нужна: на следующую дату продления баланс просто пополнится заново.</p>
+  </section>
+
+  <section id="renewal">
+    <h2><span class="num">06</span> Продление и три попытки</h2>
+    <p class="lede">Крон <code>/api/admin/billing/renew-subscriptions</code> раз в сутки проходит по всем платным магазинам, у которых <code>current_period_end</code> уже наступил.</p>
+
+    <h3>Если карты не привязано</h3>
+    <p>Списывать нечего и ждать нечего (пополнить токен само по себе не может) — блокировка и сжигание тарифного остатка происходят сразу, без ретраев.</p>
+
+    <h3>Если карта привязана</h3>
+    <p>Крон пробует списать полную стоимость тарифа через сохранённый токен CloudPayments.</p>
+    <ul>
+      <li><strong>Успех</strong> — полный лимит тарифа зачисляется на новый период, <code>current_period_end</code> сдвигается на месяц вперёд, счётчик неудачных попыток обнуляется. Сброс счётчика происходит при любом успешном начислении тарифа, а не только при автопродлении кроном — например, если владелец оплатил вручную раньше, чем крон успел исчерпать все попытки.</li>
+      <li><strong>Неудача, попытка 1 или 2 из 3</strong> — магазин <em>не</em> блокируется. Счётчик <code>renewal_attempts</code> увеличивается на 1, дата продления не трогается — значит завтрашний прогон крона снова увидит этот магазин просроченным и повторит попытку.</li>
+      <li><strong>Неудача, попытка 3 из 3</strong> — блокировка и сжигание тарифного остатка, счётчик сбрасывается.</li>
+    </ul>
+    <p>Итого клиенту даётся до трёх дней подряд, прежде чем аккаунт заблокируют за неоплату — не мгновенная реакция на первый же отказ карты.</p>
+  </section>
+
+  <section id="blocking">
+    <h2><span class="num">07</span> Блокировка и разблокировка</h2>
+    <p class="lede">Блокировка — это всегда <code>is_active = false</code> плюс обнуление тарифного остатка в одной операции. Пакетный остаток блокировка не трогает.</p>
+
+    <div class="diagram-frame">
+      <svg viewBox="0 0 900 260" role="img" aria-label="Диаграмма состояний магазина: Старт, Активен, Ретрай, Заблокирован">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--ledger)"></path>
+          </marker>
+          <marker id="arrowBad" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--bad)"></path>
+          </marker>
+        </defs>
+
+        <!-- edges -->
+        <line x1="192" y1="60" x2="348" y2="60" stroke="var(--ledger)" stroke-width="1.5" marker-end="url(#arrow)"></line>
+        <text x="270" y="48" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--ink-muted)">оплата тарифа</text>
+
+        <path d="M 400 30 A 40 26 0 1 1 490 30" fill="none" stroke="var(--ledger)" stroke-width="1.5" marker-end="url(#arrow)"></path>
+        <text x="445" y="14" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--ink-muted)">продление прошло</text>
+
+        <line x1="415" y1="92" x2="415" y2="168" stroke="var(--ledger)" stroke-width="1.5" marker-end="url(#arrow)"></line>
+        <text x="330" y="130" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--ink-muted)">списание не прошло</text>
+
+        <line x1="475" y1="168" x2="475" y2="92" stroke="var(--good)" stroke-width="1.5" marker-end="url(#arrow)"></line>
+        <text x="560" y="130" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--ink-muted)">оплата повторно прошла</text>
+
+        <line x1="540" y1="200" x2="678" y2="200" stroke="var(--bad)" stroke-width="1.5" marker-end="url(#arrowBad)"></line>
+        <text x="608" y="188" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--bad)">3-я неудача</text>
+
+        <line x1="540" y1="70" x2="678" y2="175" stroke="var(--bad)" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arrowBad)"></line>
+        <text x="640" y="110" text-anchor="middle" font-family="var(--font-mono)" font-size="10.5" fill="var(--bad)">нет токена</text>
+
+        <path d="M 720 172 C 720 240, 200 240, 105 92" fill="none" stroke="var(--good)" stroke-width="1.5" marker-end="url(#arrow)"></path>
+        <text x="420" y="252" text-anchor="middle" font-family="var(--font-mono)" font-size="11" fill="var(--good)">Отписаться — перенос пакетного остатка</text>
+
+        <!-- nodes -->
+        <g>
+          <rect x="20" y="30" width="172" height="60" rx="10" fill="var(--surface-2)" stroke="var(--border)"></rect>
+          <text x="106" y="55" text-anchor="middle" font-family="var(--font-body)" font-weight="700" font-size="14" fill="var(--ink)">СТАРТ</text>
+          <text x="106" y="73" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--ink-faint)">никогда не блокируется</text>
+        </g>
+
+        <g>
+          <rect x="350" y="30" width="190" height="60" rx="10" fill="var(--good-tint)" stroke="var(--good)"></rect>
+          <text x="445" y="55" text-anchor="middle" font-family="var(--font-body)" font-weight="700" font-size="14" fill="var(--good)">АКТИВЕН</text>
+          <text x="445" y="73" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--good)">платный тариф</text>
+        </g>
+
+        <g>
+          <rect x="350" y="170" width="190" height="60" rx="10" fill="var(--warn-tint)" stroke="var(--warn)"></rect>
+          <text x="445" y="195" text-anchor="middle" font-family="var(--font-body)" font-weight="700" font-size="14" fill="var(--warn)">РЕТРАЙ</text>
+          <text x="445" y="213" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--warn)">попытка 1 или 2 из 3</text>
+        </g>
+
+        <g>
+          <rect x="680" y="170" width="190" height="60" rx="10" fill="var(--bad-tint)" stroke="var(--bad)"></rect>
+          <text x="775" y="195" text-anchor="middle" font-family="var(--font-body)" font-weight="700" font-size="14" fill="var(--bad)">ЗАБЛОКИРОВАН</text>
+          <text x="775" y="213" text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--bad)">тариф сожжён</text>
+        </g>
+      </svg>
+      <p class="diagram-note">«Отписаться» доступна из любого состояния платного тарифа (в т.ч. из «Активен», не только из «Заблокирован») — на диаграмме показан общий путь возврата.</p>
+    </div>
+
+    <h3>Кто видит блокировку и как</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Место</th><th>Поведение при <code>is_active = false</code></th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Личный кабинет владельца</td>
+            <td><code>AppWrapper</code> редиректит на <code>/admin/billing</code> при любой попытке зайти куда-то ещё, кроме биллинга и профиля</td>
+          </tr>
+          <tr>
+            <td>Боковое меню</td>
+            <td>Все разделы, кроме «Биллинг» (и всегда доступного «Профиль»), скрыты</td>
+          </tr>
+          <tr>
+            <td>Суперадмин</td>
+            <td>Ограничения на него не действуют — видит и открывает всё как обычно</td>
+          </tr>
+          <tr>
+            <td>Публичный виджет на витрине</td>
+            <td>Точка входа и точка генерации проверяют блокировку одинаково — виджет у заблокированного магазина не открывается вовсе, так же тихо, как при нулевом балансе</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="unsubscribe">
+    <h2><span class="num">08</span> Отписка</h2>
+    <p class="lede">Единственный способ владельца самому вернуться на бесплатный тариф — кнопка «Отписаться» на карточке текущего платного тарифа, с модальным подтверждением.</p>
+    <p>Что происходит одним обновлением:</p>
+    <ul>
+      <li>тариф магазина → «Старт»</li>
+      <li>тарифный остаток → 0</li>
+      <li>пакетный остаток → <strong>увеличивается</strong> на всё, что оставалось неизрасходованным (и пакетный, и ещё не сожжённый тарифный остаток) — единственный случай, когда тарифный остаток не сгорает, а переносится</li>
+      <li><code>current_period_end</code> и <code>cp_card_token</code> → очищаются, чтобы крон больше никогда не пытался списать деньги за отменённую подписку</li>
+      <li><code>is_active</code> → <code>true</code>, счётчик попыток продления → 0 — магазин гарантированно разблокируется, даже если отписывается из состояния «Заблокирован»</li>
+    </ul>
+    <div class="callout">
+      <p>Это и есть ответ на «как воспользоваться пакетными примерками после блокировки»: тарифный остаток на заблокированном магазине уже сожжён, но пакетный жив — «Отписаться» переводит магазин на вечно разблокированный «Старт», где этот остаток снова становится доступен.</p>
+    </div>
+  </section>
+
+  <section id="superadmin">
+    <h2><span class="num">09</span> Возможности суперадмина</h2>
+    <p class="lede">Всё завязано на двух отдельных RPC, которые сами проверяют права вызывающего внутри себя — это единственные функции изменения баланса, выданные роли <code>authenticated</code>, а не только сервисной, доверенной роли.</p>
+
+    <h3>Активировать любой тариф</h3>
+    <ul>
+      <li>Видит и может выдать любой тариф любому магазину, включая бесплатный (обычным владельцам он показывается, только пока они на нём сейчас)</li>
+      <li>Количество зачисляемых примерок вводится вручную в поле рядом с кнопкой — никакого автоматического расчёта от лимита тарифа, поле лишь предзаполнено этим лимитом для удобства</li>
+      <li>Если это смена тарифа, неизрасходованный остаток прежнего переносится в пакетный по тому же правилу, что и при оплате (раздел 3)</li>
+      <li>Стирает привязанный токен карты — ручная активация не должна приводить к тому, что с клиента впоследствии спишут деньги за период, который был выдан бесплатно</li>
+      <li>Пишет запись в историю операций с суммой 0 ₽</li>
+    </ul>
+
+    <h3>Начислить бонусные примерки</h3>
+    <ul>
+      <li>Заменяет собой платные пакеты в режиме суперадмина</li>
+      <li>Произвольное количество и произвольное описание с редактируемым значением по умолчанию</li>
+      <li>Работает независимо от тарифа и статуса блокировки — можно пополнить пакетный остаток даже заблокированному магазину</li>
+    </ul>
+
+    <h3>Системный (бесплатный) тариф нельзя удалить</h3>
+    <p>Защищено на двух уровнях: кнопка удаления задизейблена в интерфейсе, и отдельный триггер в базе блокирует сам DELETE — на этот тариф жёстко завязано создание новых магазинов. Редактировать (цену, лимит, публичность) — можно.</p>
+  </section>
+
+  <section id="matrix">
+    <h2><span class="num">10</span> Сводная таблица</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Событие</th>
+            <th>is_active</th>
+            <th>Тарифный остаток</th>
+            <th>Пакетный остаток</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Баланс дошёл до 0 в середине периода</td>
+            <td><span class="chip good">не меняется</span></td>
+            <td>уже 0</td>
+            <td>не трогается</td>
+          </tr>
+          <tr>
+            <td>Нет токена карты на дату продления</td>
+            <td><span class="chip bad">false, сразу</span></td>
+            <td class="num">→ 0</td>
+            <td>не трогается</td>
+          </tr>
+          <tr>
+            <td>Неудачное списание, попытка 1–2 из 3</td>
+            <td><span class="chip good">не меняется</span></td>
+            <td>не трогается</td>
+            <td>не трогается</td>
+          </tr>
+          <tr>
+            <td>Неудачное списание, попытка 3 из 3</td>
+            <td><span class="chip bad">false</span></td>
+            <td class="num">→ 0</td>
+            <td>не трогается</td>
+          </tr>
+          <tr>
+            <td>Владелец нажал «Отписаться»</td>
+            <td><span class="chip good">true</span></td>
+            <td class="num">→ 0</td>
+            <td class="num">+= остаток обоих</td>
+          </tr>
+          <tr>
+            <td>Смена тарифа (оплата или ручная активация)</td>
+            <td><span class="chip good">true</span></td>
+            <td class="num">→ новое число</td>
+            <td class="num">+= остаток прежнего тарифа</td>
+          </tr>
+          <tr>
+            <td>Суперадмин начисляет бонус</td>
+            <td>не трогается</td>
+            <td>не трогается</td>
+            <td class="num">+= введённое число</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="doc-foot">TryVice · billing flow reference</footer>
+
+</div>
