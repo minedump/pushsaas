@@ -13,7 +13,7 @@ type Row = {
   created_at: string;
   phone: string | null;
   email: string | null;
-  externalId: string | null;
+  insalesClientId: string | null;
 };
 
 const platformLabel: Record<string, string> = { ios: "iPhone", android: "Android", desktop: "Desktop", unknown: "—" };
@@ -74,7 +74,7 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
       (r) =>
         (r.phone || "").includes(q) ||
         (r.email || "").toLowerCase().includes(q) ||
-        (r.externalId || "").toLowerCase().includes(q) ||
+        (r.insalesClientId || "").toLowerCase().includes(q) ||
         (platformLabel[r.platform] || r.platform).toLowerCase().includes(q) ||
         r.tags.some((t) => t.toLowerCase().includes(q))
     );
@@ -126,7 +126,7 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
                     {r.email || <span className="text-ink-faint">—</span>}
                   </Td>
                   <Td className="font-mono whitespace-nowrap max-w-36 overflow-hidden text-ellipsis">
-                    {r.externalId || <span className="text-ink-faint">—</span>}
+                    {r.insalesClientId || <span className="text-ink-faint">—</span>}
                   </Td>
                   <Td>{platformLabel[r.platform] || r.platform}</Td>
                   <Td>

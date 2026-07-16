@@ -116,7 +116,9 @@ export default function ExportImport({ projectId }: { projectId: string }) {
             <h3 className="text-base font-semibold m-0">Импорт: {rows.length} строк</h3>
             <p className="text-sm text-ink-muted mt-2 mb-0">
               По какому столбцу искать подписчика, и с чем его сопоставлять. Остальные столбцы добавятся в его
-              профиль (атрибуты) — доступны потом как <code className="font-mono">{"{ключ}"}</code> в текстах.
+              профиль (атрибуты) — доступны потом как <code className="font-mono">{"{ключ}"}</code> в текстах;
+              столбец <code className="font-mono">insales_client_id</code> среди них — исключение, он уйдёт во
+              внешний ID подписчика, а не в атрибуты.
             </p>
 
             <div className="mt-3">
@@ -135,14 +137,15 @@ export default function ExportImport({ projectId }: { projectId: string }) {
               <Select value={matchAgainst} onChange={(e) => setMatchAgainst(e.target.value)} className="w-full">
                 <option value="phone">Телефон подписчика</option>
                 <option value="email">Email подписчика</option>
-                <option value="custom">Свой атрибут (external_id и т.п.)…</option>
+                <option value="insales_client_id">Внешний ID (например, ID клиента в InSales)</option>
+                <option value="custom">Свой атрибут…</option>
               </Select>
             </div>
 
             {matchAgainst === "custom" && (
               <div className="mt-3">
                 <Label>Имя атрибута (как в attributes)</Label>
-                <Input value={customAttr} onChange={(e) => setCustomAttr(e.target.value)} placeholder="external_id" />
+                <Input value={customAttr} onChange={(e) => setCustomAttr(e.target.value)} placeholder="например, loyalty_tier" />
               </div>
             )}
 

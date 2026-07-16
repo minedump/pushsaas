@@ -39,25 +39,22 @@ export async function GET(req: Request) {
 
   const phoneById = new Map<string, string>();
   const emailById = new Map<string, string>();
+  const insalesClientIdById = new Map<string, string>();
   if (rows.length) {
     const { data: links } = await admin
       .from("identity_devices")
-      .select("subscriber_id, identities!inner(phone, email)")
+      .select("subscriber_id, identities!inner(phone, email, insales_client_id)")
       .in("subscriber_id", rows.map((r) => r.id));
     for (const l of links ?? []) {
-      const ident = l.identities as unknown as { phone: string; email: string | null };
+      const ident = l.identities as unknown as { phone: string | null; email: string | null; insales_client_id: string | null };
       if (ident?.phone) phoneById.set(l.subscriber_id, ident.phone);
       if (ident?.email) emailById.set(l.subscriber_id, ident.email);
+      if (ident?.insales_client_id) insalesClientIdById.set(l.subscriber_id, ident.insales_client_id);
     }
   }
 
-  // external_id — отдельная колонка сразу после email (не только внутри
-  // общего дампа attrKeys), чтобы её было видно без прокрутки; остальные
-  // attributes идут следом как есть.
-  const attrKeys = [...new Set(rows.flatMap((r) => Object.keys((r.attributes as object) || {})))].filter(
-    (k) => k !== "external_id" && k !== "externalId"
-  );
-  const header = ["id", "phone", "email", "external_id", "platform", "tags", "is_active", "paused", "created_at", ...attrKeys];
+  const attrKeys = [...new Set(rows.flatMap((r) => Object.keys((r.attributes as object) || {})))];
+  const header = ["id", "phone", "email", "insales_client_id", "platform", "tags", "is_active", "paused", "created_at", ...attrKeys];
 
   const lines = [header.join(",")];
   for (const r of rows) {
@@ -66,7 +63,7 @@ export async function GET(req: Request) {
       r.id,
       phoneById.get(r.id) || "",
       emailById.get(r.id) || "",
-      attrs.external_id ?? attrs.externalId ?? "",
+      insalesClientIdById.get(r.id) || "",
       r.platform,
       (r.tags || []).join("|"),
       r.is_active,

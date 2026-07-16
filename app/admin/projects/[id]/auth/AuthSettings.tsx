@@ -226,11 +226,15 @@ export default function AuthSettings({
     );
   }
 
-  const embedSnippet = `ajaxAPI.shop.client.get().done(function(client){
-  if (!client.authorized || !client.phone) return;
-  PushSaaS.subscribe();
-  PushSaaS.identify({ phone: client.phone, email: client.email, name: client.name, external_id: client.id });
-});`;
+  const embedSnippet = `(function waitForAjaxAPI(tries){
+  if (window.ajaxAPI && ajaxAPI.shop) {
+    ajaxAPI.shop.client.get().done(function(client){
+      PushSaaS.identify({ phone: client.phone, email: client.email, name: client.name, insales_client_id: client.id });
+    });
+  } else if (tries > 0) {
+    setTimeout(function(){ waitForAjaxAPI(tries - 1); }, 200);
+  }
+})(25);`;
 
   return (
     <div className={busy ? "opacity-60" : ""}>

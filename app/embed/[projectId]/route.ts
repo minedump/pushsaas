@@ -137,13 +137,14 @@ function widget(
       .catch(function(){});
   }
 
-  // PushSaaS.identify({phone, email, name, external_id}) — вызывается ТЕМОЙ
-  // магазина вручную (например, на странице, где покупатель уже авторизован —
-  // после ajaxAPI.shop.client.get()). Требует активной push-подписки этого
-  // браузера. НЕ создаёт новую связку ключ↔устройство — это только
-  // обогащение: name и external_id применятся, только если это устройство
-  // уже честно привязано к присланному phone ИЛИ к присланному email через
-  // код (независимо друг от друга — см. /api/public/identify).
+  // PushSaaS.identify({phone, email, name, insales_client_id}) — вызывается
+  // ТЕМОЙ магазина вручную (например, на странице, где покупатель уже
+  // авторизован — после ajaxAPI.shop.client.get()). Требует активной
+  // push-подписки этого браузера. НЕ создаёт новую связку ключ↔устройство —
+  // это только обогащение: name и insales_client_id применятся, только если
+  // это устройство уже честно привязано к присланному phone ИЛИ к
+  // присланному email через код (независимо друг от друга — см.
+  // /api/public/identify).
   function identify(data){
     if(!supported() || !data) return Promise.reject(new Error("no data"));
     return navigator.serviceWorker.ready
@@ -155,7 +156,7 @@ function widget(
           body: JSON.stringify({
             projectId: PROJECT_ID, endpoint: sub.endpoint,
             phone: data.phone, email: data.email, name: data.name,
-            external_id: data.external_id || data.externalId
+            insales_client_id: data.insales_client_id || data.insalesClientId
           })
         }).then(function(r){ return r.json(); });
       });

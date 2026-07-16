@@ -53,9 +53,7 @@ export async function POST(req: Request) {
     p256dh: subscription.keys.p256dh,
     auth: subscription.keys.auth,
     platform: detectPlatform(userAgent || ""),
-    user_agent: userAgent || null,
     is_active: true,
-    last_seen: new Date().toISOString(),
   };
 
   // Устройство с валидным device_token: обновляем ЕГО строку даже при ротации

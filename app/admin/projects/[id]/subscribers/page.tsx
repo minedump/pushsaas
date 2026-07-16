@@ -34,42 +34,24 @@ export default async function SubscribersPage({ params }: { params: Promise<{ id
     if (!pausedErr) for (const r of pausedRows ?? []) pausedIds.add(r.id);
   }
 
-  // телефоны и email привязанных устройств (identity_devices → identities)
+  // телефон/email/внешний ID привязанной identity (identity_devices →
+  // identities) — все три на identity, не на самом subscriber-устройстве.
   const phoneBySub = new Map<string, string>();
   const emailBySub = new Map<string, string>();
+  const insalesClientIdBySub = new Map<string, string>();
   if (base.length) {
     const { data: links } = await supabase
       .from("identity_devices")
-      .select("subscriber_id, identities!inner(phone, email)")
+      .select("subscriber_id, identities!inner(phone, email, insales_client_id)")
       .in(
         "subscriber_id",
         base.map((r) => r.id)
       );
     for (const l of links ?? []) {
-      const ident = l.identities as unknown as { phone: string; email: string | null };
+      const ident = l.identities as unknown as { phone: string | null; email: string | null; insales_client_id: string | null };
       if (ident?.phone) phoneBySub.set(l.subscriber_id, ident.phone);
       if (ident?.email) emailBySub.set(l.subscriber_id, ident.email);
-    }
-  }
-
-  // best-effort: внешний идентификатор из subscribers.attributes (миграция
-  // 0008) — отдельный запрос, отсутствие колонки не роняет список.
-  const externalBySub = new Map<string, string>();
-  if (base.length) {
-    const { data: attrRows, error: attrErr } = await supabase
-      .from("subscribers")
-      .select("id, attributes")
-      .eq("project_id", id)
-      .in(
-        "id",
-        base.map((r) => r.id)
-      );
-    if (!attrErr) {
-      for (const r of attrRows ?? []) {
-        const a = (r.attributes || {}) as Record<string, unknown>;
-        const ext = a.external_id ?? a.externalId;
-        if (ext != null && ext !== "") externalBySub.set(r.id, String(ext));
-      }
+      if (ident?.insales_client_id) insalesClientIdBySub.set(l.subscriber_id, ident.insales_client_id);
     }
   }
 
@@ -78,7 +60,7 @@ export default async function SubscribersPage({ params }: { params: Promise<{ id
     paused: pausedIds.has(r.id),
     phone: phoneBySub.get(r.id) ?? null,
     email: emailBySub.get(r.id) ?? null,
-    externalId: externalBySub.get(r.id) ?? null,
+    insalesClientId: insalesClientIdBySub.get(r.id) ?? null,
   }));
   const active = rows.filter((r) => r.is_active);
   const byPlatform = active.reduce<Record<string, number>>((acc, r) => {
