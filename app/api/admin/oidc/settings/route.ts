@@ -47,14 +47,17 @@ export async function POST(req: Request) {
   const willHave = {
     telegram: telegramToken !== undefined ? !!telegramToken : !!secrets?.telegram_gateway_token,
     sms: bytehandKey !== undefined ? !!bytehandKey : !!secrets?.bytehand_service_key,
-    email: haskimailToken !== undefined ? !!haskimailToken : !!secrets?.haskimail_server_token,
+    // email-канал сверх токена ещё требует заполненного отправителя (From) —
+    // без него сервис-провайдер либо отклонит письмо, либо, что хуже,
+    // отправит с неверифицированного в Haskimail домена и уйдёт в спам.
+    email: (haskimailToken !== undefined ? !!haskimailToken : !!secrets?.haskimail_server_token) && !!(emailFrom !== undefined ? emailFrom : client.config?.email_from || "").toString().trim(),
   };
 
   const config = { ...(client.config || {}) };
   if (channels && typeof channels === "object") {
     const nextChannels = { ...(config.channels || {}), ...channels };
-    // сервер — последняя линия защиты: канал не включится без ключа, даже
-    // если запрос пришёл не из нашей формы (которая уже блокирует это в UI).
+    // сервер — последняя линия защиты: канал не включится без ключа/отправителя,
+    // даже если запрос пришёл не из нашей формы (которая уже блокирует это в UI).
     for (const ch of ["telegram", "sms", "email"] as const) {
       if (nextChannels[ch] && !willHave[ch]) nextChannels[ch] = false;
     }

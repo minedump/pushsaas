@@ -95,6 +95,14 @@ export default function AuthSettings({
   }
 
   async function saveSettings() {
+    // блокируем только если email-канал реально заработает (токен уже есть
+    // или вводится сейчас) — иначе это ложно ловило бы любое сохранение у
+    // проектов, которые вообще не настраивали email
+    const emailWouldWork = channels.email !== false && (hasSecret.email || haskimailToken.trim());
+    if (emailWouldWork && !emailFrom.trim()) {
+      toast("Укажите email-отправителя (From) — без него email-канал нельзя включить", "bad");
+      return;
+    }
     setBusy(true);
     const res = await fetch("/api/admin/oidc/settings", {
       method: "POST",
@@ -265,7 +273,7 @@ export default function AuthSettings({
           <ChannelRow
             key={key}
             label={CHANNEL_TITLE[key]}
-            hint={channelHint(key, initial, hasSecret[key])}
+            hint={key === "email" ? emailChannelHint(hasSecret.email, !!emailFrom.trim()) : channelHint(key, hasSecret[key])}
             tone={key === "push" ? undefined : hasSecret[key] ? "good" : "warn"}
             on={channels[key] !== false}
             locked={!hasSecret[key] && channels[key] === false}
@@ -289,12 +297,16 @@ export default function AuthSettings({
           />
         </div>
         <div>
-          <Label>Email-отправитель (From)</Label>
+          <Label>Email-отправитель (From) — обязателен для email-канала</Label>
           <Input
             value={emailFrom}
             onChange={(e) => setEmailFrom(e.target.value)}
             placeholder="Магазин <noreply@ваш-домен.ru>"
           />
+          <p className="text-[12px] text-ink-faint mt-1 mb-0">
+            Домен в адресе должен быть верифицирован в Haskimail (SPF + DKIM) — иначе письма не будут доставляться
+            или уйдут в спам.
+          </p>
         </div>
         <div>
           <Label>Telegram Gateway token</Label>
@@ -421,11 +433,17 @@ export default function AuthSettings({
   );
 }
 
-function channelHint(key: ChannelKey, initial: Initial, has: boolean): string {
+function channelHint(key: ChannelKey, has: boolean): string {
   if (key === "push") return "уже узнанные устройства — по телефону или по почте";
-  if (key === "email") return has ? "ключ Haskimail сохранён · код на введённый адрес" : "нужен Server Token Haskimail · код на введённый адрес";
   if (key === "telegram") return has ? "токен сохранён" : "нужен токен (см. docs/telegram-gateway.md)";
   return has ? "ключ сохранён" : "нужен X-Service-Key из кабинета Bytehand";
+}
+
+function emailChannelHint(hasToken: boolean, hasFrom: boolean): string {
+  if (!hasToken && !hasFrom) return "нужен Server Token Haskimail и отправитель (From) ниже";
+  if (!hasToken) return "нужен Server Token Haskimail";
+  if (!hasFrom) return "нужен отправитель (From) ниже — домен верифицирован в Haskimail";
+  return "ключ и отправитель заданы · код на введённый адрес";
 }
 
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
