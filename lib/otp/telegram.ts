@@ -1,13 +1,19 @@
 // Telegram Gateway (gateway.telegram.org) — коды верификации на номер телефона.
 // $0.01 за доставленный код; checkSendAbility бесплатен, если доставка невозможна.
 // Токен берётся из project_secrets.telegram_gateway_token (per project).
+//
+// С части российских хостингов gatewayapi.telegram.org недоступен напрямую
+// (TCP-таймаут, не ошибка API) — живьём наблюдали UND_ERR_CONNECT_TIMEOUT.
+// outboundFetch идёт через OUTBOUND_PROXY_URL, если он задан.
+
+import { outboundFetch } from "@/lib/proxy";
 
 const BASE = "https://gatewayapi.telegram.org";
 
 type GatewayResponse<T> = { ok: boolean; result?: T; error?: string };
 
 async function call<T>(token: string, method: string, body: Record<string, unknown>): Promise<GatewayResponse<T>> {
-  const res = await fetch(`${BASE}/${method}`, {
+  const res = await outboundFetch(`${BASE}/${method}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify(body),
