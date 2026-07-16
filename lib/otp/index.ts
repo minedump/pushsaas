@@ -55,6 +55,21 @@ function hashCode(otpId: string, code: string): string {
   return crypto.createHash("sha256").update(`${otpId}:${code}`).digest("hex");
 }
 
+// Внешний push-сервис (FCM/APNs) иногда отвечает медленно — а пока сервер
+// ждёт Promise.all по всем устройствам, пользователь смотрит на пустой экран
+// между отправкой телефона и формой кода. Жёсткий потолок ожидания на
+// КАЖДЫЙ push, чтобы один медленный эндпоинт не тормозил весь вход.
+const PUSH_SEND_TIMEOUT_MS = 4000;
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error("push_timeout")), ms);
+    promise.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); }
+    );
+  });
+}
+
 type ChannelConfig = { push?: boolean; email?: boolean; telegram?: boolean; sms?: boolean };
 
 // Отправляет код по каскаду. forceChannel — «отправить ещё раз через …» с UI.
@@ -202,11 +217,14 @@ async function sendPushCode(
   const vapid = { publicKey: project.vapid_public_key, privateKey: vapidPrivate };
   const results = await Promise.all(
     subs.map((s) =>
-      sendPush(
-        { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-        // TTL у web-push задан сутки, но код живёт 5 минут — укажем это в тексте
-        { title: "Код входа", body: `Ваш код: ${code} (действует 5 минут)`, url: "/" },
-        vapid
+      withTimeout(
+        sendPush(
+          { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
+          // TTL у web-push задан сутки, но код живёт 5 минут — укажем это в тексте
+          { title: "Код входа", body: `Ваш код: ${code} (действует 5 минут)`, url: "/" },
+          vapid
+        ),
+        PUSH_SEND_TIMEOUT_MS
       ).then(
         () => true,
         () => false
