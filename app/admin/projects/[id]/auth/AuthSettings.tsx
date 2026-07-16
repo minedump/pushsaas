@@ -2,20 +2,26 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { IconPhone, IconRefresh, IconGripVertical, IconAlertTriangle } from "@tabler/icons-react";
-import { Button, Card, Input, Label, Toggle, useDialogs } from "@/app/ui";
+import { IconPhone, IconRefresh, IconGripVertical } from "@tabler/icons-react";
+import { Button, Card, Input, Label, Select, Textarea, Toggle, useDialogs } from "@/app/ui";
 import CopyBox from "../CopyBox";
 
 type ChannelKey = "push" | "email" | "telegram" | "sms";
 const DEFAULT_ORDER: ChannelKey[] = ["push", "email", "telegram", "sms"];
 const CHANNEL_TITLE: Record<ChannelKey, string> = { push: "Push-уведомление", email: "Email", telegram: "Telegram Gateway", sms: "SMS (Bytehand)" };
+const BUTTON_SIZES = ["s", "m", "l", "xl"] as const;
 
 type Initial = {
   clientId: string;
   isEnabled: boolean;
   channels: Record<ChannelKey, boolean | undefined>;
   channelOrder: ChannelKey[];
-  requirePhoneVerification: boolean;
+  hideNativeLoginButton: boolean;
+  authButtonText: string;
+  authButtonIcon: string;
+  authButtonColor: string;
+  authButtonSize: string;
+  authButtonRounded: boolean;
   smsSender: string;
   emailFrom: string;
   hasTelegram: boolean;
@@ -46,7 +52,12 @@ export default function AuthSettings({
     const missing = DEFAULT_ORDER.filter((c) => !saved.includes(c));
     return [...saved, ...missing];
   });
-  const [requireVerification, setRequireVerification] = useState(initial?.requirePhoneVerification ?? true);
+  const [hideLoginButton, setHideLoginButton] = useState(initial?.hideNativeLoginButton ?? false);
+  const [authButtonText, setAuthButtonText] = useState(initial?.authButtonText || "");
+  const [authButtonIcon, setAuthButtonIcon] = useState(initial?.authButtonIcon || "");
+  const [authButtonColor, setAuthButtonColor] = useState(initial?.authButtonColor || "");
+  const [authButtonSize, setAuthButtonSize] = useState(initial?.authButtonSize || "");
+  const [authButtonRounded, setAuthButtonRounded] = useState(initial?.authButtonRounded ?? false);
   const [smsSender, setSmsSender] = useState(initial?.smsSender || "");
   const [emailFrom, setEmailFrom] = useState(initial?.emailFrom || "");
   const [telegramToken, setTelegramToken] = useState("");
@@ -92,7 +103,7 @@ export default function AuthSettings({
         projectId,
         channels,
         channelOrder: order,
-        requirePhoneVerification: requireVerification,
+        hideNativeLoginButton: hideLoginButton,
         smsSender,
         emailFrom,
         ...(telegramToken.trim() ? { telegramToken: telegramToken.trim() } : {}),
@@ -110,20 +121,43 @@ export default function AuthSettings({
     router.refresh();
   }
 
-  async function toggleVerification(next: boolean) {
-    if (!next) {
-      const ok = await confirm({
-        title: "Отключить подтверждение владения телефоном?",
-        message:
-          "Устройства покупателей, уже авторизованных в InSales, будут привязываться к номеру телефона без проверки кодом. " +
-          "Это открывает риск угона аккаунта: чужое устройство, заявившее себя владельцем номера, начнёт получать коды входа этого номера. " +
-          "Включайте только если доверяете своей теме/сайту.",
-        confirmText: "Всё равно отключить",
-        danger: true,
-      });
-      if (!ok) return;
+  async function saveButtonVisibility(next: boolean) {
+    setHideLoginButton(next);
+    setBusy(true);
+    const res = await fetch("/api/admin/oidc/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, hideNativeLoginButton: next }),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setHideLoginButton(!next);
+      const j = await res.json().catch(() => ({}));
+      toast(j.error || "Ошибка", "bad");
+      return;
     }
-    setRequireVerification(next);
+    router.refresh();
+  }
+
+  async function saveButtonAppearance() {
+    setBusy(true);
+    const res = await fetch("/api/admin/oidc/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId,
+        authButtonText,
+        authButtonIcon,
+        authButtonColor,
+        authButtonSize,
+        authButtonRounded,
+      }),
+    });
+    setBusy(false);
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) return toast(j.error || "Ошибка", "bad");
+    toast("Сохранено", "good");
+    router.refresh();
   }
 
   // Перетаскивание каналов: pointer events (мышь + тач), захват указателя на
@@ -187,7 +221,7 @@ export default function AuthSettings({
   const embedSnippet = `ajaxAPI.shop.client.get().done(function(client){
   if (!client.authorized || !client.phone) return;
   PushSaaS.subscribe();
-  PushSaaS.identify({ phone: client.phone, email: client.email, name: client.name });
+  PushSaaS.identify({ phone: client.phone, email: client.email, name: client.name, external_id: client.id });
 });`;
 
   return (
@@ -221,8 +255,10 @@ export default function AuthSettings({
 
       <h2 className="text-base font-semibold mt-8">Каскад отправки кода</h2>
       <p className="text-sm text-ink-muted mt-1">
-        Код идёт по каналам в заданном порядке, пока один не сработает. Перетащите канал за ручку, чтобы поменять
-        приоритет. Канал нельзя включить, пока для него не сохранён ключ.
+        Первый в порядке канал среди <b>email</b>/<b>Telegram</b>/<b>SMS</b> определяет, что спрашивает страница входа
+        первым — почту или телефон. Если с ним не вышло, спросим второе (телефон, если начали с почты, и наоборот) —
+        один раз. Push отдельно: не спрашивает ничего, пробует достучаться до уже узнанного устройства раньше формы —
+        поэтому имеет смысл всегда держать его первым.
       </p>
       <Card className="mt-3 flex flex-col gap-1.5">
         {order.map((key) => (
@@ -293,49 +329,85 @@ export default function AuthSettings({
         </div>
       </Card>
 
-      <h2 className="text-base font-semibold mt-8">Подтверждение владения телефоном</h2>
-      <Card className="mt-3">
-        <div className="flex justify-between items-start gap-3">
-          <div>
-            <div className="text-sm">
-              Перед тем как привязать устройство к номеру, требовать ввод кода из каскада выше.
-            </div>
-            <div className="text-[12.5px] text-ink-faint mt-1">
-              Выключение позволяет привязывать устройство по данным из авторизованной сессии магазина (см. ниже),
-              без кода — быстрее для клиента, но менее безопасно.
-            </div>
-          </div>
-          <Toggle checked={requireVerification} onChange={toggleVerification} />
+      <h2 className="text-base font-semibold mt-8">Кнопка входа InSales</h2>
+      <p className="text-sm text-ink-muted mt-1">
+        Отдельный скрипт (<code className="font-mono">/embed/{"{projectId}"}/auth-button.js</code>), не влияет на
+        основной виджет. Управляет нативной ссылкой «Войти через {"{"}приложение{"}"}» на странице входа: можно скрыть
+        целиком, либо задать свой текст, иконку, цвет и размер — тогда ссылка получает класс{" "}
+        <code className="font-mono">.button</code> темы магазина и выглядит как родная кнопка.
+      </p>
+      <Card className="mt-3 flex flex-col gap-3">
+        <div className="flex justify-between items-center gap-3">
+          <div className="text-sm">Скрыть кнопку целиком</div>
+          <Toggle checked={hideLoginButton} onChange={saveButtonVisibility} />
         </div>
 
-        {!requireVerification && (
-          <div className="mt-3 rounded-lg p-3 bg-bad-tint border border-border flex gap-2.5">
-            <IconAlertTriangle size={18} stroke={1.8} className="text-bad shrink-0 mt-0.5" />
-            <p className="text-[13px] text-bad m-0">
-              Подтверждение выключено: любое устройство, назвавшее себя владельцем номера через{" "}
-              <code className="font-mono">PushSaaS.identify()</code>, будет получать коды входа этого номера
-              (риск угона аккаунта). Используйте только если полностью контролируете тему сайта.
-            </p>
-          </div>
+        {!hideLoginButton && (
+          <>
+            <div className="h-px bg-border" />
+            <div>
+              <Label>Текст на кнопке</Label>
+              <Input value={authButtonText} onChange={(e) => setAuthButtonText(e.target.value)} placeholder="оставьте пустым — родной текст InSales" />
+            </div>
+            <div>
+              <Label>Иконка (SVG-разметка)</Label>
+              <Textarea
+                value={authButtonIcon}
+                onChange={(e) => setAuthButtonIcon(e.target.value)}
+                rows={3}
+                placeholder='<svg width="16" height="16" ...>...</svg>'
+                className="font-mono text-xs"
+              />
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <Label>Цвет кнопки</Label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={/^#[0-9a-fA-F]{6}$/.test(authButtonColor) ? authButtonColor : "#2c4a66"}
+                    onChange={(e) => setAuthButtonColor(e.target.value)}
+                    className="w-9 h-9 shrink-0 rounded-lg border border-border cursor-pointer bg-transparent p-0.5"
+                  />
+                  <Input value={authButtonColor} onChange={(e) => setAuthButtonColor(e.target.value)} placeholder="родной цвет темы" />
+                </div>
+              </div>
+              <div className="w-32 shrink-0">
+                <Label>Размер</Label>
+                <Select value={authButtonSize} onChange={(e) => setAuthButtonSize(e.target.value)} className="w-full">
+                  <option value="">Родной (m)</option>
+                  {BUTTON_SIZES.map((s) => (
+                    <option key={s} value={s}>
+                      {s.toUpperCase()}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            </div>
+            <div className="flex justify-between items-center gap-3">
+              <div className="text-sm">Скруглить до пилюли</div>
+              <Toggle checked={authButtonRounded} onChange={setAuthButtonRounded} />
+            </div>
+            <div>
+              <Button size="sm" disabled={busy} onClick={saveButtonAppearance}>
+                Сохранить внешний вид
+              </Button>
+            </div>
+          </>
         )}
       </Card>
 
-      {!requireVerification && (
-        <>
-          <h2 className="text-base font-semibold mt-8">Подписка/переподписка для авторизованных клиентов</h2>
-          <p className="text-sm text-ink-muted mt-1">
-            На странице личного кабинета покупателя (где он уже авторизован в InSales) вызовите после подключения
-            нашего сниппета:
-          </p>
-          <CopyBox text={embedSnippet} />
-          <p className="text-[12.5px] text-ink-faint">
-            <code className="font-mono">ajaxAPI</code> — собственный JS API InSales, доступен на страницах магазина.{" "}
-            <code className="font-mono">PushSaaS.subscribe()</code> запрашивает разрешение на push,{" "}
-            <code className="font-mono">PushSaaS.identify(...)</code> привязывает устройство к телефону/почте без
-            кода (эндпоинт: <code className="font-mono">{appUrl}/api/public/identify</code>).
-          </p>
-        </>
-      )}
+      <h2 className="text-base font-semibold mt-8">Обогащение профиля для авторизованных клиентов</h2>
+      <p className="text-sm text-ink-muted mt-1">
+        На странице, где покупатель уже авторизован в InSales, можно вызвать после подключения нашего сниппета:
+      </p>
+      <CopyBox text={embedSnippet} />
+      <p className="text-[12.5px] text-ink-faint">
+        <code className="font-mono">ajaxAPI</code> — собственный JS API InSales, доступен на страницах магазина.{" "}
+        <code className="font-mono">PushSaaS.identify(...)</code> ничего не подделывает и не создаёт новую связку —
+        имя обновится, только если это устройство уже честно подтвердило присланный телефон или email кодом; всегда
+        безопасно (эндпоинт: <code className="font-mono">{appUrl}/api/public/identify</code>).
+      </p>
 
       {!projectDomain && (
         <Card className="mt-5 border-warn bg-warn-tint">
@@ -350,8 +422,8 @@ export default function AuthSettings({
 }
 
 function channelHint(key: ChannelKey, initial: Initial, has: boolean): string {
-  if (key === "push") return "устройства, привязанные к номеру";
-  if (key === "email") return has ? "ключ Haskimail сохранён · только для клиентов с известной почтой" : "нужен Server Token Haskimail · только для клиентов с известной почтой";
+  if (key === "push") return "уже узнанные устройства — по телефону или по почте";
+  if (key === "email") return has ? "ключ Haskimail сохранён · код на введённый адрес" : "нужен Server Token Haskimail · код на введённый адрес";
   if (key === "telegram") return has ? "токен сохранён" : "нужен токен (см. docs/telegram-gateway.md)";
   return has ? "ключ сохранён" : "нужен X-Service-Key из кабинета Bytehand";
 }

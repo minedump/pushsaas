@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { getOidcContext, issuerFor, oidcLog } from "@/lib/oidc";
+import { getOidcContext, issuerFor } from "@/lib/oidc";
 
 // /.well-known/openid-configuration (rewrite в next.config.mjs)
-export async function GET(req: Request, ctx: { params: Promise<{ projectId: string }> }) {
+// Без логирования успешных обращений — InSales дёргает discovery очень часто
+// (кэшируется на 5 минут, см. заголовок ниже), логи на каждый хит только шумят.
+export async function GET(_req: Request, ctx: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await ctx.params;
   const oidc = await getOidcContext(projectId);
-  oidcLog("discovery", { projectId, found: !!oidc, ua: req.headers.get("user-agent") || "" });
   if (!oidc || !oidc.isEnabled) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   const issuer = issuerFor(projectId);

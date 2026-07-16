@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import {
   IconBell,
+  IconBellRinging,
   IconPlus,
   IconHistory,
   IconLayoutDashboard,
@@ -122,6 +123,7 @@ export default function AdminShell({
                   <NavLink href={p("/billing")} label="Биллинг" active={pathname.endsWith("/billing")} icon={IconCreditCard} />
                   <NavLink href={p("/api")} label="API" active={pathname.endsWith("/api")} icon={IconCode} />
                   <NavLink href={p("/auth")} label="Вход по телефону" active={pathname.endsWith("/auth")} icon={IconPhone} />
+                  <NavLink href={p("/widget")} label="Кнопка и виджет" active={pathname.endsWith("/widget")} icon={IconBellRinging} />
                 </>
               )}
               {isAdmin && (

@@ -26,17 +26,23 @@ export async function POST(req: Request) {
   if (!projectId || !ticket) return NextResponse.json({ error: "bad payload" }, { status: 400, headers: CORS });
 
   const admin = createAdminClient();
+  // Одним atomic update...returning: читаем и сразу помечаем потреблённым.
+  // Совпадёт только НЕ потреблённый и НЕ истёкший тикет — это же условие
+  // закрывает гонку двойного использования (раньше select и update шли
+  // отдельными round-trip'ами, между ними была щель).
   const { data: t } = await admin
     .from("link_tickets")
-    .select("id, identity_id, session_id, expires_at, consumed_at")
+    .update({ consumed_at: new Date().toISOString() })
     .eq("id", ticket)
     .eq("project_id", projectId)
+    .is("consumed_at", null)
+    .gt("expires_at", new Date().toISOString())
+    .select("id, identity_id, session_id")
     .maybeSingle();
 
-  if (!t || t.consumed_at || new Date(t.expires_at) < new Date()) {
+  if (!t) {
     return NextResponse.json({ error: "expired" }, { status: 410, headers: CORS });
   }
-  await admin.from("link_tickets").update({ consumed_at: new Date().toISOString() }).eq("id", t.id);
 
   // Чьё это устройство — только по валидному device_token этого проекта
   let subscriberId: string | null = null;

@@ -3,6 +3,13 @@ import { createAdminClient } from "@/lib/supabase/admin";
 // Serves the per-project subscribe widget as JavaScript.
 // The client embeds:  <script src="https://APP/embed/PROJECT_ID.js" async></script>
 // The public VAPID key is baked in; nothing secret is exposed.
+//
+// This is the CORE script — window.PushSaaS.{subscribe,identify,event,
+// isSubscribed,isAuthenticated} plus automatic, non-optional plumbing
+// (отскок привязки устройства, атрибуция кликов). The floating subscribe
+// BUTTON, the slide-in PROMPT, and the native-login-button visibility
+// control are separate, optional scripts — see /embed/[projectId]/widgets.js
+// and /embed/[projectId]/auth-button.js.
 export async function GET(_req: Request, ctx: { params: Promise<{ projectId: string }> }) {
   const { projectId: raw } = await ctx.params;
   const projectId = raw.replace(/\.js$/, "");
@@ -75,6 +82,9 @@ function widget(
   var DT_KEY = "pss_dt_" + PROJECT_ID;
   function deviceToken(){ try { return localStorage.getItem(DT_KEY); } catch(e){ return null; } }
 
+  // PushSaaS.subscribe() — запрашивает разрешение на push и подписывает это
+  // устройство. Ничего не знает о кнопке/разметке — визуальный отклик после
+  // подписки (если он нужен) обязанность вызывающего кода, см. widgets.js.
   async function subscribe(){
     if(!supported()){ alert("Ваш браузер не поддерживает push. На iPhone: добавьте сайт на экран «Домой» и откройте оттуда."); return; }
     var reg = await navigator.serviceWorker.register("/service-worker.js");
@@ -90,15 +100,6 @@ function widget(
       var data = await res.json();
       if(data && data.deviceToken) localStorage.setItem(DT_KEY, data.deviceToken);
     } catch(e){}
-    var btn = document.getElementById("pushsaas-btn");
-    if(btn){ btn.innerHTML = CHECK + '<span>Вы подписаны</span>'; btn.disabled = true; }
-
-    // Покупатель уже авторизован в InSales — привязываем телефон/почту сразу,
-    // без отдельного клика. Молча ничего не делает, если проект не включил
-    // доверие к сессии магазина (сервер ответит verification_required).
-    getInsalesClient().then(function(client){
-      if(client) return identify({ phone: client.phone, email: client.email, name: client.name });
-    }).catch(function(){});
   }
 
   // Отскок привязки телефона: страница входа PushSaaS вернула браузер на
@@ -121,13 +122,10 @@ function widget(
     });
   })();
 
-  var BELL = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5a2 2 0 0 1 4 0a7 7 0 0 1 4 6v3a4 4 0 0 0 2 3h-16a4 4 0 0 0 2 -3v-3a7 7 0 0 1 4 -6"></path><path d="M9 17v1a3 3 0 0 0 6 0v-1"></path></svg>';
-  var CHECK = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5l10 -10"></path></svg>';
-
-  // Event tracker: pushsaas('event','cart_updated',{...}). Attaches the current
-  // device via its push subscription endpoint; only tracks opted-in devices.
-  function track(type, name, payload){
-    if(type !== "event" || !name || !supported()) return;
+  // PushSaaS.event(name, payload). Attaches the current device via its push
+  // subscription endpoint; only tracks opted-in devices.
+  function track(name, payload){
+    if(!name || !supported()) return;
     navigator.serviceWorker.ready
       .then(function(r){ return r.pushManager.getSubscription(); })
       .then(function(sub){
@@ -139,108 +137,63 @@ function widget(
       .catch(function(){});
   }
 
-  // identify: PushSaaS.identify({phone, email, name}) — вызывается ТЕМОЙ
-  // магазина на странице, где покупатель уже авторизован (после
-  // ajaxAPI.shop.client.get()). Требует активной push-подписки этого браузера.
-  // Работает только если владелец проекта явно включил доверие к сессии
-  // магазина (иначе сервер ответит ошибкой verification_required).
+  // PushSaaS.identify({phone, email, name, external_id}) — вызывается ТЕМОЙ
+  // магазина вручную (например, на странице, где покупатель уже авторизован —
+  // после ajaxAPI.shop.client.get()). Требует активной push-подписки этого
+  // браузера. НЕ создаёт новую связку ключ↔устройство — это только
+  // обогащение: name и external_id применятся, только если это устройство
+  // уже честно привязано к присланному phone ИЛИ к присланному email через
+  // код (независимо друг от друга — см. /api/public/identify).
   function identify(data){
-    if(!supported() || !data || !data.phone) return Promise.reject(new Error("no phone"));
+    if(!supported() || !data) return Promise.reject(new Error("no data"));
     return navigator.serviceWorker.ready
       .then(function(r){ return r.pushManager.getSubscription(); })
       .then(function(sub){
         if(!sub) return Promise.reject(new Error("not subscribed — call PushSaaS.subscribe() first"));
         return fetch(API + "/api/public/identify", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId: PROJECT_ID, endpoint: sub.endpoint, phone: data.phone, email: data.email, name: data.name })
+          body: JSON.stringify({
+            projectId: PROJECT_ID, endpoint: sub.endpoint,
+            phone: data.phone, email: data.email, name: data.name,
+            external_id: data.external_id || data.externalId
+          })
         }).then(function(r){ return r.json(); });
       });
   }
 
-  // Авто-детект InSales: ajaxAPI грузится самим InSales на каждой странице
-  // магазина (common.v2.js), никакой интеграции со стороны темы не нужно.
-  // Если покупатель авторизован — забираем его телефон/почту сами.
-  function getInsalesClient(){
-    try {
-      if(!window.ajaxAPI || !window.ajaxAPI.shop || !window.ajaxAPI.shop.client || typeof window.ajaxAPI.shop.client.get !== "function") {
-        return Promise.resolve(null);
-      }
-      return new Promise(function(resolve){
-        window.ajaxAPI.shop.client.get()
-          .done(function(d){ resolve((d && d.authorized && d.phone) ? d : null); })
-          .fail(function(){ resolve(null); });
-      });
-    } catch(e){ return Promise.resolve(null); }
+  // PushSaaS.isSubscribed() — есть ли у ЭТОГО браузера активная push-подписка.
+  // Проверка целиком клиентская (сам браузер — источник истины), сети не требует.
+  function isSubscribed(){
+    if(!supported() || !navigator.serviceWorker.getRegistration) return Promise.resolve(false);
+    return navigator.serviceWorker.getRegistration("/service-worker.js")
+      .then(function(reg){ return reg ? reg.pushManager.getSubscription() : null; })
+      .then(function(sub){ return !!sub; })
+      .catch(function(){ return false; });
   }
 
-  window.pushsaas = track;
-  window.PushSaaS = { subscribe: subscribe, event: function(name, payload){ track("event", name, payload); }, identify: identify };
-
-  // Auto-inject a floating button unless the host opts out with data-pushsaas="manual".
-  function ready(fn){ if(document.readyState!=="loading") fn(); else document.addEventListener("DOMContentLoaded", fn); }
-  ready(function(){
-    var current = document.currentScript;
-    var manual = document.querySelector('[data-pushsaas="manual"]');
-    if(manual) return;
-    if(!supported()) return;
-    var btn = document.createElement("button");
-    btn.id = "pushsaas-btn";
-    btn.innerHTML = BELL + '<span>Уведомления</span>';
-    btn.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:99999;display:inline-flex;align-items:center;gap:8px;padding:12px 18px;border:none;border-radius:24px;background:#2c4a66;color:#fff;font:600 14px/1 -apple-system,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.2);cursor:pointer";
-    btn.addEventListener("click", subscribe);
-    document.body.appendChild(btn);
-  });
-
-  // Возврат авторизованного покупателя, который уже подписан на этом
-  // устройстве: тихо освежаем телефон/почту, без нового запроса разрешения
-  // (Notification.requestPermission можно вызвать только по клику, а тут его
-  // и не требуется — подписка уже есть).
-  ready(function(){
-    if(!supported()) return;
-    navigator.serviceWorker.getRegistration()
-      .then(function(reg){ return reg && reg.pushManager.getSubscription(); })
-      .then(function(sub){ return sub && getInsalesClient(); })
-      .then(function(client){
-        if(client) return identify({ phone: client.phone, email: client.email, name: client.name });
-      })
-      .catch(function(){});
-  });
-
-  // Прячем нативную кнопку InSales «Войти через <наше приложение>», если её
-  // сейчас лучше не показывать (см. /api/public/login-visibility): при
-  // выключенном тумбле подтверждения — только если у этого устройства нет
-  // связки с телефоном (иначе вход мгновенно и без объяснений откажет).
-  // При включённом тумбле — не трогаем, всегда показана (вход сработает
-  // через email/Telegram/SMS даже без готовой связки).
-  // Прячем ТОЛЬКО OIDC-ссылки (a[href*=/open_id]), а не весь блок — рядом
-  // могут быть чужие кнопки (VK ID и т.п.), их трогать нельзя.
-  // Fail-safe: любая ошибка — оставляем кнопки как есть, не прячем.
-  ready(function(){
-    var loginBlock = document.querySelector(".co-login--social_login");
-    if(!loginBlock) return;
-    var oidcLinks = loginBlock.querySelectorAll('a[href*="/open_id"]');
-    if(!oidcLinks.length) return;
-    function currentEndpoint(){
-      if(!("serviceWorker" in navigator)) return Promise.resolve(null);
-      return navigator.serviceWorker.getRegistration()
-        .then(function(reg){ return reg && reg.pushManager.getSubscription(); })
-        .then(function(sub){ return sub ? sub.endpoint : null; })
-        .catch(function(){ return null; });
-    }
-    currentEndpoint()
-      .then(function(ep){
-        return fetch(API + "/api/public/login-visibility", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId: PROJECT_ID, endpoint: ep })
+  // PushSaaS.isAuthenticated() — привязано ли ЭТО устройство к телефону
+  // и/или к email, независимо подтверждённым реальным кодом (через
+  // /oidc/*/auth). { authenticated, phone, email } — без самих значений,
+  // только факт привязки; phone и email могут быть true одновременно,
+  // по отдельности или оба false.
+  function isAuthenticated(){
+    if(!supported() || !navigator.serviceWorker.getRegistration) return Promise.resolve({ authenticated:false, phone:false, email:false });
+    return navigator.serviceWorker.getRegistration("/service-worker.js")
+      .then(function(reg){ return reg ? reg.pushManager.getSubscription() : null; })
+      .then(function(sub){
+        if(!sub) return { authenticated:false, phone:false, email:false };
+        return fetch(API + "/api/public/status", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ projectId: PROJECT_ID, endpoint: sub.endpoint })
         }).then(function(r){ return r.json(); });
       })
-      .then(function(d){
-        if(d && d.show === false){
-          oidcLinks.forEach(function(a){ a.style.display = "none"; });
-        }
-      })
-      .catch(function(){});
-  });
+      .catch(function(){ return { authenticated:false, phone:false, email:false }; });
+  }
+
+  window.PushSaaS = {
+    subscribe: subscribe, event: track, identify: identify,
+    isSubscribed: isSubscribed, isAuthenticated: isAuthenticated
+  };
 })();`;
 }
 

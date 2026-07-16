@@ -164,7 +164,7 @@ export default function AutomationsManager({
       <h2 className="text-base font-semibold mt-8">Событийные (брошенная корзина и др.)</h2>
       <p className="text-ink-muted text-[13px]">
         Ловим событие, ждём заданное время и, если не пришло «отменяющее» событие, шлём пуш.
-        События сайт отправляет через <code className="font-mono">pushsaas(&apos;event&apos;, &apos;имя&apos;)</code>.
+        События сайт отправляет через <code className="font-mono">PushSaaS.event(&apos;имя&apos;)</code>.
       </p>
 
       {events.map((a) => (

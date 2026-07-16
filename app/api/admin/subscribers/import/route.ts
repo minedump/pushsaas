@@ -5,9 +5,10 @@ import { normalizePhone } from "@/lib/phone";
 
 // Enrich subscribers from a CSV the merchant uploaded. `keyColumn` names the
 // CSV column used to find the subscriber; `matchAgainst` says how to look it
-// up: "phone" (via identities), or the name of an existing subscribers.attributes
-// key (e.g. "external_id") to match by. Every other column merges into
-// subscribers.attributes (rolling merge — same as event tracking does).
+// up: "phone" or "email" (both via identities), or the name of an existing
+// subscribers.attributes key (e.g. "external_id") to match by. Every other
+// column merges into subscribers.attributes (rolling merge — same as event
+// tracking does).
 export async function POST(req: Request) {
   const { projectId, keyColumn, matchAgainst, rows } = (await req.json().catch(() => ({}))) as {
     projectId?: string;
@@ -38,19 +39,26 @@ export async function POST(req: Request) {
     }
 
     let subscriberIds: string[] = [];
-    if (matchAgainst === "phone") {
-      const phone = normalizePhone(rawKey);
-      if (phone) {
-        const { data: identity } = await admin
+    if (matchAgainst === "phone" || matchAgainst === "email") {
+      let identity: { id: string } | null = null;
+      if (matchAgainst === "phone") {
+        const phone = normalizePhone(rawKey);
+        if (phone) {
+          const { data } = await admin.from("identities").select("id").eq("project_id", projectId).eq("phone", phone).maybeSingle();
+          identity = data;
+        }
+      } else {
+        const { data } = await admin
           .from("identities")
           .select("id")
           .eq("project_id", projectId)
-          .eq("phone", phone)
+          .eq("email", rawKey.trim().toLowerCase())
           .maybeSingle();
-        if (identity) {
-          const { data: links } = await admin.from("identity_devices").select("subscriber_id").eq("identity_id", identity.id);
-          subscriberIds = (links || []).map((l) => l.subscriber_id);
-        }
+        identity = data;
+      }
+      if (identity) {
+        const { data: links } = await admin.from("identity_devices").select("subscriber_id").eq("identity_id", identity.id);
+        subscriberIds = (links || []).map((l) => l.subscriber_id);
       }
     } else {
       const { data: subs } = await admin

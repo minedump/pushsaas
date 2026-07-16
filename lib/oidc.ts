@@ -46,9 +46,14 @@ export type OidcContext = {
   config: {
     channels?: { push?: boolean; email?: boolean; telegram?: boolean; sms?: boolean };
     channel_order?: string[];
-    require_phone_verification?: boolean;
     sms_sender?: string;
     email_from?: string;
+    hide_native_login_button?: boolean;
+    auth_button_text?: string | null;
+    auth_button_icon?: string | null;
+    auth_button_color?: string | null;
+    auth_button_size?: "s" | "m" | "l" | "xl" | null;
+    auth_button_rounded?: boolean;
   };
   privateKeyPem: string;
   clientSecretHash: string;
@@ -137,18 +142,23 @@ export type IdentityClaims = {
   email_verified?: boolean;
 };
 
+// Отдаём в claims РОВНО тот ключ, что подтверждён кодом — никогда оба:
+// флоу входа просит подтвердить либо телефон, либо email за один раз,
+// никогда оба сразу, так что второе поле на identity (если оно вообще
+// есть — например, email из вебхука заказа рядом с подтверждённым
+// телефоном) остаётся непроверенным и в токен не идёт.
 export function buildClaims(identity: {
   id: string;
-  phone: string;
+  phone: string | null;
   name: string | null;
   email: string | null;
+  emailVerified?: boolean;
 }): IdentityClaims {
   return {
     sub: identity.id,
-    phone_number: "+" + identity.phone,
-    phone_number_verified: true,
+    ...(identity.phone ? { phone_number: "+" + identity.phone, phone_number_verified: true } : {}),
     ...(identity.name ? { name: identity.name } : {}),
-    ...(identity.email ? { email: identity.email, email_verified: false } : {}),
+    ...(identity.email && identity.emailVerified ? { email: identity.email, email_verified: true } : {}),
   };
 }
 

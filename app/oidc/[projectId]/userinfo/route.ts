@@ -27,7 +27,7 @@ async function handle(req: Request, projectId: string, bodyToken?: string) {
 
   const { data: identity } = await admin
     .from("identities")
-    .select("id, phone, name, email")
+    .select("id, phone, name, email, email_verified_at")
     .eq("id", session.identity_id!)
     .single();
   if (!identity) {
@@ -35,8 +35,7 @@ async function handle(req: Request, projectId: string, bodyToken?: string) {
     return unauthorized();
   }
 
-  oidcLog("userinfo", { projectId, ua, outcome: "ok" });
-  return NextResponse.json(buildClaims(identity));
+  return NextResponse.json(buildClaims({ ...identity, emailVerified: !!identity.email_verified_at }));
 }
 
 function unauthorized() {

@@ -134,7 +134,8 @@ export default function ExportImport({ projectId }: { projectId: string }) {
               <Label>Сопоставлять с</Label>
               <Select value={matchAgainst} onChange={(e) => setMatchAgainst(e.target.value)} className="w-full">
                 <option value="phone">Телефон подписчика</option>
-                <option value="custom">Свой атрибут…</option>
+                <option value="email">Email подписчика</option>
+                <option value="custom">Свой атрибут (external_id и т.п.)…</option>
               </Select>
             </div>
 

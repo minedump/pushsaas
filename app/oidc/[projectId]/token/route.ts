@@ -49,7 +49,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ projectId: str
 
   const { data: identity } = await admin
     .from("identities")
-    .select("id, phone, name, email")
+    .select("id, phone, name, email, email_verified_at")
     .eq("id", session.identity_id!)
     .single();
   if (!identity) {
@@ -68,7 +68,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ projectId: str
     })
     .eq("id", session.id);
 
-  const idToken = await signIdToken(oidc, buildClaims(identity), session.nonce);
+  const idToken = await signIdToken(oidc, buildClaims({ ...identity, emailVerified: !!identity.email_verified_at }), session.nonce);
   oidcLog("token", { projectId, ua, authVia, outcome: "ok", hasEmail: !!identity.email });
 
   return NextResponse.json({

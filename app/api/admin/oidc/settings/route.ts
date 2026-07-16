@@ -3,7 +3,7 @@ import { assertProjectAccess } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 // Настройки входа по телефону: каналы каскада + их порядок, подпись SMS,
-// email-отправитель, требование подтверждения владения телефоном, токены каналов.
+// email-отправитель, видимость нативной кнопки InSales, токены каналов.
 // Токены: непустая строка — сохранить; null — стереть; отсутствие поля — не трогать.
 export async function POST(req: Request) {
   const {
@@ -11,7 +11,12 @@ export async function POST(req: Request) {
     isEnabled,
     channels,
     channelOrder,
-    requirePhoneVerification,
+    hideNativeLoginButton,
+    authButtonText,
+    authButtonIcon,
+    authButtonColor,
+    authButtonSize,
+    authButtonRounded,
     smsSender,
     emailFrom,
     telegramToken,
@@ -56,7 +61,15 @@ export async function POST(req: Request) {
     config.channels = nextChannels;
   }
   if (Array.isArray(channelOrder)) config.channel_order = channelOrder.filter((c: unknown) => typeof c === "string");
-  if (requirePhoneVerification !== undefined) config.require_phone_verification = !!requirePhoneVerification;
+  if (hideNativeLoginButton !== undefined) config.hide_native_login_button = !!hideNativeLoginButton;
+  if (authButtonText !== undefined) config.auth_button_text = (authButtonText || "").trim() || null;
+  if (authButtonIcon !== undefined) config.auth_button_icon = (authButtonIcon || "").trim() || null;
+  if (authButtonColor !== undefined) {
+    const c = (authButtonColor || "").trim();
+    config.auth_button_color = /^#[0-9a-fA-F]{3,8}$/.test(c) ? c : null;
+  }
+  if (authButtonSize !== undefined) config.auth_button_size = ["s", "m", "l", "xl"].includes(authButtonSize) ? authButtonSize : null;
+  if (authButtonRounded !== undefined) config.auth_button_rounded = !!authButtonRounded;
   if (smsSender !== undefined) config.sms_sender = smsSender || null;
   if (emailFrom !== undefined) config.email_from = emailFrom || null;
 

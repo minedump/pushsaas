@@ -38,19 +38,26 @@ export async function GET(req: Request) {
   }
 
   const phoneById = new Map<string, string>();
+  const emailById = new Map<string, string>();
   if (rows.length) {
     const { data: links } = await admin
       .from("identity_devices")
-      .select("subscriber_id, identities!inner(phone)")
+      .select("subscriber_id, identities!inner(phone, email)")
       .in("subscriber_id", rows.map((r) => r.id));
     for (const l of links ?? []) {
-      const phone = (l.identities as unknown as { phone: string })?.phone;
-      if (phone) phoneById.set(l.subscriber_id, phone);
+      const ident = l.identities as unknown as { phone: string; email: string | null };
+      if (ident?.phone) phoneById.set(l.subscriber_id, ident.phone);
+      if (ident?.email) emailById.set(l.subscriber_id, ident.email);
     }
   }
 
-  const attrKeys = [...new Set(rows.flatMap((r) => Object.keys((r.attributes as object) || {})))];
-  const header = ["id", "phone", "platform", "tags", "is_active", "paused", "created_at", ...attrKeys];
+  // external_id — отдельная колонка сразу после email (не только внутри
+  // общего дампа attrKeys), чтобы её было видно без прокрутки; остальные
+  // attributes идут следом как есть.
+  const attrKeys = [...new Set(rows.flatMap((r) => Object.keys((r.attributes as object) || {})))].filter(
+    (k) => k !== "external_id" && k !== "externalId"
+  );
+  const header = ["id", "phone", "email", "external_id", "platform", "tags", "is_active", "paused", "created_at", ...attrKeys];
 
   const lines = [header.join(",")];
   for (const r of rows) {
@@ -58,6 +65,8 @@ export async function GET(req: Request) {
     const line = [
       r.id,
       phoneById.get(r.id) || "",
+      emailById.get(r.id) || "",
+      attrs.external_id ?? attrs.externalId ?? "",
       r.platform,
       (r.tags || []).join("|"),
       r.is_active,

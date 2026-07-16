@@ -3,22 +3,22 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizePhone } from "@/lib/phone";
 import { checkRateLimit } from "@/lib/ratelimit";
 
-// Public "trust the storefront session" identity linking — called by the
-// merchant's OWN theme JS after ajaxAPI.shop.client.get() (InSales), via
-// window.PushSaaS.identify({phone,email,name}) in the embed widget.
+// Public "enrich my own subscription" endpoint — called by the merchant's OWN
+// theme JS (window.PushSaaS.identify({phone,email,name,external_id})), e.g.
+// after ajaxAPI.shop.client.get() for an authenticated InSales customer.
 //
-// Two distinct cases:
-//   1. This device is ALREADY linked to this exact phone (it went through a
-//      real OTP at some point) — always allowed, this call is just refreshing
-//      email/name on an identity we've already honestly verified. No new trust
-//      is being granted, so the toggle below doesn't apply.
-//   2. This would be a NEW (phone, device) claim — gated by the project's
-//      `require_phone_verification` toggle (default true = OFF/disabled here).
-//      Turning it off means we trust whatever phone is POSTed here WITHOUT our
-//      own OTP check — since this endpoint is public and keyed only by
-//      projectId, anyone who can reach it can claim ANY phone for their own
-//      push device. A poisoned identity_devices row then receives that
-//      phone's login codes (account takeover) — hence the secure default.
+// This does NOT create new trust. Linking a phone OR email to a device — the
+// thing that lets that device receive that key's login codes — only ever
+// happens through a real OTP in the /oidc/*/auth flow (see lib/otp.sendOtp,
+// keyed by phone or by email symmetrically). Two things happen here:
+//   1. name refreshes on the identity — ONLY if this exact device is already
+//      linked to an identity where the SPECIFIC key sent (phone or email)
+//      was itself the one verified — phone via phone_verified_at, email via
+//      email_verified_at. Sending a phone this device never verified, or an
+//      email this device never verified, matches nothing — silently, no
+//      error, no new binding; the caller just doesn't get what it didn't earn.
+//   2. external_id refreshes on this device's own attributes — under the
+//      SAME gate as name: only if the sent key was verified for this device.
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -30,16 +30,18 @@ export async function OPTIONS() {
 }
 
 export async function POST(req: Request) {
-  const { projectId, endpoint, phone, email, name } = (await req.json().catch(() => ({}))) as {
+  const { projectId, endpoint, phone, email, name, external_id, externalId } = (await req.json().catch(() => ({}))) as {
     projectId?: string;
     endpoint?: string;
     phone?: string;
     email?: string;
     name?: string;
+    external_id?: string;
+    externalId?: string;
   };
 
-  if (!projectId || !endpoint || !phone) {
-    return NextResponse.json({ error: "projectId, endpoint, phone required" }, { status: 400, headers: CORS });
+  if (!projectId || !endpoint) {
+    return NextResponse.json({ error: "projectId, endpoint required" }, { status: 400, headers: CORS });
   }
 
   const admin = createAdminClient();
@@ -48,88 +50,88 @@ export async function POST(req: Request) {
   const allowed = await checkRateLimit(`identify:${projectId}:${ip}`, 60_000, 20);
   if (!allowed) return NextResponse.json({ error: "too many requests" }, { status: 429, headers: CORS });
 
-  const { data: oidc } = await admin
-    .from("oidc_clients")
-    .select("is_enabled, config")
-    .eq("project_id", projectId)
-    .maybeSingle();
-  if (!oidc?.is_enabled) {
-    return NextResponse.json({ error: "phone auth not enabled for this project" }, { status: 403, headers: CORS });
-  }
-
-  const phoneDigits = normalizePhone(phone);
-  if (!phoneDigits) return NextResponse.json({ error: "invalid phone" }, { status: 400, headers: CORS });
-
   const { data: subscriber } = await admin
     .from("subscribers")
-    .select("id")
+    .select("id, attributes")
     .eq("project_id", projectId)
     .eq("endpoint", endpoint)
     .eq("is_active", true)
     .maybeSingle();
   if (!subscriber) return NextResponse.json({ error: "unknown device — subscribe first" }, { status: 404, headers: CORS });
-
-  // случай 1: устройство уже честно привязано именно к этому телефону —
-  // это просто обновление email/имени, доверие не расширяется.
-  const { data: existingIdentity } = await admin
-    .from("identities")
-    .select("id")
-    .eq("project_id", projectId)
-    .eq("phone", phoneDigits)
-    .not("phone_verified_at", "is", null)
-    .maybeSingle();
-  let alreadyLinked = false;
-  if (existingIdentity) {
-    const { data: link } = await admin
-      .from("identity_devices")
-      .select("identity_id")
-      .eq("identity_id", existingIdentity.id)
-      .eq("subscriber_id", subscriber.id)
-      .maybeSingle();
-    alreadyLinked = !!link;
-  }
-
-  // случай 2: новая заявка на связку — решает тумблер проекта.
-  if (!alreadyLinked && oidc.config?.require_phone_verification !== false) {
-    return NextResponse.json({ error: "verification_required" }, { status: 403, headers: CORS });
-  }
+  const subscriberId = subscriber.id;
+  const extId = (external_id ?? externalId ?? "").toString().trim();
 
   const cleanEmail = (email || "").trim().toLowerCase();
   const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail) ? cleanEmail : null;
+  const cleanName = name?.trim() || undefined;
+  const phoneDigits = phone ? normalizePhone(phone) : null;
 
-  const baseRow = {
-    project_id: projectId,
-    phone: phoneDigits,
-    phone_verified_at: new Date().toISOString(),
-    ...(validEmail ? { email: validEmail } : {}),
-    ...(name?.trim() ? { name: name.trim() } : {}),
-    updated_at: new Date().toISOString(),
-  };
-  // best-effort: verification_source (миграция 0010, чисто аудиторное поле) —
-  // если колонки ещё нет, откатываемся на upsert без него, а не 500-им весь запрос.
-  let identity = null as { id: string } | null;
-  {
-    const { data, error } = await admin
-      .from("identities")
-      .upsert({ ...baseRow, verification_source: "insales_session" }, { onConflict: "project_id,phone" })
-      .select("id")
-      .single();
-    if (!error) identity = data;
-    else {
-      const { data: fallback } = await admin
+  // Матчим строго по ключу, который сам был доказан для ЭТОГО устройства —
+  // подтверждённый телефон, ИЛИ (независимо) подтверждённый email — той же
+  // веткой каскада входа, что и телефон, просто по другому ключу. Один
+  // запрос с caller'ом, отправившим И phone И email, не даёт "два шанса" на
+  // один и тот же чужой аккаунт — каждая ветка бьёт только в свою identity и
+  // требует свою собственную честную привязку устройства.
+  async function verifiedLinkedIdentity(): Promise<{ id: string } | null> {
+    if (phoneDigits) {
+      const { data: identity } = await admin
         .from("identities")
-        .upsert(baseRow, { onConflict: "project_id,phone" })
         .select("id")
-        .single();
-      identity = fallback;
+        .eq("project_id", projectId)
+        .eq("phone", phoneDigits)
+        .not("phone_verified_at", "is", null)
+        .maybeSingle();
+      if (identity) {
+        const { data: link } = await admin
+          .from("identity_devices")
+          .select("identity_id")
+          .eq("identity_id", identity.id)
+          .eq("subscriber_id", subscriberId)
+          .maybeSingle();
+        if (link) return identity;
+      }
     }
+    if (validEmail) {
+      const { data: identity } = await admin
+        .from("identities")
+        .select("id")
+        .eq("project_id", projectId)
+        .eq("email", validEmail)
+        .not("email_verified_at", "is", null)
+        .maybeSingle();
+      if (identity) {
+        const { data: link } = await admin
+          .from("identity_devices")
+          .select("identity_id")
+          .eq("identity_id", identity.id)
+          .eq("subscriber_id", subscriberId)
+          .maybeSingle();
+        if (link) return identity;
+      }
+    }
+    return null;
   }
-  if (!identity) return NextResponse.json({ error: "identify failed" }, { status: 500, headers: CORS });
 
-  await admin.from("identity_devices").upsert(
-    { identity_id: identity.id, subscriber_id: subscriber.id, last_used_at: new Date().toISOString() },
-    { onConflict: "identity_id,subscriber_id" }
-  );
+  let identityRefreshed = false;
+  const identity = await verifiedLinkedIdentity();
+  if (identity) {
+    // email пишем сюда только если match произошёл по телефону (email тогда
+    // ещё не доказан для этой identity — как и раньше, просто ассоциация).
+    // При match по email — он и так уже здесь, дописывать нечего.
+    const emailPatch = phoneDigits && validEmail ? { email: validEmail } : {};
+    if (cleanName || Object.keys(emailPatch).length) {
+      await admin
+        .from("identities")
+        .update({ ...emailPatch, ...(cleanName ? { name: cleanName } : {}), updated_at: new Date().toISOString() })
+        .eq("id", identity.id);
+    }
+    await admin.from("identity_devices").update({ last_used_at: new Date().toISOString() }).eq("identity_id", identity.id).eq("subscriber_id", subscriberId);
+    if (extId) {
+      const merged = { ...((subscriber.attributes as object) || {}), external_id: extId };
+      await admin.from("subscribers").update({ attributes: merged }).eq("id", subscriberId);
+    }
+    identityRefreshed = true;
+  }
 
-  return NextResponse.json({ ok: true }, { headers: CORS });
+  return NextResponse.json({ ok: true, identityRefreshed }, { headers: CORS });
 }

@@ -1,6 +1,5 @@
 import crypto from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { oidcLog } from "@/lib/oidc";
 
 // Выпуск authorization code + редирект обратно к RP (InSales).
 // Вызывается из /oidc/[id]/auth (без отскока) и /oidc/[id]/continue (после).
@@ -28,6 +27,5 @@ export async function issueCodeAndRedirect(sessionId: string): Promise<Response>
   const target = new URL(session.redirect_uri);
   target.searchParams.set("code", code);
   if (session.state) target.searchParams.set("state", session.state);
-  oidcLog("auth:code_issued", { sessionId, redirectHost: target.hostname });
   return Response.redirect(target.toString(), 302);
 }
