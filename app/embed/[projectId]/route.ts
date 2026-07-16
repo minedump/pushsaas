@@ -122,6 +122,20 @@ function widget(
     });
   })();
 
+  // Возврат со страницы кода PushSaaS: ?pss_auth_failed=1 — авторизация не
+  // состоялась по тех. причине на нашей стороне (см. otp-status/route.ts),
+  // не обычный отскок. Ничего не переподписываем и не трогаем deviceToken —
+  // только убираем маркер из адресной строки, чтобы страница логина
+  // магазина показалась пользователю чистой для повторной попытки.
+  (function handleAuthFailed(){
+    var url;
+    try { url = new URL(location.href); } catch(e){ return; }
+    if(url.searchParams.get("pss_auth_failed") !== "1") return;
+    console.warn("[PushSaaS] авторизация не удалась по технической причине, попробуйте другой способ входа");
+    url.searchParams.delete("pss_auth_failed");
+    history.replaceState(null, "", url.toString());
+  })();
+
   // PushSaaS.event(name, payload). Attaches the current device via its push
   // subscription endpoint; only tracks opted-in devices.
   function track(name, payload){

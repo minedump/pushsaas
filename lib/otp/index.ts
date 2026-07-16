@@ -4,6 +4,7 @@ import { sendPush } from "@/lib/webpush";
 import { checkSendAbility, sendTelegramCode } from "./telegram";
 import { sendSms } from "./sms";
 import { sendEmailCode } from "./haskimail";
+import { isRuCisPhone } from "@/lib/phone";
 
 // Единый каскад для ОДНОГО известного ключа входа — телефон ИЛИ email
 // (никогда оба сразу: у нас нет флоу, который просит подтвердить оба и
@@ -19,6 +20,11 @@ import { sendEmailCode } from "./haskimail";
 // Email больше не подставляется автоматически из вебхука заказа — если
 // каскад дошёл до email, страница входа явно ПРОСИТ ввести адрес (см.
 // auth/route.ts) и код идёт именно на введённое.
+//
+// SMS и Telegram — платные за попытку и рассчитаны на РФ/СНГ; для номеров
+// вне этого списка они пропускаются без обращения к провайдеру (см.
+// isRuCisPhone), каскад просто идёт дальше — обычно к email-фолбэку на
+// странице входа. Push и email этим не ограничены.
 
 const OTP_TTL_MS = 5 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
@@ -32,7 +38,8 @@ export type ChannelSkipReason =
   | "not_configured" // канал выключен в проекте или для него нет ключа
   | "no_subscription" // push: нет привязанного активного устройства
   | "provider_error" // sms/telegram: внешний сервис отказал/ошибся
-  | "send_failed"; // попытка была, доставка не подтвердилась
+  | "send_failed" // попытка была, доставка не подтвердилась
+  | "country_not_allowed"; // sms/telegram: номер не РФ/СНГ — не шлём вовсе
 
 export type ChannelAttempt = { channel: OtpChannel; ok: boolean; reason?: ChannelSkipReason };
 
@@ -153,6 +160,7 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
   const configuredOrder = resolveOrder(oidcClient?.config?.channel_order).filter((c) => applicable.includes(c));
   const tryOrder: OtpChannel[] = opts.forceChannel ? [opts.forceChannel] : configuredOrder;
   let channel: OtpChannel | null = null;
+  let providerMessageId: string | undefined;
 
   for (const ch of tryOrder) {
     if (ch === "push") {
@@ -180,6 +188,10 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
         attempts.push({ channel: ch, ok: false, reason: "not_configured" });
         continue;
       }
+      if (!isRuCisPhone(key.phone)) {
+        attempts.push({ channel: ch, ok: false, reason: "country_not_allowed" });
+        continue;
+      }
       const reqId = await checkSendAbility(secrets.telegram_gateway_token, key.phone);
       if (!reqId) {
         attempts.push({ channel: ch, ok: false, reason: "provider_error" });
@@ -195,9 +207,13 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
         attempts.push({ channel: ch, ok: false, reason: "not_configured" });
         continue;
       }
+      if (!isRuCisPhone(key.phone)) {
+        attempts.push({ channel: ch, ok: false, reason: "country_not_allowed" });
+        continue;
+      }
       const sent = await sendSms(secrets.bytehand_service_key, key.phone, `Код подтверждения: ${code}`, smsSender);
-      attempts.push({ channel: ch, ok: sent, reason: sent ? undefined : "provider_error" });
-      if (sent) { channel = ch; break; }
+      attempts.push({ channel: ch, ok: sent.ok, reason: sent.ok ? undefined : "provider_error" });
+      if (sent.ok) { channel = ch; providerMessageId = sent.messageId; break; }
       continue;
     }
   }
@@ -211,6 +227,7 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
     email: isPhone ? null : key.email,
     code_hash: hashCode(otpId, code),
     channel,
+    provider_message_id: providerMessageId || null,
     expires_at: new Date(Date.now() + OTP_TTL_MS).toISOString(),
   });
 
@@ -293,7 +310,7 @@ export async function verifyOtp(otpId: string, code: string): Promise<VerifyOtpR
 // каналом — берёт самую полезную причину из попыток (провайдерская ошибка
 // важнее, чем «канал не настроен» — это то, что реально можно почитать).
 export function describeNoChannel(attempts: ChannelAttempt[]): string {
-  const priority: ChannelSkipReason[] = ["provider_error", "send_failed", "no_subscription", "not_configured"];
+  const priority: ChannelSkipReason[] = ["provider_error", "send_failed", "no_subscription", "country_not_allowed", "not_configured"];
   for (const reason of priority) {
     const hit = attempts.find((a) => a.reason === reason);
     if (!hit) continue;
@@ -303,6 +320,8 @@ export function describeNoChannel(attempts: ChannelAttempt[]): string {
         return "Не удалось отправить код — попробуйте ещё раз через минуту.";
       case "no_subscription":
         return "У вас ещё нет push-подписки на этом устройстве. Подпишитесь на уведомления на сайте магазина или попробуйте позже.";
+      case "country_not_allowed":
+        return "SMS и Telegram-код доступны только для номеров России и СНГ. Попробуйте войти по почте.";
       case "not_configured":
         return "Вход временно недоступен — магазин ещё не настроил ни один способ доставки кода.";
     }

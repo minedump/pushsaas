@@ -32,6 +32,10 @@ import { sendOtp, verifyOtp, resolveOrder, describeNoChannel, findIdentityByDevi
 //   POST action=verify    → identity по ТЕКУЩЕМУ ключу (phone_verified_at
 //                          ИЛИ email_verified_at — никогда оба) + привязка
 //                          устройства → code → редирект.
+//   POST action=sms_failed→ шлёт поллинг с экрана кода (см. codeForm), когда
+//                          Bytehand подтвердил реальный провал доставки, а не
+//                          просто "запрос принят". Как и провал send — сперва
+//                          пробуем email, если ещё не пробовали; иначе тупик.
 //
 // Находка теста (2026-07-15): InSales стабильно доходит до /token и
 // /userinfo, только если в ID Token есть phone_number — токен с одним email
@@ -75,11 +79,23 @@ function page(title: string, inner: string): Response {
   label{display:block;margin:.9rem 0 .25rem;font-size:14px;color:#45505c}
   input{width:100%;padding:.65rem .75rem;border:1px solid #c3ccd6;border-radius:8px;font-size:17px;box-sizing:border-box}
   button{width:100%;margin-top:1.1rem;padding:.75rem;border:0;border-radius:8px;background:#2c4a66;color:#fff;font-size:16px;cursor:pointer}
+  button:disabled{opacity:.6;cursor:default}
   .alt{background:none;color:#2c4a66;text-decoration:underline;font-size:14px;margin-top:.6rem;padding:.3rem}
   .note{font-size:14px;color:#5a6570;margin-top:.7rem}
   .err{background:#fdecec;border:1px solid #e8a0a0;color:#8a2525;border-radius:8px;padding:.6rem .8rem;font-size:14px;margin-bottom:.8rem}
 </style></head><body>${inner}
 <p class="note" style="margin-top:3rem;font-size:12px">Работает на PushSaaS · вход по номеру телефона</p>
+<script>
+  // Двойной клик/повторный сабмит на медленной сети = два запроса кода
+  // на одну попытку (двойное списание, дублирующийся SMS/push). Блокируем
+  // кнопку конкретной формы сразу при сабмите — саму отправку это не
+  // прерывает, браузер уже собрал данные к этому моменту.
+  document.querySelectorAll("form").forEach(function(f){
+    f.addEventListener("submit", function(){
+      f.querySelectorAll("button").forEach(function(b){ b.disabled = true; });
+    });
+  });
+</script>
 </body></html>`;
   return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 }
@@ -137,6 +153,47 @@ function codeForm(
   opts: { err?: string } = {}
 ): Response {
   const resendChannels: OtpChannel[] = key === "email" ? ["push", "email"] : ["push", "telegram", "sms"];
+  // Bytehand принимает SMS "успешно" ещё до реальной доставки — опрашиваем
+  // статус, пока ждём ввод кода. При подтверждённом провале не уходим сразу
+  // из авторизации — сабмитим на action=sms_failed, который сам решит:
+  // пробовать email дальше по каскаду или, если и его уже пробовали, вернуть
+  // в магазин (см. POST action=sms_failed ниже и /oidc/{projectId}/otp-status).
+  // Бэкофф вместо фиксированного интервала: первую минуту проверяем часто
+  // (мало ли Bytehand решит быстро), дальше — реже, чтобы не долбить их API
+  // впустую. Суммарно укладываемся в TTL самого кода (5 минут) с запасом —
+  // иначе есть шанс, что реальный поздний провал долетит уже после того, как
+  // код истечёт сам, и пользователь просто увидит "код истёк" без объяснения.
+  const pollScript =
+    channel === "sms"
+      ? `<script>(function(){
+  var tries = 0;
+  function nextDelay(){ return tries <= 10 ? 4000 : 15000; }
+  function poll(){
+    tries++;
+    if (tries > 25) return;
+    setTimeout(function(){
+      fetch(${JSON.stringify(action.replace(/\/auth$/, "/otp-status"))}, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sid: ${JSON.stringify(sid)}, sig: ${JSON.stringify(sig)} })
+      }).then(function(r){ return r.json(); }).then(function(d){
+        if(d.status === "failed"){
+          var f = document.createElement("form");
+          f.method = "POST"; f.action = ${JSON.stringify(action)};
+          [["sid",${JSON.stringify(sid)}],["sig",${JSON.stringify(sig)}],["action","sms_failed"]].forEach(function(kv){
+            var i = document.createElement("input"); i.type = "hidden"; i.name = kv[0]; i.value = kv[1];
+            f.appendChild(i);
+          });
+          document.body.appendChild(f);
+          f.submit();
+          return;
+        }
+        poll();
+      }).catch(poll);
+    }, nextDelay());
+  }
+  poll();
+})();</script>`
+      : "";
   return page(
     "Код подтверждения",
     `<h2>Введите код</h2>
@@ -152,7 +209,8 @@ function codeForm(
      ${resendChannels
        .filter((c) => c !== channel)
        .map((c) => resendForm(action, sid, sig, c, RESEND_LABEL[c]))
-       .join("")}`
+       .join("")}
+     ${pollScript}`
   );
 }
 
@@ -161,6 +219,18 @@ function resendForm(action: string, sid: string, sig: string, channel: string, l
     ${hidden({ sid, sig, action: "resend", channel })}
     <button type="submit" class="alt">${esc(label)}</button>
   </form>`;
+}
+
+// Тупик каскада (оба ключа перепробованы, ни один канал не сработал, или
+// доставка реально провалилась — см. otp-status): возвращаем человека туда
+// же, откуда пришёл отскок, с меткой ?pss_auth_failed=1 — чтобы виджет её
+// узнал (и чтобы это отличалось от обычного возврата по ?pss_link=), а
+// InSales показал свою страницу входа заново вместо тупика на нашей форме.
+// Без домена проекта возвращать некуда — тогда null, и вызывающий код
+// остаётся на своей форме с текстовым сообщением.
+function authFailedRedirect(ctx: OidcContext): Response | null {
+  if (!ctx.projectDomain) return null;
+  return Response.redirect(`https://${ctx.projectDomain}/client_account/session/new?pss_auth_failed=1`, 302);
 }
 
 function redirectHostAllowed(ctx: OidcContext, redirectUri: string): boolean {
@@ -313,7 +383,11 @@ export async function GET(req: Request, routeCtx: { params: Promise<{ projectId:
     const session = await loadSession(projectId, q.get("sid")!, q.get("sig") || "");
     if (!session) return new Response("Сессия входа истекла — вернитесь в магазин и попробуйте снова.", { status: 400 });
 
-    const recognized = await tryRecognizeDevice(admin, projectId, session);
+    // Молчаливое узнавание по push уважает настроенный порядок каналов:
+    // если магазин явно поставил push НЕ первым (телефон/SMS раньше него),
+    // не перепрыгиваем вперёд без спроса — сразу показываем форму.
+    const pushFirst = resolveOrder(ctx.config?.channel_order)[0] === "push" && ctx.config?.channels?.push !== false;
+    const recognized = pushFirst ? await tryRecognizeDevice(admin, projectId, session) : null;
     if (recognized) {
       const askName = recognized.key === "phone" ? await askNameFor(projectId, recognized.target) : await askNameForEmail(projectId, recognized.target);
       const maskedTarget = recognized.key === "phone" ? maskPhone(recognized.target) : maskEmail(recognized.target);
@@ -414,9 +488,10 @@ export async function POST(req: Request, routeCtx: { params: Promise<{ projectId
     const r = await attemptSend(admin, projectId, session, { phone });
     if (!r.ok) {
       // email уже пробовали в этой сессии (пришли из email-фолбэка) —
-      // обоих ключей не хватило, дальше отступать некуда
+      // обоих ключей не хватило, дальше отступать некуда — возвращаем в
+      // магазин вместо тупика на нашей форме
       if (session.pending_email) {
-        return phoneForm(action, session.id, sig, { err: "Не получилось отправить код ни одним способом. Попробуйте позже." });
+        return authFailedRedirect(ctx) ?? phoneForm(action, session.id, sig, { err: "Не получилось отправить код ни одним способом. Попробуйте позже." });
       }
       return emailForm(action, session.id, sig, { viaFallback: true });
     }
@@ -432,15 +507,40 @@ export async function POST(req: Request, routeCtx: { params: Promise<{ projectId
 
     const r = await attemptSend(admin, projectId, session, { email });
     if (!r.ok) {
-      // телефон уже пробовали (пришли из phone-фолбэка) — тупик
+      // телефон уже пробовали (пришли из phone-фолбэка) — тупик, возвращаем
+      // в магазин вместо тупика на нашей форме
       if (session.phone) {
-        return emailForm(action, session.id, sig, { err: "Не получилось отправить код ни одним способом. Попробуйте позже.", viaFallback: true });
+        return (
+          authFailedRedirect(ctx) ??
+          emailForm(action, session.id, sig, { err: "Не получилось отправить код ни одним способом. Попробуйте позже.", viaFallback: true })
+        );
       }
       await admin.from("oidc_auth_sessions").update({ pending_email: email }).eq("id", session.id);
       return phoneForm(action, session.id, sig, { viaFallback: true });
     }
     await admin.from("oidc_auth_sessions").update({ pending_email: email, otp_id: r.otpId, verifying_key: "email" }).eq("id", session.id);
     return codeForm(action, session.id, sig, r.channel, maskEmail(email), await askNameForEmail(projectId, email), "email");
+  }
+
+  // SMS реально не доставлено (см. otp-status/route.ts — Bytehand подтвердил
+  // провал, не просто "запрос принят"), поллинг на экране кода это обнаружил.
+  // Дальше по каскаду для этого ключа отступать некуда (push/telegram уже не
+  // вышли на этапе send, иначе не дошли бы до sms) — пробуем email, если ещё
+  // не пробовали в этой сессии, точно так же, как при провале самой отправки.
+  if (body.action === "sms_failed") {
+    if (session.verifying_key !== "phone" || !session.otp_id) return new Response("bad session", { status: 400 });
+    const { data: otp } = await admin.from("otp_requests").select("id, channel, consumed_at").eq("id", session.otp_id).maybeSingle();
+    // otp.consumed_at при живой (ещё pending) сессии может быть выставлен
+    // только отметкой о провале доставки в otp-status — успешная проверка
+    // кода переводит саму сессию в "verified", а loadSession уже отфильтровал
+    // такие сессии выше.
+    if (!otp || otp.channel !== "sms" || !otp.consumed_at) {
+      return codeForm(action, session.id, sig, "sms", maskPhone(session.phone || ""), await askNameFor(projectId, session.phone || ""), "phone");
+    }
+    if (session.pending_email) {
+      return authFailedRedirect(ctx) ?? phoneForm(action, session.id, sig, { err: "Не получилось отправить код ни одним способом. Попробуйте позже." });
+    }
+    return emailForm(action, session.id, sig, { viaFallback: true });
   }
 
   if (!session.otp_id || !session.verifying_key) return new Response("bad session", { status: 400 });
