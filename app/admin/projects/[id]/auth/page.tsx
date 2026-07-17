@@ -28,6 +28,7 @@ export default async function AuthPage({ params }: { params: Promise<{ id: strin
   let hasTelegram = false;
   let hasBytehand = false;
   let hasHaskimail = false;
+  let hasSmsc = false;
   if (oidc) {
     const admin = createAdminClient();
     const { data: secrets } = await admin
@@ -38,14 +39,21 @@ export default async function AuthPage({ params }: { params: Promise<{ id: strin
     hasTelegram = !!secrets?.telegram_gateway_token;
     hasBytehand = !!secrets?.bytehand_service_key;
 
-    // best-effort: haskimail_server_token — отдельный запрос (миграция 0010),
-    // чтобы отсутствующая колонка не сбивала статус telegram/bytehand выше.
+    // best-effort: haskimail_server_token/smsc_* — отдельные запросы (миграции
+    // 0010/0017), чтобы отсутствующая колонка не сбивала статус telegram/bytehand выше.
     const { data: emailSecret, error: emailErr } = await admin
       .from("project_secrets")
       .select("haskimail_server_token")
       .eq("project_id", id)
       .maybeSingle();
     hasHaskimail = !emailErr && !!emailSecret?.haskimail_server_token;
+
+    const { data: smscSecret, error: smscErr } = await admin
+      .from("project_secrets")
+      .select("smsc_login, smsc_password")
+      .eq("project_id", id)
+      .maybeSingle();
+    hasSmsc = !smscErr && !!smscSecret?.smsc_login && !!smscSecret?.smsc_password;
   }
 
   return (
@@ -69,6 +77,7 @@ export default async function AuthPage({ params }: { params: Promise<{ id: strin
                 isEnabled: oidc.is_enabled,
                 channels: { push: true, email: true, telegram: true, sms: true, ...(oidc.config?.channels || {}) },
                 channelOrder: Array.isArray(oidc.config?.channel_order) ? oidc.config.channel_order : [],
+                providers: oidc.config?.providers || {},
                 hideNativeLoginButton: !!oidc.config?.hide_native_login_button,
                 authButtonText: oidc.config?.auth_button_text || "",
                 authButtonIcon: oidc.config?.auth_button_icon || "",
@@ -80,6 +89,7 @@ export default async function AuthPage({ params }: { params: Promise<{ id: strin
                 hasTelegram,
                 hasBytehand,
                 hasHaskimail,
+                hasSmsc,
               }
             : null
         }

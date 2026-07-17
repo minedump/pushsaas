@@ -3,6 +3,7 @@ import { getOidcContext, issuerFor, signParam, verifyParam, oidcLog, type OidcCo
 import { issueCodeAndRedirect } from "@/lib/oidc-flow";
 import { normalizePhone, maskPhone } from "@/lib/phone";
 import { sendOtp, verifyOtp, resolveOrder, describeNoChannel, findIdentityByDevice, type OtpChannel, type OtpKey, type ChannelAttempt } from "@/lib/otp";
+import { needsDeliveryPoll } from "@/lib/otp/providers";
 
 // Страница входа по телефону/почте (authorization endpoint).
 //
@@ -32,10 +33,12 @@ import { sendOtp, verifyOtp, resolveOrder, describeNoChannel, findIdentityByDevi
 //   POST action=verify    → identity по ТЕКУЩЕМУ ключу (phone_verified_at
 //                          ИЛИ email_verified_at — никогда оба) + привязка
 //                          устройства → code → редирект.
-//   POST action=sms_failed→ шлёт поллинг с экрана кода (см. codeForm), когда
-//                          Bytehand подтвердил реальный провал доставки, а не
-//                          просто "запрос принят". Как и провал send — сперва
-//                          пробуем email, если ещё не пробовали; иначе тупик.
+//   POST action=delivery_failed → шлёт поллинг с экрана кода (см. codeForm),
+//                          когда провайдер подтвердил реальный провал доставки,
+//                          а не просто "запрос принят" (Bytehand/SMSC — см.
+//                          needsDeliveryPoll). Как и провал send/send_email —
+//                          сперва пробуем второй ключ, если ещё не пробовали;
+//                          иначе тупик.
 //
 // Находка теста (2026-07-15): InSales стабильно доходит до /token и
 // /userinfo, только если в ID Token есть phone_number — токен с одним email
@@ -147,25 +150,27 @@ function codeForm(
   sid: string,
   sig: string,
   channel: OtpChannel,
+  provider: string | null,
   maskedTarget: string,
   askName: boolean,
   key: "phone" | "email",
   opts: { err?: string } = {}
 ): Response {
   const resendChannels: OtpChannel[] = key === "email" ? ["push", "email"] : ["push", "telegram", "sms"];
-  // Bytehand принимает SMS "успешно" ещё до реальной доставки — опрашиваем
-  // статус, пока ждём ввод кода. При подтверждённом провале не уходим сразу
-  // из авторизации — сабмитим на action=sms_failed, который сам решит:
-  // пробовать email дальше по каскаду или, если и его уже пробовали, вернуть
-  // в магазин (см. POST action=sms_failed ниже и /oidc/{projectId}/otp-status).
+  // Некоторые провайдеры (Bytehand на sms, SMSC на любом из своих трёх
+  // каналов — см. needsDeliveryPoll) подтверждают на отправке только приём,
+  // не доставку — опрашиваем статус, пока ждём ввод кода. При подтверждённом
+  // провале не уходим сразу из авторизации — сабмитим на action=delivery_failed,
+  // который сам решит: пробовать второй ключ дальше по каскаду или, если его
+  // уже пробовали, вернуть в магазин (см. POST action=delivery_failed ниже и
+  // /oidc/{projectId}/otp-status).
   // Бэкофф вместо фиксированного интервала: первую минуту проверяем часто
-  // (мало ли Bytehand решит быстро), дальше — реже, чтобы не долбить их API
+  // (мало ли провайдер решит быстро), дальше — реже, чтобы не долбить их API
   // впустую. Суммарно укладываемся в TTL самого кода (5 минут) с запасом —
   // иначе есть шанс, что реальный поздний провал долетит уже после того, как
   // код истечёт сам, и пользователь просто увидит "код истёк" без объяснения.
-  const pollScript =
-    channel === "sms"
-      ? `<script>(function(){
+  const pollScript = needsDeliveryPoll(channel, provider)
+    ? `<script>(function(){
   var tries = 0;
   function nextDelay(){ return tries <= 10 ? 4000 : 15000; }
   function poll(){
@@ -179,7 +184,7 @@ function codeForm(
         if(d.status === "failed"){
           var f = document.createElement("form");
           f.method = "POST"; f.action = ${JSON.stringify(action)};
-          [["sid",${JSON.stringify(sid)}],["sig",${JSON.stringify(sig)}],["action","sms_failed"]].forEach(function(kv){
+          [["sid",${JSON.stringify(sid)}],["sig",${JSON.stringify(sig)}],["action","delivery_failed"]].forEach(function(kv){
             var i = document.createElement("input"); i.type = "hidden"; i.name = kv[0]; i.value = kv[1];
             f.appendChild(i);
           });
@@ -193,7 +198,7 @@ function codeForm(
   }
   poll();
 })();</script>`
-      : "";
+    : "";
   return page(
     "Код подтверждения",
     `<h2>Введите код</h2>
@@ -278,13 +283,13 @@ async function loadSession(projectId: string, sid: string, sig: string): Promise
   return data as SessionRow;
 }
 
-// Реальный канал уже отправленного кода (для корректной подсказки «где искать»
-// при перерисовке формы после ошибки ввода/переотправки).
-async function channelOf(otpId: string | null): Promise<OtpChannel> {
-  if (!otpId) return "sms";
+// Реальный канал/провайдер уже отправленного кода (для корректной подсказки
+// «где искать» и для поллинга при перерисовке формы после ошибки ввода/переотправки).
+async function channelOf(otpId: string | null): Promise<{ channel: OtpChannel; provider: string | null }> {
+  if (!otpId) return { channel: "sms", provider: null };
   const admin = createAdminClient();
-  const { data } = await admin.from("otp_requests").select("channel").eq("id", otpId).maybeSingle();
-  return (data?.channel as OtpChannel) || "sms";
+  const { data } = await admin.from("otp_requests").select("channel, provider").eq("id", otpId).maybeSingle();
+  return { channel: (data?.channel as OtpChannel) || "sms", provider: data?.provider ?? null };
 }
 
 async function askNameFor(projectId: string, phone: string): Promise<boolean> {
@@ -300,7 +305,7 @@ async function askNameForEmail(projectId: string, email: string): Promise<boolea
 }
 
 type SendAttempt =
-  | { ok: true; otpId: string; channel: OtpChannel; attempts: ChannelAttempt[] }
+  | { ok: true; otpId: string; channel: OtpChannel; provider: string | null; attempts: ChannelAttempt[] }
   | { ok: false; error: "rate_limited" | "no_channel"; message: string; attempts: ChannelAttempt[] };
 
 // Списание 1 push за ПЕРВУЮ попытку отправки кода в сессии (firstSend =
@@ -332,7 +337,7 @@ async function attemptSend(
     const message = sent.error === "rate_limited" ? "Слишком много попыток — подождите 10 минут" : describeNoChannel(sent.attempts);
     return { ok: false, error: sent.error, message, attempts: sent.attempts };
   }
-  return { ok: true, otpId: sent.otpId, channel: sent.channel, attempts: sent.attempts };
+  return { ok: true, otpId: sent.otpId, channel: sent.channel, provider: sent.provider, attempts: sent.attempts };
 }
 
 // Молчаливое узнавание возвратного посетителя ДО показа формы: если этот
@@ -344,7 +349,7 @@ async function tryRecognizeDevice(
   admin: ReturnType<typeof createAdminClient>,
   projectId: string,
   session: SessionRow
-): Promise<{ channel: OtpChannel; key: "phone" | "email"; target: string } | null> {
+): Promise<{ channel: OtpChannel; provider: string | null; key: "phone" | "email"; target: string } | null> {
   if (!session.device_subscriber_id) return null;
   const identity = await findIdentityByDevice(projectId, session.device_subscriber_id);
   if (!identity) return null;
@@ -365,7 +370,7 @@ async function tryRecognizeDevice(
     })
     .eq("id", session.id);
 
-  return { channel: r.channel, key, target };
+  return { channel: r.channel, provider: r.provider, key, target };
 }
 
 export async function GET(req: Request, routeCtx: { params: Promise<{ projectId: string }> }) {
@@ -391,7 +396,7 @@ export async function GET(req: Request, routeCtx: { params: Promise<{ projectId:
     if (recognized) {
       const askName = recognized.key === "phone" ? await askNameFor(projectId, recognized.target) : await askNameForEmail(projectId, recognized.target);
       const maskedTarget = recognized.key === "phone" ? maskPhone(recognized.target) : maskEmail(recognized.target);
-      return codeForm(action, session.id, signParam(session.id), recognized.channel, maskedTarget, askName, recognized.key);
+      return codeForm(action, session.id, signParam(session.id), recognized.channel, recognized.provider, maskedTarget, askName, recognized.key);
     }
     return startForm(session.id, signParam(session.id));
   }
@@ -496,7 +501,7 @@ export async function POST(req: Request, routeCtx: { params: Promise<{ projectId
       return emailForm(action, session.id, sig, { viaFallback: true });
     }
     await admin.from("oidc_auth_sessions").update({ otp_id: r.otpId, verifying_key: "phone" }).eq("id", session.id);
-    return codeForm(action, session.id, sig, r.channel, maskPhone(phone), await askNameFor(projectId, phone), "phone");
+    return codeForm(action, session.id, sig, r.channel, r.provider, maskPhone(phone), await askNameFor(projectId, phone), "phone");
   }
 
   if (body.action === "send_email") {
@@ -519,28 +524,44 @@ export async function POST(req: Request, routeCtx: { params: Promise<{ projectId
       return phoneForm(action, session.id, sig, { viaFallback: true });
     }
     await admin.from("oidc_auth_sessions").update({ pending_email: email, otp_id: r.otpId, verifying_key: "email" }).eq("id", session.id);
-    return codeForm(action, session.id, sig, r.channel, maskEmail(email), await askNameForEmail(projectId, email), "email");
+    return codeForm(action, session.id, sig, r.channel, r.provider, maskEmail(email), await askNameForEmail(projectId, email), "email");
   }
 
-  // SMS реально не доставлено (см. otp-status/route.ts — Bytehand подтвердил
-  // провал, не просто "запрос принят"), поллинг на экране кода это обнаружил.
-  // Дальше по каскаду для этого ключа отступать некуда (push/telegram уже не
-  // вышли на этапе send, иначе не дошли бы до sms) — пробуем email, если ещё
-  // не пробовали в этой сессии, точно так же, как при провале самой отправки.
-  if (body.action === "sms_failed") {
-    if (session.verifying_key !== "phone" || !session.otp_id) return new Response("bad session", { status: 400 });
-    const { data: otp } = await admin.from("otp_requests").select("id, channel, consumed_at").eq("id", session.otp_id).maybeSingle();
+  // Провайдер подтвердил реальный провал доставки (см. otp-status/route.ts —
+  // Bytehand/SMSC), поллинг на экране кода это обнаружил. Дальше по каскаду
+  // для ЭТОГО ключа отступать некуда (остальные каналы уже не вышли на этапе
+  // send/send_email, иначе не дошли бы досюда) — пробуем второй ключ, если
+  // ещё не пробовали в этой сессии, точно так же, как при провале самой отправки.
+  if (body.action === "delivery_failed") {
+    if (!session.otp_id || !session.verifying_key) return new Response("bad session", { status: 400 });
+    const key = session.verifying_key;
+    const target = key === "phone" ? session.phone : session.pending_email;
+    if (!target) return new Response("bad session", { status: 400 });
+
+    const { data: otp } = await admin.from("otp_requests").select("channel, provider, consumed_at").eq("id", session.otp_id).maybeSingle();
     // otp.consumed_at при живой (ещё pending) сессии может быть выставлен
     // только отметкой о провале доставки в otp-status — успешная проверка
     // кода переводит саму сессию в "verified", а loadSession уже отфильтровал
     // такие сессии выше.
-    if (!otp || otp.channel !== "sms" || !otp.consumed_at) {
-      return codeForm(action, session.id, sig, "sms", maskPhone(session.phone || ""), await askNameFor(projectId, session.phone || ""), "phone");
+    if (!otp || !needsDeliveryPoll(otp.channel as OtpChannel, otp.provider) || !otp.consumed_at) {
+      const askName = key === "phone" ? await askNameFor(projectId, target) : await askNameForEmail(projectId, target);
+      const maskedTarget = key === "phone" ? maskPhone(target) : maskEmail(target);
+      return codeForm(action, session.id, sig, (otp?.channel as OtpChannel) || "sms", otp?.provider ?? null, maskedTarget, askName, key);
     }
-    if (session.pending_email) {
-      return authFailedRedirect(ctx) ?? phoneForm(action, session.id, sig, { err: "Не получилось отправить код ни одним способом. Попробуйте позже." });
+
+    if (key === "phone") {
+      if (session.pending_email) {
+        return authFailedRedirect(ctx) ?? phoneForm(action, session.id, sig, { err: "Не получилось отправить код ни одним способом. Попробуйте позже." });
+      }
+      return emailForm(action, session.id, sig, { viaFallback: true });
     }
-    return emailForm(action, session.id, sig, { viaFallback: true });
+    if (session.phone) {
+      return (
+        authFailedRedirect(ctx) ??
+        emailForm(action, session.id, sig, { err: "Не получилось отправить код ни одним способом. Попробуйте позже.", viaFallback: true })
+      );
+    }
+    return phoneForm(action, session.id, sig, { viaFallback: true });
   }
 
   if (!session.otp_id || !session.verifying_key) return new Response("bad session", { status: 400 });
@@ -558,10 +579,11 @@ export async function POST(req: Request, routeCtx: { params: Promise<{ projectId
     const sent = await sendOtp(projectId, otpKey, { forceChannel: channel });
     if (!sent.ok) {
       const msg = sent.error === "rate_limited" ? "Слишком много отправок — подождите 10 минут" : describeNoChannel(sent.attempts);
-      return codeForm(action, session.id, sig, await channelOf(session.otp_id), maskedTarget, askName, key, { err: msg });
+      const prev = await channelOf(session.otp_id);
+      return codeForm(action, session.id, sig, prev.channel, prev.provider, maskedTarget, askName, key, { err: msg });
     }
     await admin.from("oidc_auth_sessions").update({ otp_id: sent.otpId }).eq("id", session.id);
-    return codeForm(action, session.id, sig, sent.channel, maskedTarget, askName, key);
+    return codeForm(action, session.id, sig, sent.channel, sent.provider, maskedTarget, askName, key);
   }
 
   if (body.action === "verify") {
@@ -573,7 +595,8 @@ export async function POST(req: Request, routeCtx: { params: Promise<{ projectId
           : result === "too_many"
             ? "Слишком много попыток — запросите новый код"
             : "Код истёк — запросите новый";
-      return codeForm(action, session.id, sig, await channelOf(session.otp_id), maskedTarget, askName, key, { err: msg });
+      const prev = await channelOf(session.otp_id);
+      return codeForm(action, session.id, sig, prev.channel, prev.provider, maskedTarget, askName, key, { err: msg });
     }
 
     // подтверждён ИМЕННО этот ключ — identity создаётся/находится по нему;

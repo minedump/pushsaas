@@ -4,6 +4,8 @@ import { sendPush } from "@/lib/webpush";
 import { checkSendAbility, sendTelegramCode } from "./telegram";
 import { sendSms } from "./sms";
 import { sendEmailCode } from "./haskimail";
+import { sendSmsSmsc, sendTelegramSmsc, sendEmailSmsc } from "./smsc";
+import { resolveSmsProvider, resolveTelegramProvider, resolveEmailProvider } from "./providers";
 import { isRuCisPhone } from "@/lib/phone";
 
 // Единый каскад для ОДНОГО известного ключа входа — телефон ИЛИ email
@@ -25,6 +27,13 @@ import { isRuCisPhone } from "@/lib/phone";
 // вне этого списка они пропускаются без обращения к провайдеру (см.
 // isRuCisPhone), каскад просто идёт дальше — обычно к email-фолбэку на
 // странице входа. Push и email этим не ограничены.
+//
+// У SMS/Telegram/Email может быть больше одного провайдера — какой активен,
+// решает config.providers.{sms,telegram,email} (см. lib/otp/providers.ts,
+// дефолт — прежние Bytehand/Telegram Gateway/Haskimail, ничего не меняется,
+// если админ провайдера не выбирал). Новая интеграция на уже существующий
+// канал = свой lib/otp/<provider>.ts + ветка ниже + строка в providers.ts —
+// сам канал (порядок, гео-ограничение, RU/СНГ-гейт) от провайдера не зависит.
 
 const OTP_TTL_MS = 5 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
@@ -44,7 +53,7 @@ export type ChannelSkipReason =
 export type ChannelAttempt = { channel: OtpChannel; ok: boolean; reason?: ChannelSkipReason };
 
 export type SendOtpResult =
-  | { ok: true; otpId: string; channel: OtpChannel; attempts: ChannelAttempt[] }
+  | { ok: true; otpId: string; channel: OtpChannel; provider: string | null; attempts: ChannelAttempt[] }
   | { ok: false; error: "rate_limited" | "no_channel"; attempts: ChannelAttempt[] };
 
 export const DEFAULT_CHANNEL_ORDER: OtpChannel[] = ["push", "email", "telegram", "sms"];
@@ -139,18 +148,29 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
     .select("telegram_gateway_token, bytehand_service_key, vapid_private_key")
     .eq("project_id", projectId)
     .maybeSingle();
-  // best-effort: haskimail_server_token — отдельный запрос (миграция 0010),
-  // чтобы отсутствующая колонка не роняла весь каскад (push/telegram/sms заодно).
+  // best-effort: haskimail_server_token и smsc_login/smsc_password —
+  // отдельные запросы (миграции 0010/0017), чтобы отсутствующая колонка не
+  // роняла весь каскад (push/telegram/sms заодно).
   const { data: emailSecret } = await admin
     .from("project_secrets")
     .select("haskimail_server_token")
     .eq("project_id", projectId)
     .maybeSingle();
   const haskimailToken = emailSecret?.haskimail_server_token || null;
+  const { data: smscSecret } = await admin
+    .from("project_secrets")
+    .select("smsc_login, smsc_password")
+    .eq("project_id", projectId)
+    .maybeSingle();
+  const smscLogin = smscSecret?.smsc_login || null;
+  const smscPassword = smscSecret?.smsc_password || null;
   const { data: oidcClient } = await admin.from("oidc_clients").select("config").eq("project_id", projectId).maybeSingle();
   const channels: ChannelConfig = { push: true, email: true, telegram: true, sms: true, ...(oidcClient?.config?.channels || {}) };
   const smsSender: string | undefined = oidcClient?.config?.sms_sender;
   const emailFrom: string | undefined = oidcClient?.config?.email_from;
+  const smsProvider = resolveSmsProvider(oidcClient?.config?.providers?.sms);
+  const telegramProvider = resolveTelegramProvider(oidcClient?.config?.providers?.telegram);
+  const emailProvider = resolveEmailProvider(oidcClient?.config?.providers?.email);
 
   const otpId = crypto.randomUUID();
   const code = genCode();
@@ -160,6 +180,7 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
   const configuredOrder = resolveOrder(oidcClient?.config?.channel_order).filter((c) => applicable.includes(c));
   const tryOrder: OtpChannel[] = opts.forceChannel ? [opts.forceChannel] : configuredOrder;
   let channel: OtpChannel | null = null;
+  let usedProvider: string | null = null;
   let providerMessageId: string | undefined;
 
   for (const ch of tryOrder) {
@@ -174,22 +195,50 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
       continue;
     }
     if (ch === "email" && !isPhone) {
-      if (channels.email === false || !haskimailToken) {
+      if (channels.email === false) {
+        attempts.push({ channel: ch, ok: false, reason: "not_configured" });
+        continue;
+      }
+      if (emailProvider === "smsc") {
+        if (!smscLogin || !smscPassword || !emailFrom) {
+          attempts.push({ channel: ch, ok: false, reason: "not_configured" });
+          continue;
+        }
+        const sent = await sendEmailSmsc(smscLogin, smscPassword, key.email, "Код подтверждения", `Ваш код для входа: ${code} (действует 5 минут)`, emailFrom);
+        attempts.push({ channel: ch, ok: sent.ok, reason: sent.ok ? undefined : "provider_error" });
+        if (sent.ok) { channel = ch; usedProvider = "smsc"; providerMessageId = sent.messageId; break; }
+        continue;
+      }
+      if (!haskimailToken) {
         attempts.push({ channel: ch, ok: false, reason: "not_configured" });
         continue;
       }
       const sent = await sendEmailCode(haskimailToken, key.email, code, emailFrom);
       attempts.push({ channel: ch, ok: sent, reason: sent ? undefined : "send_failed" });
-      if (sent) { channel = ch; break; }
+      if (sent) { channel = ch; usedProvider = "haskimail"; break; }
       continue;
     }
     if (ch === "telegram" && isPhone) {
-      if (channels.telegram === false || !secrets?.telegram_gateway_token) {
+      if (channels.telegram === false) {
         attempts.push({ channel: ch, ok: false, reason: "not_configured" });
         continue;
       }
       if (!isRuCisPhone(key.phone)) {
         attempts.push({ channel: ch, ok: false, reason: "country_not_allowed" });
+        continue;
+      }
+      if (telegramProvider === "smsc") {
+        if (!smscLogin || !smscPassword) {
+          attempts.push({ channel: ch, ok: false, reason: "not_configured" });
+          continue;
+        }
+        const sent = await sendTelegramSmsc(smscLogin, smscPassword, key.phone, `Код подтверждения: ${code}`);
+        attempts.push({ channel: ch, ok: sent.ok, reason: sent.ok ? undefined : "provider_error" });
+        if (sent.ok) { channel = ch; usedProvider = "smsc"; providerMessageId = sent.messageId; break; }
+        continue;
+      }
+      if (!secrets?.telegram_gateway_token) {
+        attempts.push({ channel: ch, ok: false, reason: "not_configured" });
         continue;
       }
       const reqId = await checkSendAbility(secrets.telegram_gateway_token, key.phone);
@@ -199,11 +248,11 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
       }
       const sent = await sendTelegramCode(secrets.telegram_gateway_token, key.phone, code, reqId);
       attempts.push({ channel: ch, ok: sent, reason: sent ? undefined : "provider_error" });
-      if (sent) { channel = ch; break; }
+      if (sent) { channel = ch; usedProvider = "telegram_gateway"; break; }
       continue;
     }
     if (ch === "sms" && isPhone) {
-      if (channels.sms === false || !secrets?.bytehand_service_key) {
+      if (channels.sms === false) {
         attempts.push({ channel: ch, ok: false, reason: "not_configured" });
         continue;
       }
@@ -211,9 +260,23 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
         attempts.push({ channel: ch, ok: false, reason: "country_not_allowed" });
         continue;
       }
+      if (smsProvider === "smsc") {
+        if (!smscLogin || !smscPassword) {
+          attempts.push({ channel: ch, ok: false, reason: "not_configured" });
+          continue;
+        }
+        const sent = await sendSmsSmsc(smscLogin, smscPassword, key.phone, `Код подтверждения: ${code}`, smsSender);
+        attempts.push({ channel: ch, ok: sent.ok, reason: sent.ok ? undefined : "provider_error" });
+        if (sent.ok) { channel = ch; usedProvider = "smsc"; providerMessageId = sent.messageId; break; }
+        continue;
+      }
+      if (!secrets?.bytehand_service_key) {
+        attempts.push({ channel: ch, ok: false, reason: "not_configured" });
+        continue;
+      }
       const sent = await sendSms(secrets.bytehand_service_key, key.phone, `Код подтверждения: ${code}`, smsSender);
       attempts.push({ channel: ch, ok: sent.ok, reason: sent.ok ? undefined : "provider_error" });
-      if (sent.ok) { channel = ch; providerMessageId = sent.messageId; break; }
+      if (sent.ok) { channel = ch; usedProvider = "bytehand"; providerMessageId = sent.messageId; break; }
       continue;
     }
   }
@@ -227,11 +290,12 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
     email: isPhone ? null : key.email,
     code_hash: hashCode(otpId, code),
     channel,
+    provider: usedProvider,
     provider_message_id: providerMessageId || null,
     expires_at: new Date(Date.now() + OTP_TTL_MS).toISOString(),
   });
 
-  return { ok: true, otpId, channel, attempts };
+  return { ok: true, otpId, channel, provider: usedProvider, attempts };
 }
 
 // Push-код на устройства, уже привязанные (identity_devices) к identity,

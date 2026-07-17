@@ -11,6 +11,7 @@ export async function POST(req: Request) {
     isEnabled,
     channels,
     channelOrder,
+    providers,
     hideNativeLoginButton,
     authButtonText,
     authButtonIcon,
@@ -22,6 +23,8 @@ export async function POST(req: Request) {
     telegramToken,
     bytehandKey,
     haskimailToken,
+    smscLogin,
+    smscPassword,
   } = await req.json().catch(() => ({}));
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
 
@@ -41,16 +44,26 @@ export async function POST(req: Request) {
   // же вызове — чтобы включаемый канал не остался без данных для отправки.
   const { data: secrets } = await admin
     .from("project_secrets")
-    .select("telegram_gateway_token, bytehand_service_key, haskimail_server_token")
+    .select("telegram_gateway_token, bytehand_service_key, haskimail_server_token, smsc_login, smsc_password")
     .eq("project_id", projectId)
     .maybeSingle();
+
+  // какой провайдер будет активен на каждый канал ПОСЛЕ этого сохранения —
+  // от этого зависит, каких именно ключей достаточно для willHave ниже.
+  const nextProviders = { ...(client.config?.providers || {}), ...(providers && typeof providers === "object" ? providers : {}) };
+  const willHaveSmsc =
+    (smscLogin !== undefined ? !!smscLogin : !!secrets?.smsc_login) && (smscPassword !== undefined ? !!smscPassword : !!secrets?.smsc_password);
+  const willHaveEmailFrom = !!(emailFrom !== undefined ? emailFrom : client.config?.email_from || "").toString().trim();
+
   const willHave = {
-    telegram: telegramToken !== undefined ? !!telegramToken : !!secrets?.telegram_gateway_token,
-    sms: bytehandKey !== undefined ? !!bytehandKey : !!secrets?.bytehand_service_key,
+    telegram: nextProviders.telegram === "smsc" ? willHaveSmsc : telegramToken !== undefined ? !!telegramToken : !!secrets?.telegram_gateway_token,
+    sms: nextProviders.sms === "smsc" ? willHaveSmsc : bytehandKey !== undefined ? !!bytehandKey : !!secrets?.bytehand_service_key,
     // email-канал сверх токена ещё требует заполненного отправителя (From) —
     // без него сервис-провайдер либо отклонит письмо, либо, что хуже,
-    // отправит с неверифицированного в Haskimail домена и уйдёт в спам.
-    email: (haskimailToken !== undefined ? !!haskimailToken : !!secrets?.haskimail_server_token) && !!(emailFrom !== undefined ? emailFrom : client.config?.email_from || "").toString().trim(),
+    // отправит с неверифицированного домена и уйдёт в спам.
+    email:
+      (nextProviders.email === "smsc" ? willHaveSmsc : haskimailToken !== undefined ? !!haskimailToken : !!secrets?.haskimail_server_token) &&
+      willHaveEmailFrom,
   };
 
   const config = { ...(client.config || {}) };
@@ -62,6 +75,9 @@ export async function POST(req: Request) {
       if (nextChannels[ch] && !willHave[ch]) nextChannels[ch] = false;
     }
     config.channels = nextChannels;
+  }
+  if (providers && typeof providers === "object") {
+    config.providers = nextProviders;
   }
   if (Array.isArray(channelOrder)) config.channel_order = channelOrder.filter((c: unknown) => typeof c === "string");
   if (hideNativeLoginButton !== undefined) config.hide_native_login_button = !!hideNativeLoginButton;
@@ -84,6 +100,8 @@ export async function POST(req: Request) {
   if (telegramToken !== undefined) secretUpdates.telegram_gateway_token = telegramToken || null;
   if (bytehandKey !== undefined) secretUpdates.bytehand_service_key = bytehandKey || null;
   if (haskimailToken !== undefined) secretUpdates.haskimail_server_token = haskimailToken || null;
+  if (smscLogin !== undefined) secretUpdates.smsc_login = smscLogin || null;
+  if (smscPassword !== undefined) secretUpdates.smsc_password = smscPassword || null;
   if (Object.keys(secretUpdates).length) {
     await admin.from("project_secrets").update(secretUpdates).eq("project_id", projectId);
   }

@@ -5,17 +5,30 @@ import { useRouter } from "next/navigation";
 import { IconPhone, IconRefresh, IconGripVertical } from "@tabler/icons-react";
 import { Button, Card, Input, Label, Select, Textarea, Toggle, useDialogs } from "@/app/ui";
 import CopyBox from "../CopyBox";
+import { SMS_PROVIDERS, TELEGRAM_PROVIDERS, EMAIL_PROVIDERS } from "@/lib/otp/providers";
 
 type ChannelKey = "push" | "email" | "telegram" | "sms";
 const DEFAULT_ORDER: ChannelKey[] = ["push", "email", "telegram", "sms"];
-const CHANNEL_TITLE: Record<ChannelKey, string> = { push: "Push-уведомление", email: "Email", telegram: "Telegram Gateway", sms: "SMS (Bytehand)" };
+const CHANNEL_TITLE: Record<ChannelKey, string> = { push: "Push-уведомление", email: "Email", telegram: "Telegram", sms: "SMS" };
 const BUTTON_SIZES = ["s", "m", "l", "xl"] as const;
+
+// На каждый канал может появляться больше одного провайдера (см.
+// lib/otp/providers.ts) — растущий список, не меняем структуру страницы,
+// когда добавляется следующая интеграция.
+const PROVIDER_OPTIONS: Partial<Record<ChannelKey, { id: string; label: string }[]>> = {
+  telegram: TELEGRAM_PROVIDERS,
+  sms: SMS_PROVIDERS,
+  email: EMAIL_PROVIDERS,
+};
+
+type Providers = Partial<Record<ChannelKey, string>>;
 
 type Initial = {
   clientId: string;
   isEnabled: boolean;
   channels: Record<ChannelKey, boolean | undefined>;
   channelOrder: ChannelKey[];
+  providers: Providers;
   hideNativeLoginButton: boolean;
   authButtonText: string;
   authButtonIcon: string;
@@ -27,6 +40,7 @@ type Initial = {
   hasTelegram: boolean;
   hasBytehand: boolean;
   hasHaskimail: boolean;
+  hasSmsc: boolean;
 };
 
 export default function AuthSettings({
@@ -63,12 +77,15 @@ export default function AuthSettings({
   const [telegramToken, setTelegramToken] = useState("");
   const [bytehandKey, setBytehandKey] = useState("");
   const [haskimailToken, setHaskimailToken] = useState("");
+  const [smscLogin, setSmscLogin] = useState("");
+  const [smscPassword, setSmscPassword] = useState("");
+  const [providers, setProviders] = useState<Providers>(initial?.providers || {});
 
   const hasSecret: Record<ChannelKey, boolean> = {
     push: true,
-    email: initial?.hasHaskimail ?? false,
-    telegram: initial?.hasTelegram ?? false,
-    sms: initial?.hasBytehand ?? false,
+    email: providers.email === "smsc" ? (initial?.hasSmsc ?? false) : (initial?.hasHaskimail ?? false),
+    telegram: providers.telegram === "smsc" ? (initial?.hasSmsc ?? false) : (initial?.hasTelegram ?? false),
+    sms: providers.sms === "smsc" ? (initial?.hasSmsc ?? false) : (initial?.hasBytehand ?? false),
   };
 
   async function setup(regenerate = false) {
@@ -95,10 +112,12 @@ export default function AuthSettings({
   }
 
   async function saveSettings() {
-    // блокируем только если email-канал реально заработает (токен уже есть
-    // или вводится сейчас) — иначе это ложно ловило бы любое сохранение у
-    // проектов, которые вообще не настраивали email
-    const emailWouldWork = channels.email !== false && (hasSecret.email || haskimailToken.trim());
+    // блокируем только если email-канал реально заработает (ключи нужного
+    // провайдера уже есть или вводятся сейчас) — иначе это ложно ловило бы
+    // любое сохранение у проектов, которые вообще не настраивали email
+    const emailSecretReady =
+      providers.email === "smsc" ? hasSecret.email || (smscLogin.trim() && smscPassword.trim()) : hasSecret.email || haskimailToken.trim();
+    const emailWouldWork = channels.email !== false && emailSecretReady;
     if (emailWouldWork && !emailFrom.trim()) {
       toast("Укажите email-отправителя (From) — без него email-канал нельзя включить", "bad");
       return;
@@ -111,12 +130,15 @@ export default function AuthSettings({
         projectId,
         channels,
         channelOrder: order,
+        providers,
         hideNativeLoginButton: hideLoginButton,
         smsSender,
         emailFrom,
         ...(telegramToken.trim() ? { telegramToken: telegramToken.trim() } : {}),
         ...(bytehandKey.trim() ? { bytehandKey: bytehandKey.trim() } : {}),
         ...(haskimailToken.trim() ? { haskimailToken: haskimailToken.trim() } : {}),
+        ...(smscLogin.trim() ? { smscLogin: smscLogin.trim() } : {}),
+        ...(smscPassword.trim() ? { smscPassword: smscPassword.trim() } : {}),
       }),
     });
     const json = await res.json();
@@ -124,6 +146,8 @@ export default function AuthSettings({
     if (!res.ok) return toast(json.error || "Ошибка", "bad");
     setTelegramToken("");
     setBytehandKey("");
+    setSmscLogin("");
+    setSmscPassword("");
     setHaskimailToken("");
     toast("Сохранено", "good");
     router.refresh();
@@ -277,7 +301,7 @@ export default function AuthSettings({
           <ChannelRow
             key={key}
             label={CHANNEL_TITLE[key]}
-            hint={key === "email" ? emailChannelHint(hasSecret.email, !!emailFrom.trim()) : channelHint(key, hasSecret[key])}
+            hint={key === "email" ? emailChannelHint(providers.email, hasSecret.email, !!emailFrom.trim()) : channelHint(key, providers[key], hasSecret[key])}
             tone={key === "push" ? undefined : hasSecret[key] ? "good" : "warn"}
             on={channels[key] !== false}
             locked={!hasSecret[key] && channels[key] === false}
@@ -287,12 +311,16 @@ export default function AuthSettings({
             onDragStart={(e) => dragStart(e, key)}
             onDragMove={(e) => dragMove(e, key)}
             onDragEnd={dragEnd}
+            providerOptions={PROVIDER_OPTIONS[key]}
+            provider={providers[key] || PROVIDER_OPTIONS[key]?.[0]?.id}
+            onProviderChange={(p) => setProviders((prev) => ({ ...prev, [key]: p }))}
           />
         ))}
 
         <div className="h-2" />
+        <div className="text-[12.5px] font-semibold text-ink-muted uppercase tracking-wide">Haskimail (email)</div>
         <div>
-          <Label>Haskimail Server Token (для email-канала)</Label>
+          <Label>Haskimail Server Token</Label>
           <Input
             type="password"
             value={haskimailToken}
@@ -308,10 +336,13 @@ export default function AuthSettings({
             placeholder="Магазин <noreply@ваш-домен.ru>"
           />
           <p className="text-[12px] text-ink-faint mt-1 mb-0">
-            Домен в адресе должен быть верифицирован в Haskimail (SPF + DKIM) — иначе письма не будут доставляться
+            Домен в адресе должен быть верифицирован у провайдера (SPF + DKIM) — иначе письма не будут доставляться
             или уйдут в спам.
           </p>
         </div>
+
+        <div className="h-2" />
+        <div className="text-[12.5px] font-semibold text-ink-muted uppercase tracking-wide">Telegram Gateway (официальный)</div>
         <div>
           <Label>Telegram Gateway token</Label>
           <Input
@@ -321,6 +352,9 @@ export default function AuthSettings({
             placeholder={initial.hasTelegram ? "оставьте пустым — не менять" : "вставьте токен из Telegram Gateway"}
           />
         </div>
+
+        <div className="h-2" />
+        <div className="text-[12.5px] font-semibold text-ink-muted uppercase tracking-wide">Bytehand (SMS)</div>
         <div>
           <Label>Bytehand X-Service-Key</Label>
           <Input
@@ -332,12 +366,33 @@ export default function AuthSettings({
         </div>
         <div>
           <Label>Подпись SMS-отправителя</Label>
+          <Input value={smsSender} onChange={(e) => setSmsSender(e.target.value)} placeholder="согласованная в Bytehand" />
+        </div>
+
+        <div className="h-2" />
+        <div className="text-[12.5px] font-semibold text-ink-muted uppercase tracking-wide">SMSC.ru (SMS / Telegram / Email — один аккаунт)</div>
+        <div>
+          <Label>Login</Label>
           <Input
-            value={smsSender}
-            onChange={(e) => setSmsSender(e.target.value)}
-            placeholder="согласованная в Bytehand"
+            value={smscLogin}
+            onChange={(e) => setSmscLogin(e.target.value)}
+            placeholder={initial.hasSmsc ? "оставьте пустым — не менять" : "логин аккаунта SMSC.ru"}
           />
         </div>
+        <div>
+          <Label>Password</Label>
+          <Input
+            type="password"
+            value={smscPassword}
+            onChange={(e) => setSmscPassword(e.target.value)}
+            placeholder={initial.hasSmsc ? "оставьте пустым — не менять" : "пароль аккаунта SMSC.ru"}
+          />
+        </div>
+        <p className="text-[12px] text-ink-faint mt-0 mb-0">
+          Один и тот же логин/пароль — общий для всех трёх каналов; какой канал реально идёт через SMSC, выбирается
+          провайдером в строке канала выше.
+        </p>
+
         <div>
           <Button disabled={busy} onClick={saveSettings}>
             Сохранить настройки
@@ -437,16 +492,23 @@ export default function AuthSettings({
   );
 }
 
-function channelHint(key: ChannelKey, has: boolean): string {
+function channelHint(key: ChannelKey, provider: string | undefined, has: boolean): string {
   if (key === "push") return "уже узнанные устройства — по телефону или по почте";
+  if (provider === "smsc") return has ? "SMSC: логин/пароль сохранены" : "SMSC: нужны логин и пароль ниже";
   if (key === "telegram") return has ? "токен сохранён" : "нужен токен (см. docs/telegram-gateway.md)";
   return has ? "ключ сохранён" : "нужен X-Service-Key из кабинета Bytehand";
 }
 
-function emailChannelHint(hasToken: boolean, hasFrom: boolean): string {
-  if (!hasToken && !hasFrom) return "нужен Server Token Haskimail и отправитель (From) ниже";
-  if (!hasToken) return "нужен Server Token Haskimail";
-  if (!hasFrom) return "нужен отправитель (From) ниже — домен верифицирован в Haskimail";
+function emailChannelHint(provider: string | undefined, hasSecret: boolean, hasFrom: boolean): string {
+  if (provider === "smsc") {
+    if (!hasSecret && !hasFrom) return "SMSC: нужны логин/пароль и отправитель (From) ниже";
+    if (!hasSecret) return "SMSC: нужны логин и пароль ниже";
+    if (!hasFrom) return "нужен отправитель (From) ниже";
+    return "SMSC: логин/пароль и отправитель заданы · код на введённый адрес";
+  }
+  if (!hasSecret && !hasFrom) return "нужен Server Token Haskimail и отправитель (From) ниже";
+  if (!hasSecret) return "нужен Server Token Haskimail";
+  if (!hasFrom) return "нужен отправитель (From) ниже — домен верифицирован у провайдера";
   return "ключ и отправитель заданы · код на введённый адрес";
 }
 
@@ -471,6 +533,9 @@ function ChannelRow({
   onDragStart,
   onDragMove,
   onDragEnd,
+  providerOptions,
+  provider,
+  onProviderChange,
 }: {
   label: string;
   hint: string;
@@ -483,6 +548,9 @@ function ChannelRow({
   onDragStart: (e: React.PointerEvent) => void;
   onDragMove: (e: React.PointerEvent) => void;
   onDragEnd: () => void;
+  providerOptions?: { id: string; label: string }[];
+  provider?: string;
+  onProviderChange?: (id: string) => void;
 }) {
   return (
     <div
@@ -510,6 +578,15 @@ function ChannelRow({
           {hint}
         </div>
       </div>
+      {providerOptions && providerOptions.length > 1 && (
+        <Select value={provider} onChange={(e) => onProviderChange?.(e.target.value)} className="w-40 shrink-0">
+          {providerOptions.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </Select>
+      )}
       <div title={locked ? "Сначала сохраните ключ ниже" : undefined}>
         <Toggle checked={on} onChange={onChange} disabled={locked} />
       </div>
