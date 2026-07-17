@@ -136,6 +136,23 @@ function widget(
     history.replaceState(null, "", url.toString());
   })();
 
+  // Тихое узнавание устройства заранее, ДО клика "Войти" — если браузер уже
+  // подписан, сообщаем это /api/public/recognize на каждой загрузке страницы.
+  // В ответ на НАШЕМ домене выставляется подписанная кука; когда покупатель
+  // потом реально нажмёт "Войти", страница входа увидит эту куку сразу и
+  // сможет узнать устройство без отскока сюда за device_token (см.
+  // /oidc/{projectId}/auth). Современные браузеры (особенно Safari) могут
+  // заблокировать cross-site куку — тогда просто не сработает, вход поедет
+  // по старому, более медленному пути отскока; ничего не ломается.
+  (function recognizeDevice(){
+    var dt = deviceToken();
+    if(!dt) return;
+    fetch(API + "/api/public/recognize", {
+      method:"POST", credentials:"include", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ projectId: PROJECT_ID, deviceToken: dt })
+    }).catch(function(){});
+  })();
+
   // PushSaaS.event(name, payload). Attaches the current device via its push
   // subscription endpoint; only tracks opted-in devices.
   function track(name, payload){

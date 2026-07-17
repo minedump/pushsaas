@@ -10,18 +10,18 @@ import { needsDeliveryPoll } from "@/lib/otp/providers";
 // Единый каскад для ОДНОГО ключа за раз — телефон ИЛИ email, никогда оба
 // сразу (нет флоу, который просит подтвердить оба и шлёт код по обоим):
 //
-//   GET c параметрами RP → сессия → отскок на домен магазина (?pss_link=)
-//     виджет предъявляет device_token → /api/public/link пишет
-//     device_subscriber_id в сессию → браузер возвращается сюда (?sid&sig)
-//   GET ?sid&sig         → сначала МОЛЧА пробуем push на уже узнанное по
-//                          этому устройству устройство (identity_devices по
-//                          device_subscriber_id) — если это возвратный
-//                          посетитель, вообще не показываем форму, сразу
-//                          экран кода. Не вышло (новое устройство или push
-//                          не сработал) → форма телефона ИЛИ почты, смотря
-//                          что первым в channel_order из {email, telegram,
-//                          sms} (push сам по себе не форма — ему нечего
-//                          спрашивать).
+//   GET c параметрами RP → если есть кука recognize (см. ниже) — быстрый
+//     путь, сразу к молчаливому узнаванию, без отскока. Иначе — отскок на
+//     домен магазина (?pss_link=), виджет предъявляет device_token →
+//     /api/public/link пишет device_subscriber_id в сессию → браузер
+//     возвращается сюда (?sid&sig)
+//   Дальше — что по ?sid&sig, что по быстрому пути — одна и та же развилка
+//     (renderForSession): сначала МОЛЧА пробуем push на уже узнанное по
+//     этому устройству устройство (identity_devices по device_subscriber_id)
+//     — если это возвратный посетитель, вообще не показываем форму, сразу
+//     экран кода. Не вышло (новое устройство или push не сработал) → форма
+//     телефона ИЛИ почты, смотря что первым в channel_order из {email,
+//     telegram, sms} (push сам по себе не форма — ему нечего спрашивать).
 //   POST action=send      → каскад push(по телефону)/telegram/sms для
 //                          введённого номера. Не получилось НИ ОДНИМ
 //                          каналом → просим email (одна попытка фолбэка).
@@ -373,6 +373,50 @@ async function tryRecognizeDevice(
   return { channel: r.channel, provider: r.provider, key, target };
 }
 
+// Общая развилка после того, как у сессии уже (может быть) известен
+// device_subscriber_id — что попыткой push-узнавания (пришли с ?sid после
+// отскока, или уже узнаны заранее через куку recognize — см. ниже), что нет.
+// Вынесено, чтобы оба места приходили к одному и тому же решению.
+async function renderForSession(
+  action: string,
+  projectId: string,
+  ctx: OidcContext,
+  admin: ReturnType<typeof createAdminClient>,
+  session: SessionRow,
+  startForm: (sid: string, sig: string) => Response
+): Promise<Response> {
+  // Молчаливое узнавание по push уважает настроенный порядок каналов:
+  // если магазин явно поставил push НЕ первым (телефон/SMS раньше него),
+  // не перепрыгиваем вперёд без спроса — сразу показываем форму.
+  const pushFirst = resolveOrder(ctx.config?.channel_order)[0] === "push" && ctx.config?.channels?.push !== false;
+  const recognized = pushFirst ? await tryRecognizeDevice(admin, projectId, session) : null;
+  if (recognized) {
+    const askName = recognized.key === "phone" ? await askNameFor(projectId, recognized.target) : await askNameForEmail(projectId, recognized.target);
+    const maskedTarget = recognized.key === "phone" ? maskPhone(recognized.target) : maskEmail(recognized.target);
+    return codeForm(action, session.id, signParam(session.id), recognized.channel, recognized.provider, maskedTarget, askName, recognized.key);
+  }
+  return startForm(session.id, signParam(session.id));
+}
+
+// Кука, которую заранее (на каждой загрузке страницы магазина, вне флоу
+// входа) выставляет /api/public/recognize — subscriber_id + подпись, тем же
+// HMAC, что sid/sig. Позволяет узнать устройство СРАЗУ на первом приходе от
+// InSales, без отскока в магазин за device_token (см. ниже). Может
+// отсутствовать (не выставилась — блокировка cross-site cookie в браузере,
+// или ещё не успела) — тогда просто едем по старому пути отскока.
+function recognizedSubscriberIdFrom(req: Request, projectId: string): string | null {
+  const cookieHeader = req.headers.get("cookie") || "";
+  const prefix = `pss_rec_${projectId}=`;
+  const raw = cookieHeader.split(/;\s*/).find((c) => c.startsWith(prefix));
+  if (!raw) return null;
+  const value = decodeURIComponent(raw.slice(prefix.length));
+  const dot = value.lastIndexOf(".");
+  if (dot < 0) return null;
+  const subscriberId = value.slice(0, dot);
+  const sig = value.slice(dot + 1);
+  return verifyParam(subscriberId, sig) ? subscriberId : null;
+}
+
 export async function GET(req: Request, routeCtx: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await routeCtx.params;
   const ctx = await getOidcContext(projectId);
@@ -387,18 +431,7 @@ export async function GET(req: Request, routeCtx: { params: Promise<{ projectId:
   if (q.get("sid")) {
     const session = await loadSession(projectId, q.get("sid")!, q.get("sig") || "");
     if (!session) return new Response("Сессия входа истекла — вернитесь в магазин и попробуйте снова.", { status: 400 });
-
-    // Молчаливое узнавание по push уважает настроенный порядок каналов:
-    // если магазин явно поставил push НЕ первым (телефон/SMS раньше него),
-    // не перепрыгиваем вперёд без спроса — сразу показываем форму.
-    const pushFirst = resolveOrder(ctx.config?.channel_order)[0] === "push" && ctx.config?.channels?.push !== false;
-    const recognized = pushFirst ? await tryRecognizeDevice(admin, projectId, session) : null;
-    if (recognized) {
-      const askName = recognized.key === "phone" ? await askNameFor(projectId, recognized.target) : await askNameForEmail(projectId, recognized.target);
-      const maskedTarget = recognized.key === "phone" ? maskPhone(recognized.target) : maskEmail(recognized.target);
-      return codeForm(action, session.id, signParam(session.id), recognized.channel, recognized.provider, maskedTarget, askName, recognized.key);
-    }
-    return startForm(session.id, signParam(session.id));
+    return renderForSession(action, projectId, ctx, admin, session, startForm);
   }
 
   // старт флоу от RP (InSales)
@@ -422,6 +455,51 @@ export async function GET(req: Request, routeCtx: { params: Promise<{ projectId:
   if (!redirectHostAllowed(ctx, rp.redirect_uri)) {
     oidcLog("auth:start", { projectId, redirectHost, outcome: "redirect_not_allowed" });
     return new Response("redirect_uri not allowed", { status: 400 });
+  }
+
+  // Быстрый путь: устройство уже узнано заранее (кука от /api/public/recognize,
+  // выставленная на предыдущих загрузках страницы магазина) — сессия сразу
+  // создаётся со знанием device_subscriber_id, без отскока в магазин и
+  // обратно за device_token. Кука может быть просрочена/про подписку, которую
+  // уже отключили — тогда просто не находим активный subscriber и едем
+  // дальше по обычному пути ниже, как будто её не было.
+  const recognizedSubscriberId = recognizedSubscriberIdFrom(req, projectId);
+  if (recognizedSubscriberId) {
+    const { data: sub } = await admin
+      .from("subscribers")
+      .select("id")
+      .eq("id", recognizedSubscriberId)
+      .eq("project_id", projectId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (sub) {
+      const { data: session } = await admin
+        .from("oidc_auth_sessions")
+        .insert({
+          project_id: projectId,
+          redirect_uri: rp.redirect_uri,
+          state: rp.state || null,
+          nonce: rp.nonce || null,
+          device_subscriber_id: sub.id,
+          expires_at: new Date(Date.now() + SESSION_TTL_MS).toISOString(),
+        })
+        .select("id")
+        .single();
+      if (session) {
+        oidcLog("auth:start", { projectId, redirectHost, sessionId: session.id, fastPath: true });
+        const sessionRow: SessionRow = {
+          id: session.id,
+          phone: null,
+          otp_id: null,
+          status: "pending",
+          device_subscriber_id: sub.id,
+          pending_email: null,
+          verifying_key: null,
+          expires_at: new Date(Date.now() + SESSION_TTL_MS).toISOString(),
+        };
+        return renderForSession(action, projectId, ctx, admin, sessionRow, startForm);
+      }
+    }
   }
 
   // опознавательный отскок: виджет на домене магазина сообщит, каким
