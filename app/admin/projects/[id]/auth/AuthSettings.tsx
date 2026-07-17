@@ -60,6 +60,7 @@ export default function AuthSettings({
   const { confirm, toast } = useDialogs();
   const [busy, setBusy] = useState(false);
   const [freshSecret, setFreshSecret] = useState<string | null>(null);
+  const [isEnabled, setIsEnabled] = useState(initial?.isEnabled ?? false);
   const [channels, setChannels] = useState(initial?.channels || { push: true, email: true, telegram: true, sms: true });
   const [order, setOrder] = useState<ChannelKey[]>(() => {
     const saved = initial?.channelOrder?.filter((c): c is ChannelKey => DEFAULT_ORDER.includes(c)) ?? [];
@@ -87,6 +88,89 @@ export default function AuthSettings({
     telegram: providers.telegram === "smsc" ? (initial?.hasSmsc ?? false) : (initial?.hasTelegram ?? false),
     sms: providers.sms === "smsc" ? (initial?.hasSmsc ?? false) : (initial?.hasBytehand ?? false),
   };
+
+  // Готовность канала к включению — учитывает как уже сохранённый ключ
+  // (hasSecret, из БД), так и то, что введено в поле прямо сейчас, но ещё не
+  // сохранено — иначе пользователь вводит ключ и тут же не может включить
+  // канал, потому что hasSecret отражает состояние ДО этого ввода. Смотрит на
+  // ТЕКУЩИЙ выбранный провайдер канала — у sms/telegram/email их может быть
+  // несколько (см. PROVIDER_OPTIONS), проверка должна бить по нужному.
+  function channelReadiness(key: ChannelKey): { ok: boolean; message?: string } {
+    if (key === "push") return { ok: true };
+    if (key === "email" && !emailFrom.trim()) {
+      return { ok: false, message: "Сначала укажите email-отправителя (From) ниже" };
+    }
+    const provider = providers[key] || PROVIDER_OPTIONS[key]?.[0]?.id;
+    if (provider === "smsc") {
+      if (!hasSecret[key] && !(smscLogin.trim() && smscPassword.trim())) {
+        return { ok: false, message: "Сначала укажите логин и пароль SMSC.ru ниже" };
+      }
+      return { ok: true };
+    }
+    if (key === "telegram" && !hasSecret.telegram && !telegramToken.trim()) {
+      return { ok: false, message: "Сначала укажите Telegram Gateway token ниже" };
+    }
+    if (key === "sms" && !hasSecret.sms && !bytehandKey.trim()) {
+      return { ok: false, message: "Сначала укажите Bytehand X-Service-Key ниже" };
+    }
+    if (key === "email" && !hasSecret.email && !haskimailToken.trim()) {
+      return { ok: false, message: "Сначала укажите Haskimail Server Token ниже" };
+    }
+    return { ok: true };
+  }
+
+  function handleChannelToggle(key: ChannelKey, v: boolean) {
+    if (v) {
+      const r = channelReadiness(key);
+      if (!r.ok) {
+        toast(r.message || "Канал ещё не настроен", "bad");
+        return;
+      }
+      toast("Готово к включению — сохраните настройки", "good");
+    }
+    setChannels((c) => ({ ...c, [key]: v }));
+  }
+
+  // Push сам по себе никого не онбордит — работает только на уже узнанных
+  // устройствах (см. tryRecognizeDevice), поэтому не считается «настроенным
+  // каналом» для целей этой проверки. Нужен хотя бы один канал с кодом,
+  // реально включённый И готовый (ключ уже сохранён или введён прямо сейчас).
+  function loginReadiness(): { ok: boolean; message?: string } {
+    const ready = (["email", "telegram", "sms"] as ChannelKey[]).some((ch) => channels[ch] !== false && channelReadiness(ch).ok);
+    if (!ready) {
+      return {
+        ok: false,
+        message: "Сначала настройте и включите хотя бы один канал с кодом (Email, Telegram или SMS) — push один не подойдёт, он работает только для уже узнанных устройств.",
+      };
+    }
+    return { ok: true };
+  }
+
+  async function saveEnabled(next: boolean) {
+    if (next) {
+      const r = loginReadiness();
+      if (!r.ok) {
+        toast(r.message || "Сначала настройте канал", "bad");
+        return;
+      }
+    }
+    setIsEnabled(next);
+    setBusy(true);
+    const res = await fetch("/api/admin/oidc/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, isEnabled: next }),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setIsEnabled(!next);
+      const j = await res.json().catch(() => ({}));
+      toast(j.error || "Ошибка", "bad");
+      return;
+    }
+    toast(next ? "Вход включён" : "Вход выключен", next ? "good" : "neutral");
+    router.refresh();
+  }
 
   async function setup(regenerate = false) {
     if (regenerate) {
@@ -271,6 +355,20 @@ export default function AuthSettings({
         </Card>
       )}
 
+      <h2 className="text-base font-semibold mt-7">Статус входа</h2>
+      <Card className="mt-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm">
+            {isEnabled ? "Вход включён — покупатели видят кнопку и могут войти" : "Вход выключен — недоступен покупателям, даже если кнопка видна"}
+          </div>
+          <div className="text-[12px] text-ink-faint mt-0.5">
+            Включайте, только когда ниже настроен и включён хотя бы один канал с кодом (Email, Telegram или SMS) —
+            push один не подойдёт, он работает только для уже узнанных устройств.
+          </div>
+        </div>
+        <Toggle checked={isEnabled} onChange={saveEnabled} disabled={busy} />
+      </Card>
+
       <h2 className="text-base font-semibold mt-7">Значения для админки InSales</h2>
       <p className="text-sm text-ink-muted mt-1">
         Магазин → Настройки → Авторизация покупателя → «Авторизация через OpenID Connect» → добавить приложение.
@@ -304,8 +402,7 @@ export default function AuthSettings({
             hint={key === "email" ? emailChannelHint(providers.email, hasSecret.email, !!emailFrom.trim()) : channelHint(key, providers[key], hasSecret[key])}
             tone={key === "push" ? undefined : hasSecret[key] ? "good" : "warn"}
             on={channels[key] !== false}
-            locked={!hasSecret[key] && channels[key] === false}
-            onChange={(v) => setChannels((c) => ({ ...c, [key]: v }))}
+            onChange={(v) => handleChannelToggle(key, v)}
             dragging={dragKey === key}
             rowRef={(el) => (rowRefs.current[key] = el)}
             onDragStart={(e) => dragStart(e, key)}
@@ -526,7 +623,6 @@ function ChannelRow({
   hint,
   tone,
   on,
-  locked,
   onChange,
   dragging,
   rowRef,
@@ -541,7 +637,6 @@ function ChannelRow({
   hint: string;
   tone?: "good" | "warn";
   on: boolean;
-  locked: boolean;
   onChange: (v: boolean) => void;
   dragging: boolean;
   rowRef: (el: HTMLDivElement | null) => void;
@@ -587,9 +682,7 @@ function ChannelRow({
           ))}
         </Select>
       )}
-      <div title={locked ? "Сначала сохраните ключ ниже" : undefined}>
-        <Toggle checked={on} onChange={onChange} disabled={locked} />
-      </div>
+      <Toggle checked={on} onChange={onChange} />
     </div>
   );
 }

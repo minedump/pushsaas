@@ -114,7 +114,10 @@ export async function ensureOidcClient(
   const { privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
   const pem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
 
-  await admin.from("oidc_clients").insert({ project_id: projectId, client_id: clientId, kid });
+  // is_enabled: false явно — вход не должен стать доступен покупателям, пока
+  // админ не настроит хотя бы один рабочий канал и не включит его сам
+  // (см. «Статус входа» в AuthSettings.tsx и проверку в /api/admin/oidc/settings).
+  await admin.from("oidc_clients").insert({ project_id: projectId, client_id: clientId, kid, is_enabled: false });
   await admin
     .from("project_secrets")
     .upsert(

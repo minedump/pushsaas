@@ -67,17 +67,39 @@ export async function POST(req: Request) {
   };
 
   const config = { ...(client.config || {}) };
+  // Актуальное состояние каналов (сохранённое + то, что придёт этим вызовом)
+  // нужно ЗАРАНЕЕ — от него зависит проверка isEnabled ниже, даже если сам
+  // запрос channels не трогает (например, отдельный клик по «Вход включён»).
+  const savedChannels: Record<string, boolean> = { push: true, email: true, telegram: true, sms: true, ...(config.channels || {}) };
+  let effectiveChannels = savedChannels;
   if (channels && typeof channels === "object") {
-    const nextChannels = { ...(config.channels || {}), ...channels };
+    const nextChannels = { ...savedChannels, ...channels };
     // сервер — последняя линия защиты: канал не включится без ключа/отправителя,
     // даже если запрос пришёл не из нашей формы (которая уже блокирует это в UI).
     for (const ch of ["telegram", "sms", "email"] as const) {
       if (nextChannels[ch] && !willHave[ch]) nextChannels[ch] = false;
     }
     config.channels = nextChannels;
+    effectiveChannels = nextChannels;
   }
   if (providers && typeof providers === "object") {
     config.providers = nextProviders;
+  }
+
+  // Вход нельзя включить без хотя бы одного реально работающего канала с
+  // кодом — push сам по себе никого не онбордит (работает только для уже
+  // узнанных устройств), поэтому не считается «настроенным каналом» здесь.
+  if (isEnabled === true) {
+    const hasWorkingChannel = (["email", "telegram", "sms"] as const).some((ch) => effectiveChannels[ch] !== false && willHave[ch]);
+    if (!hasWorkingChannel) {
+      return NextResponse.json(
+        {
+          error:
+            "Сначала настройте и включите хотя бы один канал с кодом (Email, Telegram или SMS) — push один не подойдёт, он работает только для уже узнанных устройств.",
+        },
+        { status: 400 }
+      );
+    }
   }
   if (Array.isArray(channelOrder)) config.channel_order = channelOrder.filter((c: unknown) => typeof c === "string");
   if (hideNativeLoginButton !== undefined) config.hide_native_login_button = !!hideNativeLoginButton;
