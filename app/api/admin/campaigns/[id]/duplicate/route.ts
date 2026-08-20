@@ -23,7 +23,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { data: source } = await admin
     .from("campaigns")
     .select(
-      "channel, title, body, subject, html_body, icon_url, image_url, click_url, badge_url, segment_tags, actions, provider, type, template_id, template_data, internal_title, contacts"
+      "channel, title, body, subject, html_body, icon_url, image_url, click_url, badge_url, segment_tags, platforms, actions, provider, type, template_id, template_data, internal_title, contacts"
     )
     .eq("id", campaignId)
     .eq("project_id", projectId)

@@ -9,11 +9,12 @@ import { countAudience } from "@/lib/sender";
 // резолвит нужное каналу поле.
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const { projectId, channel, contacts, segmentTags, type } = body as {
+  const { projectId, channel, contacts, segmentTags, platforms, type } = body as {
     projectId?: string;
     channel?: "push" | "sms" | "email";
     contacts?: string[];
     segmentTags?: string[];
+    platforms?: string[];
     type?: "transactional" | "marketing";
   };
   if (!projectId || !channel) return NextResponse.json({ error: "Не хватает данных" }, { status: 400 });
@@ -24,6 +25,7 @@ export async function POST(req: Request) {
   const count = await countAudience(projectId, channel, {
     contacts: contacts || [],
     segmentTags: segmentTags || [],
+    platforms: platforms || [],
     bypassConsent: type === "transactional",
   });
   return NextResponse.json({ count });

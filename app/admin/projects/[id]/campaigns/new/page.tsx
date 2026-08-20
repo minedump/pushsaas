@@ -55,7 +55,7 @@ export default async function NewCampaignPage({
 
   // Подсказки для мультивыбора сегмента — все теги, встречавшиеся у
   // подписчиков проекта, не ограничение на ввод (новый тег тоже можно ввести).
-  const { data: tagRows } = await admin.from("subscribers").select("tags").eq("project_id", id).limit(5000);
+  const { data: tagRows } = await admin.from("identities").select("tags").eq("project_id", id).limit(5000);
   const segmentOptions = [...new Set((tagRows || []).flatMap((r) => r.tags || []))].filter(Boolean).sort((a, b) => a.localeCompare(b, "ru"));
 
   return (

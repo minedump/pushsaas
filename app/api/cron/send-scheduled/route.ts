@@ -31,6 +31,7 @@ export async function GET(req: Request) {
         badge_url?: string | null;
         provider?: string | null;
         segment_tags: string[] | null;
+        platforms?: string[] | null;
         actions?: { title: string; url: string }[];
         template_data?: Record<string, unknown> | null;
         type?: "transactional" | "marketing";
@@ -41,7 +42,7 @@ export async function GET(req: Request) {
     const { data, error } = await admin
       .from("campaigns")
       .select(
-        "id, project_id, channel, title, body, subject, html_body, icon_url, image_url, click_url, badge_url, provider, segment_tags, actions, template_data, type, contacts"
+        "id, project_id, channel, title, body, subject, html_body, icon_url, image_url, click_url, badge_url, provider, segment_tags, platforms, actions, template_data, type, contacts"
       )
       .eq("status", "scheduled")
       .lte("scheduled_at", new Date().toISOString())

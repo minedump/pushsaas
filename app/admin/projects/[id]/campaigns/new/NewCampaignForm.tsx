@@ -7,6 +7,7 @@ import { Button, Input, Textarea, Label, Toggle, useDialogs } from "@/app/ui";
 import { CustomSelect, type ComboOption } from "@/app/ui/CustomSelect";
 import { MessagePreviewModal, type PreviewContent } from "../../MessagePreviewModal";
 import { SegmentTagsInput } from "../../SegmentTagsInput";
+import { PlatformFilter } from "../../PlatformFilter";
 import { ContextField } from "../../ContextField";
 import { smsSegments } from "@/lib/smsSegments";
 import { withShortenedLinks } from "@/lib/linkPreview";
@@ -79,6 +80,7 @@ export default function NewCampaignForm({
   const [contextEnabled, setContextEnabled] = useState(false);
   const [contextJson, setContextJson] = useState("");
   const [segment, setSegment] = useState<string[]>([]);
+  const [platforms, setPlatforms] = useState<string[]>([]);
   const [contacts, setContacts] = useState("");
   const [busy, setBusy] = useState(false);
   const [testBusy, setTestBusy] = useState(false);
@@ -168,6 +170,7 @@ export default function NewCampaignForm({
       channel,
       internalTitle: internalTitle.trim() || undefined,
       segmentTags,
+      platforms: channel === "push" ? platforms : undefined,
       phones: phones.length ? phones : undefined,
       emails: emails.length ? emails : undefined,
       type: transactional ? "transactional" : "marketing",
@@ -232,7 +235,7 @@ export default function NewCampaignForm({
     const countRes = await fetch("/api/admin/campaigns/audience-count", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, channel, contacts: contactList, segmentTags: segment, type: body.type }),
+      body: JSON.stringify({ projectId, channel, contacts: contactList, segmentTags: segment, platforms: channel === "push" ? platforms : undefined, type: body.type }),
     }).catch(() => null);
     const countJson = countRes && countRes.ok ? await countRes.json() : null;
     const audienceNote = typeof countJson?.count === "number" ? ` Уйдёт ${countJson.count} получателям.` : "";
@@ -572,6 +575,14 @@ export default function NewCampaignForm({
             <Label>Сегмент по тегам</Label>
             <SegmentTagsInput value={segment} onChange={setSegment} options={segmentOptions} />
           </div>
+
+          {channel === "push" && (
+            <div>
+              <Label>Платформы</Label>
+              <PlatformFilter value={platforms} onChange={setPlatforms} />
+              <p className="text-[11px] text-ink-faint mt-1 mb-0">Ничего не выбрано — уйдёт на все платформы.</p>
+            </div>
+          )}
 
           <div>
             <Label>Контакты (телефон/email, через запятую)</Label>

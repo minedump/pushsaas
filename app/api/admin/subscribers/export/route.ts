@@ -20,7 +20,7 @@ export async function GET(req: Request) {
   const admin = createAdminClient();
   const { data: subs } = await admin
     .from("subscribers")
-    .select("id, platform, tags, is_active, attributes, created_at")
+    .select("id, platform, is_active, attributes, created_at")
     .eq("project_id", projectId)
     .order("created_at", { ascending: false });
 
@@ -41,12 +41,13 @@ export async function GET(req: Request) {
   const emailById = new Map<string, string>();
   const nameById = new Map<string, string>();
   const insalesClientIdById = new Map<string, string>();
+  const tagsById = new Map<string, string[]>();
   const smsActiveById = new Set<string>();
   const emailActiveById = new Set<string>();
   if (rows.length) {
     const { data: links } = await admin
       .from("identity_devices")
-      .select("subscriber_id, identities!inner(phone, email, name, insales_client_id, sms_marketing_active_at, email_marketing_active_at)")
+      .select("subscriber_id, identities!inner(phone, email, name, insales_client_id, tags, sms_marketing_active_at, email_marketing_active_at)")
       .in("subscriber_id", rows.map((r) => r.id));
     for (const l of links ?? []) {
       const ident = l.identities as unknown as {
@@ -54,6 +55,7 @@ export async function GET(req: Request) {
         email: string | null;
         name: string | null;
         insales_client_id: string | null;
+        tags: string[] | null;
         sms_marketing_active_at: string | null;
         email_marketing_active_at: string | null;
       };
@@ -61,6 +63,7 @@ export async function GET(req: Request) {
       if (ident?.email) emailById.set(l.subscriber_id, ident.email);
       if (ident?.name) nameById.set(l.subscriber_id, ident.name);
       if (ident?.insales_client_id) insalesClientIdById.set(l.subscriber_id, ident.insales_client_id);
+      if (ident?.tags) tagsById.set(l.subscriber_id, ident.tags);
       if (ident?.sms_marketing_active_at) smsActiveById.add(l.subscriber_id);
       if (ident?.email_marketing_active_at) emailActiveById.add(l.subscriber_id);
     }
@@ -98,7 +101,7 @@ export async function GET(req: Request) {
       emailById.get(r.id) || "",
       insalesClientIdById.get(r.id) || "",
       r.platform,
-      (r.tags || []).join("|"),
+      (tagsById.get(r.id) || []).join("|"),
       r.is_active,
       paused,
       r.is_active && !paused,

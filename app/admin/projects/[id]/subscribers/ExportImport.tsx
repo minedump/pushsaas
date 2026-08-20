@@ -110,11 +110,11 @@ export default function ExportImport({ projectId }: { projectId: string }) {
     <div className="flex items-center gap-2">
       <Button variant="secondary" size="sm" onClick={() => (window.location.href = `/api/admin/subscribers/export?projectId=${projectId}`)}>
         <IconDownload size={15} stroke={1.8} />
-        Экспорт CSV
+        Экспорт
       </Button>
       <Button variant="secondary" size="sm" onClick={() => fileRef.current?.click()}>
         <IconUpload size={15} stroke={1.8} />
-        Импорт / обогащение
+        Импорт
       </Button>
       <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={onFile} />
 

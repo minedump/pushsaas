@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendPush, type PushPayload } from "@/lib/webpush";
 import { applyTemplate } from "@/lib/template";
-import { subscribersToContacts, filterConsentedContacts, phonesToSubscriberIds, emailsToSubscriberIds } from "@/lib/identity";
+import { filterConsentedContacts, phonesToSubscriberIds, emailsToSubscriberIds, resolvePushSegmentIds } from "@/lib/identity";
 import { sendSms } from "@/lib/otp/sms";
 import { sendEmail } from "@/lib/otp/haskimail";
 import { sendSmsSmsc, sendEmailSmsc } from "@/lib/otp/smsc";
@@ -37,6 +37,7 @@ type CampaignRow = {
   click_url: string | null;
   badge_url?: string | null;
   segment_tags: string[] | null;
+  platforms?: string[] | null;
   actions?: PushAction[] | null;
   template_data?: Record<string, unknown> | null;
   type?: "transactional" | "marketing";
@@ -215,32 +216,48 @@ export async function dispatchCampaign(campaign: CampaignRow, subscriberIds?: st
   const hasContacts = !!subscriberIds?.length || !!campaign.contacts?.length;
   const ids = subscriberIds?.length ? subscriberIds : campaign.contacts?.length ? await resolvePushContactIds(campaign.project_id, campaign.contacts, campaign.type === "transactional") : [];
   const hasSegment = !!(campaign.segment_tags && campaign.segment_tags.length);
+  // Платформа (iOS/Android/Desktop) — доп. требование ПОВЕРХ контактов/
+  // сегмента, не отдельный источник аудитории: сужает уже резолвленный
+  // список устройств, а не резолвит его сама. Пусто = без фильтра.
+  const platforms = campaign.platforms?.filter(Boolean) || [];
 
   let subsRaw: { id: string; endpoint: string; p256dh: string; auth: string; attributes: Record<string, unknown> | null }[] | null;
   if (!hasContacts && !hasSegment) {
     // ни контактов, ни сегмента — «пусто = всем», широковещательная рассылка.
-    const { data } = await admin.from("subscribers").select(SEL).eq("project_id", campaign.project_id).eq("is_active", true);
+    let q = admin.from("subscribers").select(SEL).eq("project_id", campaign.project_id).eq("is_active", true);
+    if (platforms.length) q = q.in("platform", platforms);
+    const { data } = await q;
     subsRaw = data;
   } else if (hasContacts && hasSegment) {
     // пересечение: контакт должен резолвиться в устройство И принадлежать
-    // подписчику из сегмента.
+    // подписчику из сегмента. Сегмент теперь резолвится по identities.tags
+    // (см. resolvePushSegmentIds) — теги живут на контакте, не на устройстве.
     if (!ids.length) subsRaw = [];
     else {
-      const { data } = await admin
-        .from("subscribers")
-        .select(SEL)
-        .eq("project_id", campaign.project_id)
-        .eq("is_active", true)
-        .in("id", ids)
-        .overlaps("tags", campaign.segment_tags!);
-      subsRaw = data;
+      const segmentIds = await resolvePushSegmentIds(campaign.project_id, campaign.segment_tags!);
+      const intersected = ids.filter((id) => segmentIds.includes(id));
+      if (!intersected.length) subsRaw = [];
+      else {
+        let q = admin.from("subscribers").select(SEL).eq("project_id", campaign.project_id).eq("is_active", true).in("id", intersected);
+        if (platforms.length) q = q.in("platform", platforms);
+        const { data } = await q;
+        subsRaw = data;
+      }
     }
   } else if (hasContacts) {
-    const { data } = await admin.from("subscribers").select(SEL).eq("project_id", campaign.project_id).eq("is_active", true).in("id", ids);
+    let q = admin.from("subscribers").select(SEL).eq("project_id", campaign.project_id).eq("is_active", true).in("id", ids);
+    if (platforms.length) q = q.in("platform", platforms);
+    const { data } = await q;
     subsRaw = data;
   } else {
-    const { data } = await admin.from("subscribers").select(SEL).eq("project_id", campaign.project_id).eq("is_active", true).overlaps("tags", campaign.segment_tags!);
-    subsRaw = data;
+    const segmentIds = await resolvePushSegmentIds(campaign.project_id, campaign.segment_tags!);
+    if (!segmentIds.length) subsRaw = [];
+    else {
+      let q = admin.from("subscribers").select(SEL).eq("project_id", campaign.project_id).eq("is_active", true).in("id", segmentIds);
+      if (platforms.length) q = q.in("platform", platforms);
+      const { data } = await q;
+      subsRaw = data;
+    }
   }
 
   // best-effort exclusion of paused subscribers — a SEPARATE query, so a
@@ -366,6 +383,7 @@ export async function insertCampaign(
     click_url: string | null;
     badge_url?: string | null;
     segment_tags: string[];
+    platforms?: string[];
     actions: PushAction[];
     status: string;
     scheduled_at?: string | null;
@@ -378,15 +396,16 @@ export async function insertCampaign(
     contacts?: string[];
   }
 ): Promise<CampaignRow | null> {
-  const full = "id, project_id, title, body, icon_url, image_url, click_url, badge_url, segment_tags, actions, template_data, type, contacts";
+  const full = "id, project_id, title, body, icon_url, image_url, click_url, badge_url, segment_tags, platforms, actions, template_data, type, contacts";
   const { data, error } = await admin.from("campaigns").insert(row).select(full).single();
   if (!error) return data;
 
-  const { badge_url, ...withoutBadge } = row;
+  const { badge_url, platforms, ...withoutBadge } = row;
   void badge_url;
+  void platforms;
   const withActions = "id, project_id, title, body, icon_url, image_url, click_url, segment_tags, actions, template_data, type, contacts";
   const { data: noBadge, error: err2 } = await admin.from("campaigns").insert(withoutBadge).select(withActions).single();
-  if (!err2) return { ...noBadge, badge_url: null };
+  if (!err2) return { ...noBadge, badge_url: null, platforms: [] };
 
   const { actions, contacts: contactsField, ...withoutActionsBadgeContacts } = withoutBadge;
   void actions;
@@ -396,7 +415,7 @@ export async function insertCampaign(
     .insert(withoutActionsBadgeContacts)
     .select("id, project_id, title, body, icon_url, image_url, click_url, segment_tags, type")
     .single();
-  return fallback ? { ...fallback, actions: [], badge_url: null, contacts: [] } : null;
+  return fallback ? { ...fallback, actions: [], badge_url: null, platforms: [], contacts: [] } : null;
 }
 
 // Разрешает шаблон канала push в набор полей кампании — общий код для
@@ -596,24 +615,16 @@ export async function resolveSmsEmailAudience(
     const consented = await filterConsentedContacts(projectId, field, opts.contacts!, { bypassConsent: opts.bypassConsent });
     for (const value of consented) byContact.set(value, { value, attrs: {} });
   } else if (hasSegment) {
-    const { data: subs } = await admin
-      .from("subscribers")
-      .select("id, attributes")
-      .eq("project_id", projectId)
-      .eq("is_active", true)
-      .overlaps("tags", opts.segmentTags!);
-    if (subs?.length) {
-      const contactMap = await subscribersToContacts(
-        projectId,
-        subs.map((s) => s.id),
-        field,
-        { bypassConsent: opts.bypassConsent }
-      );
-      for (const s of subs) {
-        const value = contactMap.get(s.id);
-        if (!value || byContact.has(value)) continue; // первое устройство этого контакта выигрывает
-        byContact.set(value, { value, attrs: (s as { attributes?: Record<string, unknown> }).attributes || {} });
-      }
+    // Теги теперь живут на identities — сегментная SMS/Email-рассылка больше
+    // не завязана на наличие активного push-устройства у контакта (это было
+    // побочным следствием старой модели, где теги хранились на subscribers).
+    const activeCol = field === "phone" ? "sms_marketing_active_at" : "email_marketing_active_at";
+    let q = admin.from("identities").select(`${field}, ${activeCol}`).eq("project_id", projectId).overlaps("tags", opts.segmentTags!);
+    if (!opts.bypassConsent) q = q.not(activeCol, "is", null);
+    const { data } = await q;
+    for (const row of data || []) {
+      const value = (row as Record<string, string>)[field];
+      if (value && !byContact.has(value)) byContact.set(value, { value, attrs: {} });
     }
   } else {
     // Ни контактов, ни сегмента — «пусто = всем», тот же принцип, что и у
@@ -643,11 +654,12 @@ export async function resolveSmsEmailAudience(
 export async function countAudience(
   projectId: string,
   channel: "push" | "sms" | "email",
-  opts: { contacts?: string[]; segmentTags?: string[]; bypassConsent: boolean }
+  opts: { contacts?: string[]; segmentTags?: string[]; platforms?: string[]; bypassConsent: boolean }
 ): Promise<number> {
   const admin = createAdminClient();
   const contacts = (opts.contacts || []).filter(Boolean);
   const segmentTags = (opts.segmentTags || []).filter(Boolean);
+  const platforms = (opts.platforms || []).filter(Boolean);
   const hasContacts = !!contacts.length;
   const hasSegment = !!segmentTags.length;
 
@@ -658,11 +670,29 @@ export async function countAudience(
   }
 
   if (!hasContacts && !hasSegment) {
-    const { count } = await admin.from("subscribers").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("is_active", true);
+    let q = admin.from("subscribers").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("is_active", true);
+    if (platforms.length) q = q.in("platform", platforms);
+    const { count } = await q;
     return count || 0;
   }
   const ids = hasContacts ? await resolvePushContactIds(projectId, contacts, opts.bypassConsent) : [];
   if (hasContacts && hasSegment) {
+    if (!ids.length) return 0;
+    const segmentIds = await resolvePushSegmentIds(projectId, segmentTags);
+    const intersected = ids.filter((id) => segmentIds.includes(id));
+    if (!intersected.length) return 0;
+    if (!platforms.length) return intersected.length;
+    const { count } = await admin
+      .from("subscribers")
+      .select("id", { count: "exact", head: true })
+      .eq("project_id", projectId)
+      .eq("is_active", true)
+      .in("id", intersected)
+      .in("platform", platforms);
+    return count || 0;
+  }
+  if (hasContacts) {
+    if (!platforms.length) return ids.length;
     if (!ids.length) return 0;
     const { count } = await admin
       .from("subscribers")
@@ -670,11 +700,14 @@ export async function countAudience(
       .eq("project_id", projectId)
       .eq("is_active", true)
       .in("id", ids)
-      .overlaps("tags", segmentTags);
+      .in("platform", platforms);
     return count || 0;
   }
-  if (hasContacts) return ids.length;
-  const { count } = await admin.from("subscribers").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("is_active", true).overlaps("tags", segmentTags);
+  const segmentIds = await resolvePushSegmentIds(projectId, segmentTags);
+  if (!segmentIds.length) return 0;
+  let q = admin.from("subscribers").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("is_active", true).in("id", segmentIds);
+  if (platforms.length) q = q.in("platform", platforms);
+  const { count } = await q;
   return count || 0;
 }
 

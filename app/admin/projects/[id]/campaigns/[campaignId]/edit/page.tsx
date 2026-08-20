@@ -15,7 +15,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
   const { data: campaign } = await supabase
     .from("campaigns")
     .select(
-      "id, channel, status, title, body, subject, html_body, icon_url, image_url, click_url, badge_url, segment_tags, actions, type, template_id, scheduled_at, internal_title, template_data, contacts, provider"
+      "id, channel, status, title, body, subject, html_body, icon_url, image_url, click_url, badge_url, segment_tags, platforms, actions, type, template_id, scheduled_at, internal_title, template_data, contacts, provider"
     )
     .eq("id", campaignId)
     .eq("project_id", id)
@@ -37,7 +37,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
   const admin = createAdminClient();
 
   // Подсказки для мультивыбора сегмента — те же теги, что и в форме создания.
-  const { data: tagRows } = await admin.from("subscribers").select("tags").eq("project_id", id).limit(5000);
+  const { data: tagRows } = await admin.from("identities").select("tags").eq("project_id", id).limit(5000);
   const segmentOptions = [...new Set((tagRows || []).flatMap((r) => r.tags || []))].filter(Boolean).sort((a, b) => a.localeCompare(b, "ru"));
 
   // Настроены ли провайдеры sms/email (см. campaigns/new/page.tsx — та же логика).

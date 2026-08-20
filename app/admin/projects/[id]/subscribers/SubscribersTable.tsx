@@ -1,32 +1,42 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { IconX, IconSearch, IconPlayerPlayFilled, IconPlayerPauseFilled, IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
-import { Badge, Button, Input, useDialogs } from "@/app/ui";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { IconX, IconSearch, IconPlayerPlayFilled, IconPlayerPauseFilled, IconChevronLeft, IconChevronRight, IconPencil, IconTrash } from "@tabler/icons-react";
+import { Button, Input, TagEditor, useDialogs } from "@/app/ui";
 import { cn } from "@/app/ui/cn";
 
 const PAGE_SIZE = 25;
 
-type Row = {
+// Одно push-устройство контакта — один подписчик может иметь несколько
+// (телефон + десктоп), каждое со своим статусом активности/паузы.
+export type Device = { id: string; platform: string; is_active: boolean; paused: boolean };
+
+export type Row = {
+  // Синтетический ключ ("identity-<uuid>" для контактов, id устройства для
+  // анонимных подписчиков без identity) — не путать с id самого устройства.
   id: string;
-  platform: string;
+  devices: Device[];
   tags: string[];
-  is_active: boolean;
-  paused: boolean;
   created_at: string;
   phone: string | null;
   email: string | null;
   name: string | null;
   insalesClientId: string | null;
-  pushActive: boolean;
   smsActive: boolean;
   emailActive: boolean;
+  // id контакта (identities.id) — null, если у устройства нет привязанной
+  // identity (никто не подписывался через код). Именно по нему ведут
+  // карандаш/корзина/теги — редактируется/удаляется контакт, не устройство.
+  identityId: string | null;
 };
 
 const platformLabel: Record<string, string> = { ios: "iPhone", android: "Android", desktop: "Desktop", unknown: "—" };
 
 export default function SubscribersTable({ projectId, initial }: { projectId: string; initial: Row[] }) {
   const { confirm, toast } = useDialogs();
+  const router = useRouter();
   const [rows, setRows] = useState<Row[]>(initial);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -45,31 +55,47 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
     return true;
   }
 
-  async function updateTags(id: string, tags: string[]) {
+  // Теги живут на identities (см. миграцию 0037) — один контакт может иметь
+  // несколько устройств, у всех должны обновиться одинаковые теги.
+  async function updateTags(identityId: string, tags: string[]) {
     const prev = rows;
-    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, tags } : r)));
-    if (!(await call(id, { action: "tags", tags }))) setRows(prev); // откат при ошибке
+    setRows((rs) => rs.map((r) => (r.identityId === identityId ? { ...r, tags } : r)));
+    const res = await fetch("/api/admin/subscribers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, identityId, action: "tags", tags }),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      toast(j.error || "Не удалось сохранить", "bad");
+      setRows(prev); // откат при ошибке
+    }
   }
 
-  // Клик по бейджу Push — та же приостановка, что раньше жила в отдельной
-  // кнопке; мёртвое устройство (r.is_active=false) не кликабельно вообще —
-  // его нечем "возобновлять", подписка отвалилась на стороне браузера.
-  async function togglePush(r: Row) {
-    if (!r.is_active) return;
-    if (!r.paused) {
+  // Клик по бейджу конкретной платформы — приостановка/возобновление ИМЕННО
+  // этого устройства, не всех устройств контакта сразу. Мёртвое устройство
+  // (device.is_active=false) не кликабельно вообще — его нечем
+  // "возобновлять", подписка отвалилась на стороне браузера.
+  async function toggleDevice(row: Row, device: Device) {
+    if (!device.is_active) return;
+    if (!device.paused) {
       const ok = await confirm({
         title: "Приостановить подписку?",
-        message: "Подписчик перестанет получать любые уведомления, пока вы не возобновите. Устройство сохранится.",
+        message: "Устройство перестанет получать любые уведомления, пока вы не возобновите.",
         confirmText: "Приостановить",
       });
       if (!ok) return;
     }
-    const action = r.paused ? "resume" : "pause";
-    setRows((rs) => rs.map((x) => (x.id === r.id ? { ...x, paused: !r.paused } : x)));
-    if (!(await call(r.id, { action }))) {
-      setRows((rs) => rs.map((x) => (x.id === r.id ? { ...x, paused: r.paused } : x)));
+    const action = device.paused ? "resume" : "pause";
+    const setPaused = (paused: boolean) =>
+      setRows((rs) =>
+        rs.map((r) => (r.id === row.id ? { ...r, devices: r.devices.map((d) => (d.id === device.id ? { ...d, paused } : d)) } : r))
+      );
+    setPaused(!device.paused);
+    if (!(await call(device.id, { action }))) {
+      setPaused(device.paused);
     } else {
-      toast(r.paused ? "Подписка возобновлена" : "Подписка приостановлена", "good");
+      toast(device.paused ? "Подписка возобновлена" : "Подписка приостановлена", "good");
     }
   }
 
@@ -99,6 +125,32 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
     }
   }
 
+  // Удаление КОНТАКТА (identities), не устройства — если к нему привязан
+  // push, устройство остаётся в базе, просто без телефона/email/тегов
+  // контакта (см. lib/identity.deleteContact).
+  async function removeContact(r: Row) {
+    if (!r.identityId) return;
+    const ok = await confirm({
+      title: "Удалить контакт?",
+      message: "Телефон, email и согласия на рассылку удалятся. Push-устройства останутся — просто без контактных данных.",
+      confirmText: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
+    const res = await fetch(`/api/admin/subscribers/${r.identityId}/delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId }),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      toast(j.error || "Не удалось удалить", "bad");
+      return;
+    }
+    toast("Контакт удалён", "good");
+    router.refresh();
+  }
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return rows;
@@ -108,7 +160,7 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
         (r.email || "").toLowerCase().includes(q) ||
         (r.name || "").toLowerCase().includes(q) ||
         (r.insalesClientId || "").toLowerCase().includes(q) ||
-        (platformLabel[r.platform] || r.platform).toLowerCase().includes(q) ||
+        r.devices.some((d) => (platformLabel[d.platform] || d.platform).toLowerCase().includes(q)) ||
         r.tags.some((t) => t.toLowerCase().includes(q))
     );
   }, [rows, query]);
@@ -149,10 +201,11 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
               <Th>Телефон</Th>
               <Th>Email</Th>
               <Th>Внешний ID</Th>
-              <Th>Платформа</Th>
+              <Th>Устройства</Th>
               <Th>Каналы</Th>
               <Th>Теги</Th>
               <Th>Создан</Th>
+              <Th> </Th>
             </tr>
           </thead>
           <tbody>
@@ -169,24 +222,62 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
                   <Td className="font-mono whitespace-nowrap max-w-36 overflow-hidden text-ellipsis">
                     {r.insalesClientId || <span className="text-ink-faint">—</span>}
                   </Td>
-                  <Td>{platformLabel[r.platform] || r.platform}</Td>
+                  <Td className="whitespace-nowrap">
+                    {r.devices.length ? (
+                      <div className="flex gap-1 flex-wrap">
+                        {r.devices.map((d) => (
+                          <DeviceBadge key={d.id} device={d} onClick={() => toggleDevice(r, d)} />
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-ink-faint" title="Нет push-подписки — контакт добавлен без устройства">
+                        —
+                      </span>
+                    )}
+                  </Td>
                   <Td className="whitespace-nowrap">
                     <div className="flex gap-1">
-                      <ChannelBadge label="Push" active={r.pushActive} disabled={!r.is_active} onClick={() => togglePush(r)} />
                       {r.phone && <ChannelBadge label="SMS" active={r.smsActive} onClick={() => toggleChannel(r, "sms")} />}
                       {r.email && <ChannelBadge label="Email" active={r.emailActive} onClick={() => toggleChannel(r, "email")} />}
                     </div>
                   </Td>
                   <Td>
-                    <TagEditor tags={r.tags} onChange={(t) => updateTags(r.id, t)} />
+                    {r.identityId ? (
+                      <TagEditor tags={r.tags} onChange={(t) => updateTags(r.identityId!, t)} />
+                    ) : (
+                      <span className="text-ink-faint text-xs" title="Теги привязаны к контакту — недоступны анонимному устройству без привязанного контакта">
+                        —
+                      </span>
+                    )}
                   </Td>
                   <Td className="text-ink-faint whitespace-nowrap">{new Date(r.created_at).toLocaleDateString("ru-RU")}</Td>
+                  <Td className="text-right">
+                    {r.identityId && (
+                      <div className="flex justify-end gap-1">
+                        <Link
+                          href={`/admin/projects/${projectId}/subscribers/${r.identityId}/edit`}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2"
+                          title="Изменить"
+                        >
+                          <IconPencil size={15} stroke={1.8} />
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => removeContact(r)}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-bad hover:bg-surface-2 cursor-pointer"
+                          title="Удалить"
+                        >
+                          <IconTrash size={15} stroke={1.8} />
+                        </button>
+                      </div>
+                    )}
+                  </Td>
                 </tr>
               );
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-3.5 py-6 text-center text-ink-muted">
+                <td colSpan={9} className="px-3.5 py-6 text-center text-ink-muted">
                   Ничего не найдено
                 </td>
               </tr>
@@ -217,74 +308,47 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
   );
 }
 
-// Бейдж-переключатель канала в колонке «Каналы» — клик включает/выключает
-// рассылку по этому каналу для подписчика. SMS/Email вообще не рендерятся
-// вызывающим кодом, если у канала нет контакта (телефона/email) — тут только
-// disabled для push-устройства, которое отвалилось (нечем "возобновлять").
-function ChannelBadge({
-  label,
-  active,
-  disabled,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-}) {
+// Бейдж одного push-устройства в колонке «Устройства» — платформа + иконка
+// статуса (активно/на паузе/отвалилось), клик приостанавливает/возобновляет
+// ИМЕННО это устройство, не все устройства контакта.
+function DeviceBadge({ device, onClick }: { device: Device; onClick: () => void }) {
+  const label = platformLabel[device.platform] || device.platform;
+  const disabled = !device.is_active;
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      title={disabled ? "Устройство отвалилось — нечем возобновлять" : active ? `Отключить ${label}` : `Включить ${label}`}
+      title={disabled ? "Устройство отвалилось — нечем возобновлять" : device.paused ? `Возобновить ${label}` : `Приостановить ${label}`}
       className={cn(
         "inline-flex items-center gap-1 font-mono text-[11px] px-2 py-0.5 rounded-full whitespace-nowrap border-none transition-colors",
-        active ? "bg-good-tint text-good" : "bg-surface-2 text-ink-muted",
+        !disabled && !device.paused ? "bg-good-tint text-good" : "bg-surface-2 text-ink-muted",
         disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer hover:opacity-80"
       )}
     >
-      {active ? <IconPlayerPauseFilled size={10} /> : <IconPlayerPlayFilled size={10} />}
+      {!disabled && (device.paused ? <IconPlayerPlayFilled size={10} /> : <IconPlayerPauseFilled size={10} />)}
       {label}
     </button>
   );
 }
 
-function TagEditor({ tags, onChange }: { tags: string[]; onChange: (t: string[]) => void }) {
-  const [input, setInput] = useState("");
-  function add() {
-    const t = input.trim().toLowerCase();
-    if (t && !tags.includes(t)) onChange([...tags, t]);
-    setInput("");
-  }
+// Бейдж-переключатель канала в колонке «Каналы» — клик включает/выключает
+// рассылку по этому каналу для подписчика. SMS/Email вообще не рендерятся
+// вызывающим кодом, если у канала нет контакта (телефона/email).
+function ChannelBadge({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
-    <div className="flex flex-wrap gap-1.5 items-center">
-      {tags.map((t) => (
-        <Badge key={t} tone="accent">
-          {t}
-          <button
-            onClick={() => onChange(tags.filter((x) => x !== t))}
-            className="flex items-center border-none bg-transparent cursor-pointer text-inherit p-0 ml-0.5 opacity-70 hover:opacity-100"
-            aria-label="удалить тег"
-          >
-            <IconX size={12} stroke={2.5} />
-          </button>
-        </Badge>
-      ))}
-      <input
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            add();
-          }
-        }}
-        onBlur={add}
-        placeholder="+ тег"
-        className="border border-dashed border-border rounded-full px-2 py-0.5 text-xs bg-transparent text-ink w-[70px] focus:outline-none focus:border-accent"
-      />
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      title={active ? `Отключить ${label}` : `Включить ${label}`}
+      className={cn(
+        "inline-flex items-center gap-1 font-mono text-[11px] px-2 py-0.5 rounded-full whitespace-nowrap border-none transition-colors cursor-pointer hover:opacity-80",
+        active ? "bg-good-tint text-good" : "bg-surface-2 text-ink-muted"
+      )}
+    >
+      {active ? <IconPlayerPauseFilled size={10} /> : <IconPlayerPlayFilled size={10} />}
+      {label}
+    </button>
   );
 }
 

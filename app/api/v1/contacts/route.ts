@@ -15,7 +15,7 @@ import { logApiCall } from "@/lib/apiLog";
 //
 // smsActive/emailActive — ЕДИНСТВЕННЫЙ способ пометить канал доступным для
 // маркетинговых рассылок (сегментные SMS/Email-кампании и /api/v1/send с
-// segmentTags берут контакт только отсюда, см. lib/identity.subscribersToContacts).
+// segmentTags берут контакт только отсюда, см. lib/sender.resolveSmsEmailAudience).
 // Это НЕ то же самое, что подтверждение телефона/почты при входе по коду —
 // вход доказывает владение номером, но не согласие на рассылки. true
 // включает канал, false — выключает (отписка).

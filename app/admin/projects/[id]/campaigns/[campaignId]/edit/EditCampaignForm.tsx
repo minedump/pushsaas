@@ -8,6 +8,7 @@ import { CustomSelect, type ComboOption } from "@/app/ui/CustomSelect";
 import { createClient } from "@/lib/supabase/client";
 import { MessagePreviewModal, type PreviewContent } from "../../../MessagePreviewModal";
 import { SegmentTagsInput } from "../../../SegmentTagsInput";
+import { PlatformFilter } from "../../../PlatformFilter";
 import { ContextField } from "../../../ContextField";
 import { smsSegments } from "@/lib/smsSegments";
 import { withShortenedLinks } from "@/lib/linkPreview";
@@ -30,6 +31,7 @@ type Campaign = {
   click_url: string | null;
   badge_url: string | null;
   segment_tags: string[] | null;
+  platforms: string[] | null;
   actions: { title: string; url: string }[] | null;
   type: "transactional" | "marketing";
   template_id: string | null;
@@ -143,6 +145,7 @@ export default function EditCampaignForm({
   const [contextEnabled, setContextEnabled] = useState(!!campaign.template_data);
   const [contextJson, setContextJson] = useState(campaign.template_data ? JSON.stringify(campaign.template_data, null, 2) : "");
   const [segment, setSegment] = useState<string[]>(campaign.segment_tags || []);
+  const [platforms, setPlatforms] = useState<string[]>(campaign.platforms || []);
   const [contacts, setContacts] = useState((campaign.contacts || []).join(", "));
   const [busy, setBusy] = useState(false);
   const [testBusy, setTestBusy] = useState(false);
@@ -179,6 +182,7 @@ export default function EditCampaignForm({
       .filter(Boolean);
     const row: Record<string, unknown> = {
       segment_tags: segmentTags,
+      platforms: channel === "push" ? platforms : [],
       type: transactional ? "transactional" : "marketing",
       template_id: templateId !== CUSTOM_HTML ? templateId : null,
       internal_title: internalTitle.trim() || null,
@@ -277,7 +281,14 @@ export default function EditCampaignForm({
     const countRes = await fetch("/api/admin/campaigns/audience-count", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, channel, contacts: contactList, segmentTags: segment, type: transactional ? "transactional" : "marketing" }),
+      body: JSON.stringify({
+        projectId,
+        channel,
+        contacts: contactList,
+        segmentTags: segment,
+        platforms: channel === "push" ? platforms : undefined,
+        type: transactional ? "transactional" : "marketing",
+      }),
     }).catch(() => null);
     const countJson = countRes && countRes.ok ? await countRes.json() : null;
     const audienceNote = typeof countJson?.count === "number" ? ` Уйдёт ${countJson.count} получателям.` : "";
@@ -551,6 +562,14 @@ export default function EditCampaignForm({
           <Label>Сегмент по тегам</Label>
           <SegmentTagsInput value={segment} onChange={setSegment} options={segmentOptions} />
         </div>
+
+        {channel === "push" && (
+          <div>
+            <Label>Платформы</Label>
+            <PlatformFilter value={platforms} onChange={setPlatforms} />
+            <p className="text-[11px] text-ink-faint mt-1 mb-0">Ничего не выбрано — уйдёт на все платформы.</p>
+          </div>
+        )}
 
         <div>
           <Label>Контакты (телефон/email, через запятую)</Label>

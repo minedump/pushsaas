@@ -30,6 +30,7 @@ export async function POST(req: Request) {
     badge,
     url,
     segmentTags,
+    platforms,
     scheduledAt,
     actions,
     text,
@@ -53,6 +54,7 @@ export async function POST(req: Request) {
     badge?: string;
     url?: string;
     segmentTags?: string[];
+    platforms?: string[];
     scheduledAt?: string;
     actions?: { title: string; url: string }[];
     text?: string;
@@ -106,6 +108,7 @@ export async function POST(req: Request) {
       project_id: projectId,
       channel: channel || "push",
       segment_tags: segmentTags || [],
+      platforms: platforms || [],
       status: "draft",
       type: msgType,
       initiator: "manual",
@@ -345,6 +348,7 @@ export async function POST(req: Request) {
     click_url: pushUrl || null,
     badge_url: pushBadge || null,
     segment_tags: segmentTags || [],
+    platforms: platforms || [],
     actions: pushActions,
     status: scheduled ? "scheduled" : "sending",
     scheduled_at: scheduled ? scheduledAt : null,
