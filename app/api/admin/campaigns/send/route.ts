@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { dispatchCampaign, insertCampaign, createAndDispatchChannel, resolvePushTemplate, resolveChannelTemplate } from "@/lib/sender";
 import { phonesToSubscriberIds, emailsToSubscriberIds } from "@/lib/identity";
 import { withShortenedLinks } from "@/lib/linkPreview";
+import { hasUnsubscribeTag } from "@/lib/unsubscribe";
 
 // Compose + send now, or now/schedule for later — планирование доступно для
 // всех трёх каналов; отложенные sms/email кампании (status='scheduled')
@@ -121,6 +122,12 @@ export async function POST(req: Request) {
       row.provider = provider || null;
     } else if (channel === "email") {
       const resolved = await resolveChannelTemplate(admin, projectId, "email", templateId, { subject, html });
+      // Ссылка отписки обязательна для маркетингового письма — см.
+      // hasUnsubscribeTag/unsubscribeUrl в lib/unsubscribe.ts. Транзакционные
+      // письма (код входа, статус заказа) этим требованием не связаны.
+      if (msgType === "marketing" && !hasUnsubscribeTag(resolved.html || "")) {
+        return NextResponse.json({ error: "Добавьте {{ unsubscribe_url }} в письмо — обязательно для маркетинговой рассылки" }, { status: 400 });
+      }
       row.title = resolved.subject || "";
       row.body = "";
       row.subject = resolved.subject || null;
@@ -219,6 +226,9 @@ export async function POST(req: Request) {
 
     if (scheduled) {
       const resolved = await resolveChannelTemplate(admin, projectId, "email", templateId, { subject, html });
+      if (msgType === "marketing" && !hasUnsubscribeTag(resolved.html || "")) {
+        return NextResponse.json({ error: "Добавьте {{ unsubscribe_url }} в письмо — обязательно для маркетинговой рассылки" }, { status: 400 });
+      }
       const { data: created, error } = await admin
         .from("campaigns")
         .insert({
@@ -264,7 +274,14 @@ export async function POST(req: Request) {
       rawContacts.length ? rawContacts : undefined
     );
     if (!result.ok) {
-      const msg = result.error === "no provider configured" ? "Email не настроен" : result.error === "html or templateId required" ? "Выберите шаблон или заполните HTML" : "Ошибка отправки";
+      const msg =
+        result.error === "no provider configured"
+          ? "Email не настроен"
+          : result.error === "html or templateId required"
+          ? "Выберите шаблон или заполните HTML"
+          : result.error === "unsubscribe link required"
+          ? "Добавьте {{ unsubscribe_url }} в письмо — обязательно для маркетинговой рассылки"
+          : "Ошибка отправки";
       return NextResponse.json({ error: msg }, { status: 402 });
     }
     return NextResponse.json({ ok: true, delivered: result.delivered, failed: result.failed, total: result.total });

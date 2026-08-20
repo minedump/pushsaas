@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { dispatchCampaign, dispatchSmsCampaign, dispatchEmailCampaign, resolveChannelProvider } from "@/lib/sender";
+import { hasUnsubscribeTag } from "@/lib/unsubscribeTag";
 
 // Dispatches campaigns whose scheduled time has arrived. Protected by CRON_SECRET.
 // Все три канала (push/sms/email) поддерживают планирование — не только push.
@@ -63,6 +64,11 @@ export async function GET(req: Request) {
     await admin.from("campaigns").update({ status: "sending" }).eq("id", c.id);
 
     if (c.channel === "sms" || c.channel === "email") {
+      if (c.channel === "email" && c.type !== "transactional" && !hasUnsubscribeTag(c.html_body || "")) {
+        await admin.from("campaigns").update({ status: "failed" }).eq("id", c.id);
+        results[c.id] = "unsubscribe link required";
+        continue;
+      }
       let provider = c.provider || null;
       if (!provider) {
         provider = await resolveChannelProvider(admin, c.project_id, c.channel, null, c.type === "transactional" ? "transactional" : "marketing");

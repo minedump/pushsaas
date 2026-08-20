@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { dispatchCampaign, dispatchSmsCampaign, dispatchEmailCampaign, resolveChannelProvider } from "@/lib/sender";
+import { hasUnsubscribeTag } from "@/lib/unsubscribeTag";
 
 // Отправляет прямо сейчас ранее сохранённый черновик (status='draft') ИЛИ
 // запланированную рассылку (status='scheduled', push — единственный канал,
@@ -41,6 +42,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!campaign) return NextResponse.json({ error: "Рассылка не найдена" }, { status: 404 });
   if (campaign.status !== "draft" && campaign.status !== "scheduled") {
     return NextResponse.json({ error: "Эту рассылку уже нельзя отправить повторно" }, { status: 400 });
+  }
+  // Последний рубеж перед реальной отправкой — на случай, если черновик
+  // стал маркетинговым (тумблер переключили) уже после того, как HTML был
+  // сохранён без ссылки отписки (см. hasUnsubscribeTag). Статус НЕ трогаем —
+  // черновик/план остаётся как есть, можно поправить и повторить.
+  if (campaign.channel === "email" && campaign.type === "marketing" && !hasUnsubscribeTag(campaign.html_body || "")) {
+    return NextResponse.json({ error: "Добавьте {{ unsubscribe_url }} в письмо — обязательно для маркетинговой рассылки" }, { status: 400 });
   }
 
   await admin.from("campaigns").update({ status: "sending" }).eq("id", campaignId);

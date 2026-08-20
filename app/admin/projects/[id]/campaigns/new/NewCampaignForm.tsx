@@ -10,6 +10,7 @@ import { SegmentTagsInput } from "../../SegmentTagsInput";
 import { ContextField } from "../../ContextField";
 import { smsSegments } from "@/lib/smsSegments";
 import { withShortenedLinks } from "@/lib/linkPreview";
+import { hasUnsubscribeTag } from "@/lib/unsubscribeTag";
 
 type Channel = "push" | "sms" | "email";
 const CUSTOM_HTML = "__custom__";
@@ -209,6 +210,7 @@ export default function NewCampaignForm({
     if (channel === "push" && withShortenedLinks(message).length > 200) return "Текст длиннее 200 символов";
     if (channel === "sms" && !smsText.trim()) return "Заполните текст SMS";
     if (channel === "email" && !html.trim()) return "Выберите шаблон или заполните HTML";
+    if (channel === "email" && !transactional && !hasUnsubscribeTag(html)) return "Добавьте {{ unsubscribe_url }} в письмо — обязательно для маркетинговой рассылки";
     return null;
   }
 
@@ -523,6 +525,13 @@ export default function NewCampaignForm({
                       HTML письма <span className="text-bad">*</span>
                     </Label>
                     <Textarea value={html} onChange={(e) => setHtml(e.target.value)} required rows={10} className="font-mono text-xs" placeholder="<p>Привет!</p>" />
+                    {!transactional && (
+                      <p className={`text-[11px] text-right mt-1 mb-0 ${hasUnsubscribeTag(html) ? "text-ink-faint" : "text-bad"}`}>
+                        {hasUnsubscribeTag(html) ? "Ссылка отписки найдена" : "Добавьте ссылку вида "}
+                        {!hasUnsubscribeTag(html) && <code>{'<a href="{{ unsubscribe_url }}">Отписаться</a>'}</code>}
+                        {!hasUnsubscribeTag(html) && " — обязательно для маркетинговой рассылки"}
+                      </p>
+                    )}
                   </div>
                 </>
               )}

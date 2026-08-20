@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { IconChevronLeft, IconChevronRight, IconDownload, IconSearch, IconX, IconSend, IconTrash, IconPencil } from "@tabler/icons-react";
+import { IconChevronLeft, IconChevronRight, IconDownload, IconSearch, IconX, IconSend, IconTrash, IconPencil, IconCopy } from "@tabler/icons-react";
 import { Badge, Button, Input, useDialogs } from "@/app/ui";
 import { CustomSelect, type ComboOption } from "@/app/ui/CustomSelect";
 import { createClient } from "@/lib/supabase/client";
@@ -101,6 +101,23 @@ export default function CampaignsTable({ rows, attributionEnabled, projectId }: 
     if (!res.ok) return toast(json.error || "Ошибка отправки", "bad");
     toast(`Отправлено ${json.delivered} из ${json.total}, ошибок ${json.failed}`, "good");
     router.refresh();
+  }
+
+  // Копия — доступна для рассылки в ЛЮБОМ статусе (включая уже отправленную),
+  // это не «повторная отправка», а просто предзаполненный черновик с тем же
+  // содержимым, сегментом, контактами и провайдером — дальше редактируется
+  // как обычный черновик перед реальной отправкой.
+  async function duplicateCampaign(campaignId: string) {
+    setBusyId(campaignId);
+    const res = await fetch(`/api/admin/campaigns/${campaignId}/duplicate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId }),
+    });
+    const json = await res.json();
+    setBusyId(null);
+    if (!res.ok) return toast(json.error || "Ошибка копирования", "bad");
+    router.push(`/admin/projects/${projectId}/campaigns/${json.id}/edit`);
   }
 
   async function deleteDraft(campaignId: string, status: string) {
@@ -218,6 +235,17 @@ export default function CampaignsTable({ rows, attributionEnabled, projectId }: 
                   <Td className="text-ink-faint">{new Date(c.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}</Td>
                   <Td className="text-right">
                     <div className="flex justify-end gap-1">
+                      {c.campaignId && (
+                        <button
+                          type="button"
+                          disabled={busyId === c.campaignId}
+                          onClick={() => duplicateCampaign(c.campaignId!)}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Копировать как новую"
+                        >
+                          <IconCopy size={15} stroke={1.8} />
+                        </button>
+                      )}
                       {c.campaignId && (c.status === "draft" || c.status === "scheduled") && (
                         <>
                           <Link

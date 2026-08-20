@@ -8,6 +8,7 @@ import { Button, CustomSelect, Input, Label, Textarea, useDialogs } from "@/app/
 import { MessagePreviewModal, type PreviewContent } from "../../MessagePreviewModal";
 import { ContextField } from "../../ContextField";
 import { smsSegments } from "@/lib/smsSegments";
+import { hasUnsubscribeTag } from "@/lib/unsubscribeTag";
 
 type Channel = "push" | "sms" | "email";
 type Folder = { id: string; name: string };
@@ -155,6 +156,11 @@ export default function NewTemplateForm({
                   placeholder="<p>Привет, {{ name }}!</p>"
                   required
                 />
+                {!hasUnsubscribeTag(html) && (
+                  <p className="text-[11px] text-ink-faint text-right mt-1 mb-0">
+                    Для маркетинговой рассылки понадобится ссылка отписки — добавьте <code>{'<a href="{{ unsubscribe_url }}">Отписаться</a>'}</code>
+                  </p>
+                )}
               </div>
             </>
           )}

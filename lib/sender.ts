@@ -8,6 +8,7 @@ import { sendEmail } from "@/lib/otp/haskimail";
 import { sendSmsSmsc, sendEmailSmsc } from "@/lib/otp/smsc";
 import { shortenUrl } from "@/lib/clck";
 import { normalizePhone } from "@/lib/phone";
+import { unsubscribeUrl, hasUnsubscribeTag } from "@/lib/unsubscribe";
 
 // Непрозрачный per-recipient токен для клика (?pss_r=...) — без PII в
 // ссылке (см. миграцию 0024). 6 байт -> 8 символов base64url, достаточно
@@ -745,6 +746,7 @@ export async function dispatchEmailCampaign(campaign: SmsEmailCampaignRow, conta
 
   const subjectRaw = campaign.subject || campaign.title;
   const htmlRaw = campaign.html_body || "";
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
 
   let delivered = 0;
   let failed = 0;
@@ -754,7 +756,9 @@ export async function dispatchEmailCampaign(campaign: SmsEmailCampaignRow, conta
     const chunk = audience.slice(i, i + CONCURRENCY);
     await Promise.all(
       chunk.map(async (c) => {
-        const attrs = { ...c.attrs, ...(campaign.template_data || {}) };
+        // unsubscribe_url — ПОСЛЕ template_data, чтобы разовые данные вызова
+        // не могли подменить ссылку отписки на чужую/поддельную.
+        const attrs = { ...c.attrs, ...(campaign.template_data || {}), unsubscribe_url: unsubscribeUrl(appUrl, campaign.project_id, c.value) };
         const token = genRecipientToken();
         const subject = applyTemplate(subjectRaw, attrs);
         const html = injectClickTracking(applyTemplate(htmlRaw, attrs), campaign.id, token);
@@ -851,6 +855,12 @@ export async function createAndDispatchChannel(
   }
 
   const type = content.type === "transactional" ? "transactional" : "marketing";
+  // Ссылка отписки обязательна для маркетингового письма (не для
+  // транзакционного) — единая точка проверки для админки (/campaigns/send)
+  // и публичного API (/api/v1/send), оба вызывают эту функцию.
+  if (channel === "email" && type === "marketing" && !hasUnsubscribeTag(html || "")) {
+    return { ok: false, delivered: 0, failed: 0, total: 0, error: "unsubscribe link required" };
+  }
   const provider = await resolveChannelProvider(admin, projectId, channel, content.providerHint, type);
   if (!provider) {
     return { ok: false, delivered: 0, failed: 0, total: 0, error: "no provider configured" };
@@ -1000,8 +1010,9 @@ export async function sendTestMessage(
 
   const { data: oidc } = await admin.from("oidc_clients").select("config").eq("project_id", projectId).maybeSingle();
   const emailFrom = (oidc?.config as { email_from?: string } | null)?.email_from || "";
-  const subject = applyTemplate(content.subject || content.title || "", content.data || {});
-  const html = applyTemplate(content.html, content.data || {});
+  const testAttrs = { ...(content.data || {}), unsubscribe_url: unsubscribeUrl(process.env.NEXT_PUBLIC_APP_URL || "", projectId, email) };
+  const subject = applyTemplate(content.subject || content.title || "", testAttrs);
+  const html = applyTemplate(content.html, testAttrs);
 
   const ok =
     provider === "smsc"
