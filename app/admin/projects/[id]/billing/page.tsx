@@ -22,8 +22,8 @@ export default async function BillingPage({ params }: { params: Promise<{ id: st
   const current = tariffs?.find((t) => t.id === project.tariff_id) || null;
 
   return (
-    <main className="max-w-3xl mx-auto">
-      <h1 className="text-2xl font-semibold">{project.name} · Биллинг</h1>
+    <main className="max-w-4xl mx-auto">
+      <h1 className="text-2xl font-semibold">Биллинг</h1>
       <BillingClient
         project={project}
         tariffs={tariffs ?? []}

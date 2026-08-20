@@ -55,21 +55,16 @@ export default async function AuthPage({ params }: { params: Promise<{ id: strin
       .maybeSingle();
     hasSmsc = !smscErr && !!smscSecret?.smsc_login && !!smscSecret?.smsc_password;
   }
+  const hasEmailFrom = !!oidc?.config?.email_from?.toString().trim();
 
   return (
-    <main className="max-w-3xl mx-auto">
-      <h1 className="text-2xl font-semibold">{project.name} · Вход по телефону</h1>
-      <p className="text-ink-muted mt-0">
-        Покупатель входит в магазин по номеру телефона с кодом из push-уведомления, email, Telegram или SMS. Работает
-        через OpenID Connect — InSales поддерживает из коробки. Каждый вход списывает <b>1 push</b> с баланса
-        проекта, независимо от канала доставки кода (переотправки кода внутри одного входа не тарифицируются).
-      </p>
+    <main className="max-w-4xl mx-auto">
+      <h1 className="text-2xl font-semibold">Авторизация</h1>
 
       <AuthSettings
         projectId={id}
         projectDomain={project.domain}
         issuer={issuerFor(id)}
-        appUrl={process.env.NEXT_PUBLIC_APP_URL || ""}
         initial={
           oidc
             ? {
@@ -84,12 +79,11 @@ export default async function AuthPage({ params }: { params: Promise<{ id: strin
                 authButtonColor: oidc.config?.auth_button_color || "",
                 authButtonSize: oidc.config?.auth_button_size || "",
                 authButtonRounded: !!oidc.config?.auth_button_rounded,
-                smsSender: oidc.config?.sms_sender || "",
-                emailFrom: oidc.config?.email_from || "",
                 hasTelegram,
                 hasBytehand,
                 hasHaskimail,
                 hasSmsc,
+                hasEmailFrom,
               }
             : null
         }

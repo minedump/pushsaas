@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "PushSaaS — платформа веб-пушей",
+  title: "SENDERA — платформа веб-пушей",
   description: "Веб-push уведомления для сайтов: Android и iPhone (iOS 16.4+).",
 };
 

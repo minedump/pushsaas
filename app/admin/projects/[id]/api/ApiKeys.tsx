@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconKey } from "@tabler/icons-react";
 import { createClient } from "@/lib/supabase/client";
-import { Badge, Button, Card, Input, useDialogs } from "@/app/ui";
+import { Badge, Button, Card, Input, Label, useDialogs } from "@/app/ui";
+import { CustomSelect } from "@/app/ui/CustomSelect";
 
 type Key = {
   id: string;
@@ -13,13 +14,29 @@ type Key = {
   is_active: boolean;
   last_used_at: string | null;
   created_at: string;
+  sms_provider?: string | null;
+  email_provider?: string | null;
 };
 
-export default function ApiKeys({ projectId, initial }: { projectId: string; initial: Key[] }) {
+type ProviderOption = { value: string; label: string };
+
+const PROVIDER_LABEL: Record<string, string> = { bytehand: "Bytehand", smsc: "SMSC.ru", haskimail: "Haskimail" };
+
+export default function ApiKeys({
+  projectId,
+  initial,
+  providerOptions,
+}: {
+  projectId: string;
+  initial: Key[];
+  providerOptions: { sms: ProviderOption[]; email: ProviderOption[] };
+}) {
   const supabase = createClient();
   const router = useRouter();
   const { confirm, toast } = useDialogs();
   const [name, setName] = useState("");
+  const [smsProvider, setSmsProvider] = useState("");
+  const [emailProvider, setEmailProvider] = useState("");
   const [busy, setBusy] = useState(false);
   const [fresh, setFresh] = useState<string | null>(null);
 
@@ -30,7 +47,7 @@ export default function ApiKeys({ projectId, initial }: { projectId: string; ini
     const res = await fetch("/api/admin/apikeys/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, name }),
+      body: JSON.stringify({ projectId, name, smsProvider: smsProvider || undefined, emailProvider: emailProvider || undefined }),
     });
     const json = await res.json();
     setBusy(false);
@@ -40,6 +57,8 @@ export default function ApiKeys({ projectId, initial }: { projectId: string; ini
     }
     setFresh(json.key);
     setName("");
+    setSmsProvider("");
+    setEmailProvider("");
     router.refresh();
   }
 
@@ -66,13 +85,46 @@ export default function ApiKeys({ projectId, initial }: { projectId: string; ini
         </Card>
       )}
 
-      <form onSubmit={create} className="flex gap-2 mt-3">
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Название ключа (напр. Бекенд сайта)" />
-        <Button disabled={busy} className="whitespace-nowrap">
-          <IconKey size={16} stroke={1.8} />
-          Создать ключ
-        </Button>
-      </form>
+      <Card className="mt-3">
+        <form onSubmit={create}>
+          <Label>Название ключа</Label>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="напр. Бекенд сайта" />
+
+          {(providerOptions.sms.length > 0 || providerOptions.email.length > 0) && (
+            <div className="flex gap-3 mt-3">
+              {providerOptions.sms.length > 0 && (
+                <div className="flex-1">
+                  <Label>SMS через</Label>
+                  <CustomSelect
+                    value={smsProvider}
+                    onChange={setSmsProvider}
+                    options={providerOptions.sms}
+                    placeholder="не использовать"
+                    className="w-full"
+                  />
+                </div>
+              )}
+              {providerOptions.email.length > 0 && (
+                <div className="flex-1">
+                  <Label>Email через</Label>
+                  <CustomSelect
+                    value={emailProvider}
+                    onChange={setEmailProvider}
+                    options={providerOptions.email}
+                    placeholder="не использовать"
+                    className="w-full"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          <Button disabled={busy} className="mt-3.5 whitespace-nowrap">
+            <IconKey size={16} stroke={1.8} />
+            Создать ключ
+          </Button>
+        </form>
+      </Card>
 
       <div className="mt-4 border border-border rounded-xl overflow-hidden">
         {initial.length === 0 ? (
@@ -83,6 +135,7 @@ export default function ApiKeys({ projectId, initial }: { projectId: string; ini
               <tr className="bg-surface-2 text-left">
                 <Th>Название</Th>
                 <Th>Префикс</Th>
+                <Th>Каналы</Th>
                 <Th>Статус</Th>
                 <Th> </Th>
               </tr>
@@ -92,6 +145,11 @@ export default function ApiKeys({ projectId, initial }: { projectId: string; ini
                 <tr key={k.id} className="border-t border-border">
                   <Td>{k.name}</Td>
                   <Td className="font-mono text-xs">{k.key_prefix}…</Td>
+                  <Td className="text-ink-muted text-[12.5px]">
+                    {[k.sms_provider && `SMS: ${PROVIDER_LABEL[k.sms_provider] || k.sms_provider}`, k.email_provider && `Email: ${PROVIDER_LABEL[k.email_provider] || k.email_provider}`]
+                      .filter(Boolean)
+                      .join(" · ") || "—"}
+                  </Td>
                   <Td>
                     <Badge tone={k.is_active ? "good" : "bad"} dot>
                       {k.is_active ? "активен" : "отозван"}

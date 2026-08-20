@@ -13,10 +13,11 @@ export async function OPTIONS() {
 }
 
 export async function POST(req: Request) {
-  const { type, campaignId, subscriberId } = (await req.json().catch(() => ({}))) as {
+  const { type, campaignId, subscriberId, token } = (await req.json().catch(() => ({}))) as {
     type?: string;
     campaignId?: string;
     subscriberId?: string;
+    token?: string;
   };
 
   if (type !== "clicked" || !campaignId) {
@@ -45,6 +46,23 @@ export async function POST(req: Request) {
     .from("campaigns")
     .update({ clicked_count: (campaign.clicked_count || 0) + 1 })
     .eq("id", campaignId);
+
+  // Персональная отметка клика — push узнаётся по subscriberId (уже знает
+  // его сервис-воркер), sms/email по непрозрачному token из ?pss_r=...
+  // (см. lib/sender.injectClickTracking, миграция 0024). Первый клик
+  // выигрывает (is("clicked_at", null)) — повторные клики того же человека
+  // не должны переписывать время первого перехода.
+  if (token) {
+    await admin.from("campaign_recipients").update({ clicked_at: new Date().toISOString() }).eq("campaign_id", campaignId).eq("token", token).is("clicked_at", null);
+  } else if (subscriberId) {
+    await admin
+      .from("campaign_recipients")
+      .update({ clicked_at: new Date().toISOString() })
+      .eq("campaign_id", campaignId)
+      .eq("channel", "push")
+      .eq("contact", subscriberId)
+      .is("clicked_at", null);
+  }
 
   return NextResponse.json({ ok: true }, { headers: CORS });
 }

@@ -4,7 +4,7 @@ import { normalizePhone } from "@/lib/phone";
 import { checkRateLimit } from "@/lib/ratelimit";
 
 // Public "enrich my own subscription" endpoint — called by the merchant's OWN
-// theme JS (window.PushSaaS.identify({phone,email,name,insales_client_id})),
+// theme JS (window.sendera.identify({phone,email,name,insales_client_id})),
 // e.g. after ajaxAPI.shop.client.get() for an authenticated InSales customer.
 //
 // This does NOT create new trust. Linking a phone OR email to a device — the
@@ -138,6 +138,22 @@ export async function POST(req: Request) {
     }
     await admin.from("identity_devices").update({ last_used_at: new Date().toISOString() }).eq("identity_id", identity.id).eq("subscriber_id", subscriberId);
     identityRefreshed = true;
+
+    // name — как и insales_client_id, свойство ЧЕЛОВЕКА, а не устройства, но
+    // подстановка {name} в тексте кампаний читает subscribers.attributes (на
+    // уровне устройства) — поэтому дублируем его во ВСЕ устройства этой
+    // identity, а не только в текущее.
+    if (cleanName) {
+      const { data: links } = await admin.from("identity_devices").select("subscriber_id").eq("identity_id", identity.id);
+      const subIds = [...new Set((links || []).map((l) => l.subscriber_id))];
+      if (subIds.length) {
+        const { data: subs } = await admin.from("subscribers").select("id, attributes").in("id", subIds);
+        for (const s of subs || []) {
+          const attrs = { ...((s.attributes as Record<string, unknown> | null) || {}), name: cleanName };
+          await admin.from("subscribers").update({ attributes: attrs }).eq("id", s.id);
+        }
+      }
+    }
   }
 
   return NextResponse.json({ ok: true, identityRefreshed }, { headers: CORS });

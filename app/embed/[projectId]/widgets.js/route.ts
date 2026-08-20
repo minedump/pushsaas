@@ -16,7 +16,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ projectId: str
   const admin = createAdminClient();
   const { data: project } = await admin.from("projects").select("id, widget_config").eq("id", projectId).maybeSingle();
   if (!project) {
-    return new Response(`console.error("[PushSaaS] проект не найден: ${projectId}");`, {
+    return new Response(`console.error("[sendera] проект не найден: ${projectId}");`, {
       status: 404,
       headers: { "Content-Type": "application/javascript; charset=utf-8" },
     });
@@ -32,7 +32,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ projectId: str
 
   const body = blocks.length
     ? `(function(){\n${blocks.join("\n\n")}\n})();`
-    : `// [PushSaaS] кнопка и плашка подписки выключены в настройках проекта`;
+    : `// [sendera] кнопка и плашка подписки выключены в настройках проекта`;
 
   return new Response(body, {
     headers: { "Content-Type": "application/javascript; charset=utf-8", "Cache-Control": "public, max-age=300" },
@@ -58,17 +58,17 @@ function buttonBlock(config: ButtonConfig): string {
   var CHECK = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5l10 -10"></path></svg>';
 
   ready(function(){
-    if(!window.PushSaaS){ console.error("[PushSaaS] подключите основной скрипт /embed/{projectId}.js раньше widgets.js"); return; }
-    if(document.querySelector('[data-pushsaas="manual"]')) return;
+    if(!window.sendera){ console.error("[sendera] подключите основной скрипт /embed/{projectId}.js раньше widgets.js"); return; }
+    if(document.querySelector('[data-sendera="manual"]')) return;
     if(!("serviceWorker" in navigator && "PushManager" in window && "Notification" in window)) return;
-    if(document.getElementById("pushsaas-btn")) return;
+    if(document.getElementById("sendera-btn")) return;
 
     var btn = document.createElement("button");
-    btn.id = "pushsaas-btn";
+    btn.id = "sendera-btn";
     btn.innerHTML = BELL + '<span>${escapeJs(config.text)}</span>';
     btn.style.cssText = "position:fixed;${POSITION_CSS[config.position]};z-index:99999;display:inline-flex;align-items:center;${SIZE_CSS[config.size]};border:none;border-radius:24px;background:${config.color};color:#fff;font-weight:600;font-family:-apple-system,sans-serif;line-height:1;box-shadow:0 4px 14px rgba(0,0,0,.2);cursor:pointer";
     btn.addEventListener("click", function(){
-      window.PushSaaS.subscribe().then(function(){ return window.PushSaaS.isSubscribed(); }).then(function(yes){
+      window.sendera.subscribe().then(function(){ return window.sendera.isSubscribed(); }).then(function(yes){
         if(yes){ btn.innerHTML = CHECK + '<span>Вы подписаны</span>'; btn.disabled = true; }
       });
     });
@@ -92,16 +92,16 @@ function promptBlock(projectId: string, config: PromptConfig): string {
   function dismiss(){ try { localStorage.setItem(DISMISS_KEY, "1"); } catch(e){} }
 
   ready(function(){
-    if(!window.PushSaaS){ console.error("[PushSaaS] подключите основной скрипт /embed/{projectId}.js раньше widgets.js"); return; }
+    if(!window.sendera){ console.error("[sendera] подключите основной скрипт /embed/{projectId}.js раньше widgets.js"); return; }
     if(!supported() || Notification.permission !== "default" || dismissed()) return;
-    if(document.getElementById("pushsaas-prompt")) return;
+    if(document.getElementById("sendera-prompt")) return;
 
-    window.PushSaaS.isSubscribed().then(function(already){
+    window.sendera.isSubscribed().then(function(already){
       if(already) return;
 
       var mobile = window.matchMedia("(max-width: 640px)").matches;
       var card = document.createElement("div");
-      card.id = "pushsaas-prompt";
+      card.id = "sendera-prompt";
       card.innerHTML =
         '<div class="pss-p-icon" style="color:${color}">' + BELL + '</div>' +
         '<div class="pss-p-text">' +
@@ -120,15 +120,15 @@ function promptBlock(projectId: string, config: PromptConfig): string {
 
       var style = document.createElement("style");
       style.textContent =
-        "#pushsaas-prompt .pss-p-icon{flex:0 0 auto;display:flex;padding-top:1px}" +
-        "#pushsaas-prompt .pss-p-text{flex:1 1 auto;min-width:0}" +
-        "#pushsaas-prompt .pss-p-title{font-size:14px;font-weight:600;line-height:1.3}" +
-        "#pushsaas-prompt .pss-p-body{font-size:12.5px;color:#5a6570;line-height:1.35;margin-top:2px}" +
-        "#pushsaas-prompt .pss-p-actions{flex:0 0 auto;display:flex;flex-direction:column;gap:6px}" +
-        "#pushsaas-prompt button{border:none;border-radius:8px;font:600 12.5px/1 -apple-system,sans-serif;padding:7px 12px;cursor:pointer;white-space:nowrap}" +
-        "#pushsaas-prompt .pss-p-allow{color:#fff}" +
-        "#pushsaas-prompt .pss-p-later{background:#f0f2f4;color:#45505c}" +
-        "@media (max-width:640px){#pushsaas-prompt{flex-wrap:wrap}#pushsaas-prompt .pss-p-actions{flex-direction:row;width:100%;margin-top:8px}#pushsaas-prompt button{flex:1 1 0}}";
+        "#sendera-prompt .pss-p-icon{flex:0 0 auto;display:flex;padding-top:1px}" +
+        "#sendera-prompt .pss-p-text{flex:1 1 auto;min-width:0}" +
+        "#sendera-prompt .pss-p-title{font-size:14px;font-weight:600;line-height:1.3}" +
+        "#sendera-prompt .pss-p-body{font-size:12.5px;color:#5a6570;line-height:1.35;margin-top:2px}" +
+        "#sendera-prompt .pss-p-actions{flex:0 0 auto;display:flex;flex-direction:column;gap:6px}" +
+        "#sendera-prompt button{border:none;border-radius:8px;font:600 12.5px/1 -apple-system,sans-serif;padding:7px 12px;cursor:pointer;white-space:nowrap}" +
+        "#sendera-prompt .pss-p-allow{color:#fff}" +
+        "#sendera-prompt .pss-p-later{background:#f0f2f4;color:#45505c}" +
+        "@media (max-width:640px){#sendera-prompt{flex-wrap:wrap}#sendera-prompt .pss-p-actions{flex-direction:row;width:100%;margin-top:8px}#sendera-prompt button{flex:1 1 0}}";
       document.head.appendChild(style);
       document.body.appendChild(card);
 
@@ -148,7 +148,7 @@ function promptBlock(projectId: string, config: PromptConfig): string {
       card.querySelector(".pss-p-later").addEventListener("click", function(){ dismiss(); close(); });
       card.querySelector(".pss-p-allow").addEventListener("click", function(){
         card.querySelectorAll("button").forEach(function(b){ b.disabled = true; });
-        window.PushSaaS.subscribe().finally(close);
+        window.sendera.subscribe().finally(close);
       });
     });
   });

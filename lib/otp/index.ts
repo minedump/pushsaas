@@ -148,15 +148,16 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
     .select("telegram_gateway_token, bytehand_service_key, vapid_private_key")
     .eq("project_id", projectId)
     .maybeSingle();
-  // best-effort: haskimail_server_token и smsc_login/smsc_password —
-  // отдельные запросы (миграции 0010/0017), чтобы отсутствующая колонка не
-  // роняла весь каскад (push/telegram/sms заодно).
+  // best-effort: haskimail_server_token/haskimail_transactional_stream и
+  // smsc_login/smsc_password — отдельные запросы (миграции 0010/0017/0021),
+  // чтобы отсутствующая колонка не роняла весь каскад (push/telegram/sms заодно).
   const { data: emailSecret } = await admin
     .from("project_secrets")
-    .select("haskimail_server_token")
+    .select("haskimail_server_token, haskimail_transactional_stream")
     .eq("project_id", projectId)
     .maybeSingle();
   const haskimailToken = emailSecret?.haskimail_server_token || null;
+  const haskimailTransactionalStream = emailSecret?.haskimail_transactional_stream || undefined;
   const { data: smscSecret } = await admin
     .from("project_secrets")
     .select("smsc_login, smsc_password")
@@ -213,7 +214,7 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
         attempts.push({ channel: ch, ok: false, reason: "not_configured" });
         continue;
       }
-      const sent = await sendEmailCode(haskimailToken, key.email, code, emailFrom);
+      const sent = await sendEmailCode(haskimailToken, key.email, code, emailFrom, haskimailTransactionalStream);
       attempts.push({ channel: ch, ok: sent, reason: sent ? undefined : "send_failed" });
       if (sent) { channel = ch; usedProvider = "haskimail"; break; }
       continue;

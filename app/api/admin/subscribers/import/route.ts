@@ -11,12 +11,21 @@ import { normalizePhone } from "@/lib/phone";
 // to identities.insales_client_id, not into attributes — it's a property of
 // the person, not of this one device. Every remaining column merges into
 // subscribers.attributes (rolling merge — same as event tracking does).
+//
+// `activateChannel` — явное подтверждение мерчанта "эти контакты можно
+// маркетингово рассылать по SMS/Email" (только когда matchAgainst — сам
+// phone/email; для остальных ключей сопоставления телефон/почта в файле
+// вообще не участвуют, активировать нечего). Ставит sms_marketing_active_at/
+// email_marketing_active_at — тот же флаг, что и /api/v1/contacts; НЕ
+// включается неявно самим фактом импорта, чтобы не создавать согласие,
+// которого мерчант не давал.
 export async function POST(req: Request) {
-  const { projectId, keyColumn, matchAgainst, rows } = (await req.json().catch(() => ({}))) as {
+  const { projectId, keyColumn, matchAgainst, rows, activateChannel } = (await req.json().catch(() => ({}))) as {
     projectId?: string;
     keyColumn?: string;
     matchAgainst?: string;
     rows?: Record<string, string>[];
+    activateChannel?: boolean;
   };
   if (!projectId || !keyColumn || !matchAgainst || !Array.isArray(rows) || !rows.length) {
     return NextResponse.json({ error: "projectId, keyColumn, matchAgainst, rows required" }, { status: 400 });
@@ -68,6 +77,22 @@ export async function POST(req: Request) {
         identity = data;
       }
       if (identity) {
+        if (activateChannel && matchAgainst === "phone") {
+          const phone = normalizePhone(rawKey) as string;
+          await admin.from("identities").update({ sms_marketing_active_at: new Date().toISOString() }).eq("id", identity.id);
+          await admin
+            .from("identity_channel_events")
+            .insert({ project_id: projectId, identity_id: identity.id, channel: "sms", active: true, contact: phone })
+            .then(() => {}, () => {});
+        }
+        if (activateChannel && matchAgainst === "email") {
+          const emailContact = rawKey.trim().toLowerCase();
+          await admin.from("identities").update({ email_marketing_active_at: new Date().toISOString() }).eq("id", identity.id);
+          await admin
+            .from("identity_channel_events")
+            .insert({ project_id: projectId, identity_id: identity.id, channel: "email", active: true, contact: emailContact })
+            .then(() => {}, () => {});
+        }
         const { data: links } = await admin.from("identity_devices").select("subscriber_id").eq("identity_id", identity.id);
         subscriberIds = (links || []).map((l) => l.subscriber_id);
       }

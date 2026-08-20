@@ -1,28 +1,44 @@
-import { resolvePath } from "@/lib/jsonpath";
+import { Liquid } from "liquidjs";
 
-// Replaces {key} placeholders with values from `data` (event attributes,
-// order fields, etc.). Unknown/empty placeholders render as "".
-export function applyTemplate(str: string | null | undefined, data: Record<string, unknown> = {}): string {
+// Единственный шаблонизатор для контента рассылок — Liquid: циклы (for/
+// tablerow), условия (if/unless/case), фильтры (upcase, downcase, join,
+// where, map, date, round, default, ...) и операторы. strictVariables/
+// strictFilters выключены: опечатка в имени переменной должна рендериться
+// пустотой, а не ронять отправку.
+const liquid = new Liquid({ strictVariables: false, strictFilters: false, cache: true });
+
+// Рендерит строку через Liquid ({{ }} / {% %}) с данными как корневым
+// scope. Невалидный Liquid не должен ронять отправку — возвращаем строку
+// как есть.
+export function renderLiquid(str: string | null | undefined, data: Record<string, unknown> = {}): string {
   if (!str) return "";
-  return str.replace(/\{([\w.]+)\}/g, (_, k: string) => {
-    const v = data[k];
-    return v === undefined || v === null ? "" : String(v);
-  });
+  try {
+    return liquid.parseAndRenderSync(str, data);
+  } catch {
+    return str;
+  }
 }
 
-// Like applyTemplate but resolves each {path} against a root object using the
-// full path syntax (nested + array find-by-name), so a webhook payload field
-// can be referenced directly in the message, e.g. {fields[name=Трек].value}.
-// `extra` (named vars) takes precedence when a key is explicitly provided.
+// Replaces {{ var }} / {% tag %} with values from `data` (subscriber
+// attributes, one-off template_data, event fields, ...).
+export function applyTemplate(str: string | null | undefined, data: Record<string, unknown> = {}): string {
+  return renderLiquid(str, data);
+}
+
+// Like applyTemplate, but `data` is an arbitrary incoming JSON (a webhook
+// payload) rather than flat subscriber attributes. The whole root object is
+// exposed under `data` for deep/array access — {{ data.fields }},
+// {{ data.items[0].sku }} — and array-find-by-property, which the old
+// {path[key=value]} shorthand used to special-case, is just Liquid's own
+// `where`/`first` filters: {{ data.fields | where: "name", "Трек" | first |
+// map: "value" }}. `extra` (named vars) is merged into the top-level scope
+// and wins over same-named root fields when both are present.
 export function applyTemplatePaths(
   str: string | null | undefined,
   root: unknown,
   extra: Record<string, unknown> = {}
 ): string {
-  if (!str) return "";
-  return str.replace(/\{([^{}]+)\}/g, (_, raw: string) => {
-    const key = raw.trim();
-    const v = key in extra ? extra[key] : resolvePath(root, key);
-    return v === undefined || v === null ? "" : String(v);
-  });
+  const scope: Record<string, unknown> =
+    root && typeof root === "object" && !Array.isArray(root) ? { ...(root as Record<string, unknown>), ...extra, data: root } : { ...extra, data: root };
+  return renderLiquid(str, scope);
 }

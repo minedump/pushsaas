@@ -15,8 +15,8 @@ export default async function WidgetPage({ params }: { params: Promise<{ id: str
   const config = (project.widget_config as { button?: unknown; prompt?: unknown } | null) || {};
 
   return (
-    <main className="max-w-3xl mx-auto">
-      <h1 className="text-2xl font-semibold">{project.name} · Кнопка и виджет</h1>
+    <main className="max-w-4xl mx-auto">
+      <h1 className="text-2xl font-semibold">Виджеты</h1>
       <p className="text-ink-muted mt-0">
         Два опциональных скрипта поверх основного виджета — плавающая кнопка подписки и мягкая плашка, предлагающая
         подписаться до того, как браузер спросит разрешение сам.

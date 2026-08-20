@@ -35,7 +35,7 @@ export default async function ClientsPage() {
   }));
 
   return (
-    <main className="max-w-5xl mx-auto">
+    <main className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-semibold">Клиенты</h1>
       <p className="text-ink-muted mt-0">Все проекты платформы — {rows.length}</p>
       <ClientsTable rows={rows} tariffs={tariffs ?? []} />

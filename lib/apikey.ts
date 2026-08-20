@@ -58,3 +58,31 @@ export async function authenticateApiKey(req: Request): Promise<string | null> {
   await admin.from("api_keys").update({ last_used_at: new Date().toISOString() }).eq("id", data.id);
   return data.project_id;
 }
+
+export type ApiKeyContext = { projectId: string; smsProvider: string | null; emailProvider: string | null };
+
+// Same as authenticateApiKey, but also returns which sms/email provider is
+// pinned to this key (chosen at creation, see app/admin/projects/[id]/api) —
+// needed by /api/v1/send to pick the right provider for sms/email sends.
+// best-effort: sms_provider/email_provider — колонки миграции 0019.
+export async function authenticateApiKeyFull(req: Request): Promise<ApiKeyContext | null> {
+  const key = extractApiKey(req);
+  if (!key) return null;
+
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("api_keys")
+    .select("id, project_id, is_active, sms_provider, email_provider")
+    .eq("key_hash", hashApiKey(key))
+    .maybeSingle();
+
+  if (error || !data) {
+    const { data: basic } = await admin.from("api_keys").select("id, project_id, is_active").eq("key_hash", hashApiKey(key)).maybeSingle();
+    if (!basic || !basic.is_active) return null;
+    await admin.from("api_keys").update({ last_used_at: new Date().toISOString() }).eq("id", basic.id);
+    return { projectId: basic.project_id, smsProvider: null, emailProvider: null };
+  }
+  if (!data.is_active) return null;
+  await admin.from("api_keys").update({ last_used_at: new Date().toISOString() }).eq("id", data.id);
+  return { projectId: data.project_id, smsProvider: data.sms_provider, emailProvider: data.email_provider };
+}

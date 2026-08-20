@@ -34,24 +34,42 @@ export default async function SubscribersPage({ params }: { params: Promise<{ id
     if (!pausedErr) for (const r of pausedRows ?? []) pausedIds.add(r.id);
   }
 
-  // телефон/email/внешний ID привязанной identity (identity_devices →
-  // identities) — все три на identity, не на самом subscriber-устройстве.
+  // телефон/email/имя/внешний ID/активность SMS+Email привязанной identity
+  // (identity_devices → identities) — всё на identity, не на самом
+  // subscriber-устройстве: телефон/email не привязаны к конкретному браузеру.
+  // "Активен" для SMS/Email = *_marketing_active_at, НЕ *_verified_at:
+  // подтверждение кодом доказывает владение номером для входа, а не согласие
+  // на маркетинговые рассылки — канал становится активным только явно, через
+  // /api/v1/contacts или чекбокс при импорте CSV (см. lib/identity.upsertContact).
   const phoneBySub = new Map<string, string>();
   const emailBySub = new Map<string, string>();
+  const nameBySub = new Map<string, string>();
   const insalesClientIdBySub = new Map<string, string>();
+  const smsActiveBySub = new Set<string>();
+  const emailActiveBySub = new Set<string>();
   if (base.length) {
     const { data: links } = await supabase
       .from("identity_devices")
-      .select("subscriber_id, identities!inner(phone, email, insales_client_id)")
+      .select("subscriber_id, identities!inner(phone, email, name, insales_client_id, sms_marketing_active_at, email_marketing_active_at)")
       .in(
         "subscriber_id",
         base.map((r) => r.id)
       );
     for (const l of links ?? []) {
-      const ident = l.identities as unknown as { phone: string | null; email: string | null; insales_client_id: string | null };
+      const ident = l.identities as unknown as {
+        phone: string | null;
+        email: string | null;
+        name: string | null;
+        insales_client_id: string | null;
+        sms_marketing_active_at: string | null;
+        email_marketing_active_at: string | null;
+      };
       if (ident?.phone) phoneBySub.set(l.subscriber_id, ident.phone);
       if (ident?.email) emailBySub.set(l.subscriber_id, ident.email);
+      if (ident?.name) nameBySub.set(l.subscriber_id, ident.name);
       if (ident?.insales_client_id) insalesClientIdBySub.set(l.subscriber_id, ident.insales_client_id);
+      if (ident?.sms_marketing_active_at) smsActiveBySub.add(l.subscriber_id);
+      if (ident?.email_marketing_active_at) emailActiveBySub.add(l.subscriber_id);
     }
   }
 
@@ -60,26 +78,18 @@ export default async function SubscribersPage({ params }: { params: Promise<{ id
     paused: pausedIds.has(r.id),
     phone: phoneBySub.get(r.id) ?? null,
     email: emailBySub.get(r.id) ?? null,
+    name: nameBySub.get(r.id) ?? null,
     insalesClientId: insalesClientIdBySub.get(r.id) ?? null,
+    pushActive: r.is_active && !pausedIds.has(r.id),
+    smsActive: smsActiveBySub.has(r.id),
+    emailActive: emailActiveBySub.has(r.id),
   }));
-  const active = rows.filter((r) => r.is_active);
-  const byPlatform = active.reduce<Record<string, number>>((acc, r) => {
-    acc[r.platform] = (acc[r.platform] || 0) + 1;
-    return acc;
-  }, {});
 
   return (
     <main className="max-w-4xl mx-auto">
       <div className="flex justify-between items-center flex-wrap gap-2">
-        <h1 className="text-2xl font-semibold">{project.name} · Подписчики</h1>
+        <h1 className="text-2xl font-semibold">Подписчики</h1>
         <ExportImport projectId={id} />
-      </div>
-
-      <div className="flex gap-3 mt-5 flex-wrap">
-        <Tile label="Всего активных" value={active.length} />
-        <Tile label="iPhone (iOS)" value={byPlatform.ios || 0} />
-        <Tile label="Android" value={byPlatform.android || 0} />
-        <Tile label="Desktop" value={byPlatform.desktop || 0} />
       </div>
 
       <div className="mt-7">
@@ -92,14 +102,5 @@ export default async function SubscribersPage({ params }: { params: Promise<{ id
         )}
       </div>
     </main>
-  );
-}
-
-function Tile({ label, value }: { label: string; value: number }) {
-  return (
-    <Card className="flex-1 min-w-[150px]">
-      <div className="text-ink-muted text-xs">{label}</div>
-      <div className="text-[26px] font-bold">{value}</div>
-    </Card>
   );
 }

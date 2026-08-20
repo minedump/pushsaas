@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconDownload, IconUpload } from "@tabler/icons-react";
-import { Button, Input, Label, Select, useDialogs } from "@/app/ui";
+import { Button, Input, Label, Modal, Select, useDialogs } from "@/app/ui";
 
 // Minimal CSV parser: handles quoted fields with commas/newlines/escaped quotes.
 function parseCsv(text: string): { headers: string[]; rows: Record<string, string>[] } {
@@ -58,6 +58,7 @@ export default function ExportImport({ projectId }: { projectId: string }) {
   const [keyColumn, setKeyColumn] = useState("");
   const [matchAgainst, setMatchAgainst] = useState("phone");
   const [customAttr, setCustomAttr] = useState("");
+  const [activateChannel, setActivateChannel] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -82,7 +83,13 @@ export default function ExportImport({ projectId }: { projectId: string }) {
     const res = await fetch("/api/admin/subscribers/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, keyColumn, matchAgainst: finalMatch, rows }),
+      body: JSON.stringify({
+        projectId,
+        keyColumn,
+        matchAgainst: finalMatch,
+        rows,
+        activateChannel: (matchAgainst === "phone" || matchAgainst === "email") && activateChannel,
+      }),
     });
     const json = await res.json();
     setBusy(false);
@@ -94,6 +101,7 @@ export default function ExportImport({ projectId }: { projectId: string }) {
     setOpen(false);
     setHeaders([]);
     setRows([]);
+    setActivateChannel(false);
     if (fileRef.current) fileRef.current.value = "";
     router.refresh();
   }
@@ -111,54 +119,68 @@ export default function ExportImport({ projectId }: { projectId: string }) {
       <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={onFile} />
 
       {open && (
-        <div className="fixed inset-0 z-[100] grid place-items-center bg-black/40 p-4" onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}>
-          <div className="w-full max-w-md bg-surface border border-border rounded-2xl p-5 shadow-2xl">
-            <h3 className="text-base font-semibold m-0">Импорт: {rows.length} строк</h3>
-            <p className="text-sm text-ink-muted mt-2 mb-0">
-              По какому столбцу искать подписчика, и с чем его сопоставлять. Остальные столбцы добавятся в его
-              профиль (атрибуты) — доступны потом как <code className="font-mono">{"{ключ}"}</code> в текстах;
-              столбец <code className="font-mono">insales_client_id</code> среди них — исключение, он уйдёт во
-              внешний ID подписчика, а не в атрибуты.
-            </p>
+        <Modal onClose={() => setOpen(false)} className="max-w-md">
+          <h3 className="text-base font-semibold m-0">Импорт: {rows.length} строк</h3>
+          <p className="text-sm text-ink-muted mt-2 mb-0">
+            По какому столбцу искать подписчика, и с чем его сопоставлять. Остальные столбцы добавятся в его
+            профиль (атрибуты) — доступны потом как <code className="font-mono">{"{ключ}"}</code> в текстах;
+            столбец <code className="font-mono">insales_client_id</code> среди них — исключение, он уйдёт во
+            внешний ID подписчика, а не в атрибуты.
+          </p>
 
-            <div className="mt-3">
-              <Label>Столбец-ключ в файле</Label>
-              <Select value={keyColumn} onChange={(e) => setKeyColumn(e.target.value)} className="w-full">
-                {headers.map((h) => (
-                  <option key={h} value={h}>
-                    {h}
-                  </option>
-                ))}
-              </Select>
-            </div>
-
-            <div className="mt-3">
-              <Label>Сопоставлять с</Label>
-              <Select value={matchAgainst} onChange={(e) => setMatchAgainst(e.target.value)} className="w-full">
-                <option value="phone">Телефон подписчика</option>
-                <option value="email">Email подписчика</option>
-                <option value="insales_client_id">Внешний ID (например, ID клиента в InSales)</option>
-                <option value="custom">Свой атрибут…</option>
-              </Select>
-            </div>
-
-            {matchAgainst === "custom" && (
-              <div className="mt-3">
-                <Label>Имя атрибута (как в attributes)</Label>
-                <Input value={customAttr} onChange={(e) => setCustomAttr(e.target.value)} placeholder="например, loyalty_tier" />
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2 mt-5">
-              <Button variant="secondary" size="sm" onClick={() => setOpen(false)}>
-                Отмена
-              </Button>
-              <Button size="sm" disabled={busy} onClick={runImport}>
-                {busy ? "Импортируем…" : "Импортировать"}
-              </Button>
-            </div>
+          <div className="mt-3">
+            <Label>Столбец-ключ в файле</Label>
+            <Select value={keyColumn} onChange={(e) => setKeyColumn(e.target.value)} className="w-full">
+              {headers.map((h) => (
+                <option key={h} value={h}>
+                  {h}
+                </option>
+              ))}
+            </Select>
           </div>
-        </div>
+
+          <div className="mt-3">
+            <Label>Сопоставлять с</Label>
+            <Select value={matchAgainst} onChange={(e) => setMatchAgainst(e.target.value)} className="w-full">
+              <option value="phone">Телефон подписчика</option>
+              <option value="email">Email подписчика</option>
+              <option value="insales_client_id">Внешний ID (например, ID клиента в InSales)</option>
+              <option value="custom">Свой атрибут…</option>
+            </Select>
+          </div>
+
+          {matchAgainst === "custom" && (
+            <div className="mt-3">
+              <Label>Имя атрибута (как в attributes)</Label>
+              <Input value={customAttr} onChange={(e) => setCustomAttr(e.target.value)} placeholder="например, loyalty_tier" />
+            </div>
+          )}
+
+          {(matchAgainst === "phone" || matchAgainst === "email") && (
+            <label className="flex items-start gap-2 mt-3.5 text-sm text-ink-muted cursor-pointer">
+              <input
+                type="checkbox"
+                checked={activateChannel}
+                onChange={(e) => setActivateChannel(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                Отметить найденные контакты как согласных на{" "}
+                {matchAgainst === "phone" ? "SMS-рассылку" : "Email-рассылку"} — включает канал для маркетинговых
+                кампаний, а не только для входа по коду.
+              </span>
+            </label>
+          )}
+
+          <div className="flex justify-end gap-2 mt-5">
+            <Button variant="secondary" size="sm" onClick={() => setOpen(false)}>
+              Отмена
+            </Button>
+            <Button size="sm" disabled={busy} onClick={runImport}>
+              {busy ? "Импортируем…" : "Импортировать"}
+            </Button>
+          </div>
+        </Modal>
       )}
     </div>
   );

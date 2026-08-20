@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { IconPhone, IconRefresh, IconGripVertical } from "@tabler/icons-react";
 import { Button, Card, Input, Label, Select, Textarea, Toggle, useDialogs } from "@/app/ui";
 import CopyBox from "../CopyBox";
+import IntegrationCard from "../IntegrationCard";
 import { SMS_PROVIDERS, TELEGRAM_PROVIDERS, EMAIL_PROVIDERS } from "@/lib/otp/providers";
 
 type ChannelKey = "push" | "email" | "telegram" | "sms";
@@ -35,25 +36,22 @@ type Initial = {
   authButtonColor: string;
   authButtonSize: string;
   authButtonRounded: boolean;
-  smsSender: string;
-  emailFrom: string;
   hasTelegram: boolean;
   hasBytehand: boolean;
   hasHaskimail: boolean;
   hasSmsc: boolean;
+  hasEmailFrom: boolean;
 };
 
 export default function AuthSettings({
   projectId,
   projectDomain,
   issuer,
-  appUrl,
   initial,
 }: {
   projectId: string;
   projectDomain: string | null;
   issuer: string;
-  appUrl: string;
   initial: Initial | null;
 }) {
   const router = useRouter();
@@ -73,62 +71,111 @@ export default function AuthSettings({
   const [authButtonColor, setAuthButtonColor] = useState(initial?.authButtonColor || "");
   const [authButtonSize, setAuthButtonSize] = useState(initial?.authButtonSize || "");
   const [authButtonRounded, setAuthButtonRounded] = useState(initial?.authButtonRounded ?? false);
-  const [smsSender, setSmsSender] = useState(initial?.smsSender || "");
-  const [emailFrom, setEmailFrom] = useState(initial?.emailFrom || "");
-  const [telegramToken, setTelegramToken] = useState("");
-  const [bytehandKey, setBytehandKey] = useState("");
-  const [haskimailToken, setHaskimailToken] = useState("");
-  const [smscLogin, setSmscLogin] = useState("");
-  const [smscPassword, setSmscPassword] = useState("");
   const [providers, setProviders] = useState<Providers>(initial?.providers || {});
+
+  // Настроен ли конкретный провайдер (не канал) — ключи/токены теперь только
+  // на странице «Подключения», здесь только читаем серверную истину.
+  const providerConfigured: Record<string, boolean> = {
+    telegram_gateway: initial?.hasTelegram ?? false,
+    bytehand: initial?.hasBytehand ?? false,
+    haskimail: initial?.hasHaskimail ?? false,
+    smsc: initial?.hasSmsc ?? false,
+  };
+
+  // Только настроенные провайдеры канала — не показываем то, что нельзя
+  // выбрать (нечем воспользоваться без ключа).
+  function configuredOptionsFor(key: ChannelKey): { id: string; label: string }[] {
+    return (PROVIDER_OPTIONS[key] || []).filter((o) => providerConfigured[o.id]);
+  }
+
+  // Сохранённый выбор, только если он всё ещё настроен — иначе первый
+  // настроенный, иначе undefined (нет ни одной готовой интеграции на канал).
+  function resolvedProvider(key: ChannelKey): string | undefined {
+    const opts = configuredOptionsFor(key);
+    const saved = providers[key];
+    if (saved && opts.some((o) => o.id === saved)) return saved;
+    return opts[0]?.id;
+  }
 
   const hasSecret: Record<ChannelKey, boolean> = {
     push: true,
-    email: providers.email === "smsc" ? (initial?.hasSmsc ?? false) : (initial?.hasHaskimail ?? false),
-    telegram: providers.telegram === "smsc" ? (initial?.hasSmsc ?? false) : (initial?.hasTelegram ?? false),
-    sms: providers.sms === "smsc" ? (initial?.hasSmsc ?? false) : (initial?.hasBytehand ?? false),
+    email: !!resolvedProvider("email"),
+    telegram: !!resolvedProvider("telegram"),
+    sms: !!resolvedProvider("sms"),
   };
 
-  // Готовность канала к включению — учитывает как уже сохранённый ключ
-  // (hasSecret, из БД), так и то, что введено в поле прямо сейчас, но ещё не
-  // сохранено — иначе пользователь вводит ключ и тут же не может включить
-  // канал, потому что hasSecret отражает состояние ДО этого ввода. Смотрит на
-  // ТЕКУЩИЙ выбранный провайдер канала — у sms/telegram/email их может быть
-  // несколько (см. PROVIDER_OPTIONS), проверка должна бить по нужному.
+  // Готовность канала к включению — ключи/токены провайдеров теперь
+  // настраиваются на отдельной странице «Подключения», так что здесь можно
+  // смотреть только на серверную истину (hasSecret/hasEmailFrom), без учёта
+  // «введено прямо сейчас, но не сохранено» — этой возможности здесь больше
+  // нет физически.
   function channelReadiness(key: ChannelKey): { ok: boolean; message?: string } {
     if (key === "push") return { ok: true };
-    if (key === "email" && !emailFrom.trim()) {
-      return { ok: false, message: "Сначала укажите email-отправителя (From) ниже" };
+    if (key === "email" && !initial?.hasEmailFrom) {
+      return { ok: false, message: "Сначала укажите email-отправителя (From) в разделе «Подключения»" };
     }
-    const provider = providers[key] || PROVIDER_OPTIONS[key]?.[0]?.id;
-    if (provider === "smsc") {
-      if (!hasSecret[key] && !(smscLogin.trim() && smscPassword.trim())) {
-        return { ok: false, message: "Сначала укажите логин и пароль SMSC.ru ниже" };
-      }
-      return { ok: true };
-    }
-    if (key === "telegram" && !hasSecret.telegram && !telegramToken.trim()) {
-      return { ok: false, message: "Сначала укажите Telegram Gateway token ниже" };
-    }
-    if (key === "sms" && !hasSecret.sms && !bytehandKey.trim()) {
-      return { ok: false, message: "Сначала укажите Bytehand X-Service-Key ниже" };
-    }
-    if (key === "email" && !hasSecret.email && !haskimailToken.trim()) {
-      return { ok: false, message: "Сначала укажите Haskimail Server Token ниже" };
+    if (!hasSecret[key]) {
+      return { ok: false, message: "Сначала настройте интеграцию в разделе «Подключения»" };
     }
     return { ok: true };
   }
 
-  function handleChannelToggle(key: ChannelKey, v: boolean) {
+  // Общая точка сохранения каскада — тумблер канала, выбор провайдера и
+  // порядок (drag) применяются сразу, без отдельной кнопки «Сохранить».
+  // Каждый вызывающий сам решает, что из channels/order/providers у него
+  // уже новое, остальное берёт текущим — сервер всё равно принимает только
+  // то, что реально изменилось (см. /api/admin/oidc/settings).
+  async function persistCascade(next: { channels?: typeof channels; order?: ChannelKey[]; providers?: Providers }) {
+    setBusy(true);
+    const res = await fetch("/api/admin/oidc/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId,
+        channels: next.channels ?? channels,
+        channelOrder: next.order ?? order,
+        providers: next.providers ?? providers,
+      }),
+    });
+    const json = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) {
+      toast(json.error || "Ошибка", "bad");
+      return false;
+    }
+    router.refresh();
+    return true;
+  }
+
+  async function handleChannelToggle(key: ChannelKey, v: boolean) {
     if (v) {
       const r = channelReadiness(key);
       if (!r.ok) {
         toast(r.message || "Канал ещё не настроен", "bad");
         return;
       }
-      toast("Готово к включению — сохраните настройки", "good");
     }
-    setChannels((c) => ({ ...c, [key]: v }));
+    const prev = channels;
+    const next = { ...channels, [key]: v };
+    setChannels(next);
+    const ok = await persistCascade({ channels: next });
+    if (!ok) {
+      setChannels(prev);
+      return;
+    }
+    toast(v ? "Канал включён" : "Канал выключен", v ? "good" : "neutral");
+  }
+
+  async function handleProviderChange(key: ChannelKey, providerId: string) {
+    const prev = providers;
+    const next = { ...providers, [key]: providerId };
+    setProviders(next);
+    const ok = await persistCascade({ providers: next });
+    if (!ok) {
+      setProviders(prev);
+      return;
+    }
+    toast("Провайдер обновлён", "good");
   }
 
   // Push сам по себе никого не онбордит — работает только на уже узнанных
@@ -195,48 +242,6 @@ export default function AuthSettings({
     router.refresh();
   }
 
-  async function saveSettings() {
-    // блокируем только если email-канал реально заработает (ключи нужного
-    // провайдера уже есть или вводятся сейчас) — иначе это ложно ловило бы
-    // любое сохранение у проектов, которые вообще не настраивали email
-    const emailSecretReady =
-      providers.email === "smsc" ? hasSecret.email || (smscLogin.trim() && smscPassword.trim()) : hasSecret.email || haskimailToken.trim();
-    const emailWouldWork = channels.email !== false && emailSecretReady;
-    if (emailWouldWork && !emailFrom.trim()) {
-      toast("Укажите email-отправителя (From) — без него email-канал нельзя включить", "bad");
-      return;
-    }
-    setBusy(true);
-    const res = await fetch("/api/admin/oidc/settings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        projectId,
-        channels,
-        channelOrder: order,
-        providers,
-        hideNativeLoginButton: hideLoginButton,
-        smsSender,
-        emailFrom,
-        ...(telegramToken.trim() ? { telegramToken: telegramToken.trim() } : {}),
-        ...(bytehandKey.trim() ? { bytehandKey: bytehandKey.trim() } : {}),
-        ...(haskimailToken.trim() ? { haskimailToken: haskimailToken.trim() } : {}),
-        ...(smscLogin.trim() ? { smscLogin: smscLogin.trim() } : {}),
-        ...(smscPassword.trim() ? { smscPassword: smscPassword.trim() } : {}),
-      }),
-    });
-    const json = await res.json();
-    setBusy(false);
-    if (!res.ok) return toast(json.error || "Ошибка", "bad");
-    setTelegramToken("");
-    setBytehandKey("");
-    setSmscLogin("");
-    setSmscPassword("");
-    setHaskimailToken("");
-    toast("Сохранено", "good");
-    router.refresh();
-  }
-
   async function saveButtonVisibility(next: boolean) {
     setHideLoginButton(next);
     setBusy(true);
@@ -281,10 +286,12 @@ export default function AuthSettings({
   // указатель пересекает середину соседней строки. Стабильно и без библиотек.
   const [dragKey, setDragKey] = useState<ChannelKey | null>(null);
   const rowRefs = useRef<Partial<Record<ChannelKey, HTMLDivElement | null>>>({});
+  const orderBeforeDrag = useRef<ChannelKey[] | null>(null);
 
   function dragStart(e: React.PointerEvent, key: ChannelKey) {
     e.preventDefault();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    orderBeforeDrag.current = order;
     setDragKey(key);
   }
 
@@ -315,8 +322,17 @@ export default function AuthSettings({
     });
   }
 
-  function dragEnd() {
+  async function dragEnd() {
     setDragKey(null);
+    const before = orderBeforeDrag.current;
+    orderBeforeDrag.current = null;
+    if (!before || before.join() === order.join()) return; // порядок не менялся — нечего сохранять
+    const ok = await persistCascade({ order });
+    if (!ok) {
+      setOrder(before);
+      return;
+    }
+    toast("Порядок сохранён", "good");
   }
 
   if (!initial) {
@@ -337,7 +353,7 @@ export default function AuthSettings({
   const embedSnippet = `(function waitForAjaxAPI(tries){
   if (window.ajaxAPI && ajaxAPI.shop) {
     ajaxAPI.shop.client.get().done(function(client){
-      PushSaaS.identify({ phone: client.phone, email: client.email, name: client.name, insales_client_id: client.id });
+      sendera.identify({ phone: client.phone, email: client.email, name: client.name, insales_client_id: client.id });
     });
   } else if (tries > 0) {
     setTimeout(function(){ waitForAjaxAPI(tries - 1); }, 200);
@@ -355,25 +371,49 @@ export default function AuthSettings({
         </Card>
       )}
 
-      <h2 className="text-base font-semibold mt-7">Статус входа</h2>
-      <Card className="mt-3 flex items-center justify-between gap-3">
-        <div>
-          <div className="text-sm">
-            {isEnabled ? "Вход включён — покупатели видят кнопку и могут войти" : "Вход выключен — недоступен покупателям, даже если кнопка видна"}
-          </div>
-          <div className="text-[12px] text-ink-faint mt-0.5">
-            Включайте, только когда ниже настроен и включён хотя бы один канал с кодом (Email, Telegram или SMS) —
-            push один не подойдёт, он работает только для уже узнанных устройств.
-          </div>
-        </div>
-        <Toggle checked={isEnabled} onChange={saveEnabled} disabled={busy} />
+      <h2 className="text-base font-semibold mt-8">Каскад отправки кода</h2>
+      <Card className="mt-3 flex flex-col gap-1.5">
+        {order.map((key) => (
+          <ChannelRow
+            key={key}
+            label={CHANNEL_TITLE[key]}
+            on={channels[key] !== false}
+            locked={key !== "push" && channels[key] === false && !hasSecret[key]}
+            onChange={(v) => handleChannelToggle(key, v)}
+            dragging={dragKey === key}
+            rowRef={(el) => (rowRefs.current[key] = el)}
+            onDragStart={(e) => dragStart(e, key)}
+            onDragMove={(e) => dragMove(e, key)}
+            onDragEnd={dragEnd}
+            providerOptions={configuredOptionsFor(key)}
+            provider={resolvedProvider(key)}
+            onProviderChange={(p) => handleProviderChange(key, p)}
+          />
+        ))}
       </Card>
 
-      <h2 className="text-base font-semibold mt-7">Значения для админки InSales</h2>
-      <p className="text-sm text-ink-muted mt-1">
-        Магазин → Настройки → Авторизация покупателя → «Авторизация через OpenID Connect» → добавить приложение.
-      </p>
-      <Card className="mt-3">
+      <h2 className="text-base font-semibold mt-8">Настройки</h2>
+
+      <IntegrationCard title="Статус входа" configured={isEnabled}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm">
+            {isEnabled
+              ? "Вход включён — покупатели видят кнопку и могут войти"
+              : "Вход выключен — недоступен покупателям, даже если кнопка видна"}
+          </div>
+          <Toggle checked={isEnabled} onChange={saveEnabled} disabled={busy} />
+        </div>
+        <p className="text-[12px] text-ink-faint mt-2 mb-0">
+          Включайте, только когда выше настроен и включён хотя бы один канал с кодом (Email, Telegram или SMS) —
+          push один не подойдёт, он работает только для уже узнанных устройств.
+        </p>
+
+        <div className="h-px bg-border my-3" />
+
+        <p className="text-sm text-ink-muted mt-0">
+          Значения для админки InSales: Магазин → Настройки → Авторизация покупателя → «Авторизация через OpenID
+          Connect» → добавить приложение.
+        </p>
         <Row label="ID приложения (client_id)" value={initial.clientId} mono />
         <Row label="API token приложения" value={freshSecret || "показан при создании (можно перевыпустить)"} mono={!!freshSecret} />
         <Row label="Issuer" value={issuer.replace(/^https:\/\//, "")} mono />
@@ -385,139 +425,31 @@ export default function AuthSettings({
           <IconRefresh size={15} stroke={1.8} />
           Перевыпустить секрет
         </Button>
-      </Card>
+      </IntegrationCard>
 
-      <h2 className="text-base font-semibold mt-8">Каскад отправки кода</h2>
-      <p className="text-sm text-ink-muted mt-1">
-        Первый в порядке канал среди <b>email</b>/<b>Telegram</b>/<b>SMS</b> определяет, что спрашивает страница входа
-        первым — почту или телефон. Если с ним не вышло, спросим второе (телефон, если начали с почты, и наоборот) —
-        один раз. Push отдельно: не спрашивает ничего, пробует достучаться до уже узнанного устройства раньше формы —
-        поэтому имеет смысл всегда держать его первым.
-      </p>
-      <Card className="mt-3 flex flex-col gap-1.5">
-        {order.map((key) => (
-          <ChannelRow
-            key={key}
-            label={CHANNEL_TITLE[key]}
-            hint={key === "email" ? emailChannelHint(providers.email, hasSecret.email, !!emailFrom.trim()) : channelHint(key, providers[key], hasSecret[key])}
-            tone={key === "push" ? undefined : hasSecret[key] ? "good" : "warn"}
-            on={channels[key] !== false}
-            onChange={(v) => handleChannelToggle(key, v)}
-            dragging={dragKey === key}
-            rowRef={(el) => (rowRefs.current[key] = el)}
-            onDragStart={(e) => dragStart(e, key)}
-            onDragMove={(e) => dragMove(e, key)}
-            onDragEnd={dragEnd}
-            providerOptions={PROVIDER_OPTIONS[key]}
-            provider={providers[key] || PROVIDER_OPTIONS[key]?.[0]?.id}
-            onProviderChange={(p) => setProviders((prev) => ({ ...prev, [key]: p }))}
-          />
-        ))}
-
-        <div className="h-2" />
-        <div className="text-[12.5px] font-semibold text-ink-muted uppercase tracking-wide">Haskimail (email)</div>
-        <div>
-          <Label>Haskimail Server Token</Label>
-          <Input
-            type="password"
-            value={haskimailToken}
-            onChange={(e) => setHaskimailToken(e.target.value)}
-            placeholder={initial.hasHaskimail ? "оставьте пустым — не менять" : "получить на haskimail.ru"}
-          />
-        </div>
-        <div>
-          <Label>Email-отправитель (From) — обязателен для email-канала</Label>
-          <Input
-            value={emailFrom}
-            onChange={(e) => setEmailFrom(e.target.value)}
-            placeholder="Магазин <noreply@ваш-домен.ru>"
-          />
-          <p className="text-[12px] text-ink-faint mt-1 mb-0">
-            Домен в адресе должен быть верифицирован у провайдера (SPF + DKIM) — иначе письма не будут доставляться
-            или уйдут в спам.
-          </p>
-        </div>
-
-        <div className="h-2" />
-        <div className="text-[12.5px] font-semibold text-ink-muted uppercase tracking-wide">Telegram Gateway (официальный)</div>
-        <div>
-          <Label>Telegram Gateway token</Label>
-          <Input
-            type="password"
-            value={telegramToken}
-            onChange={(e) => setTelegramToken(e.target.value)}
-            placeholder={initial.hasTelegram ? "оставьте пустым — не менять" : "вставьте токен из Telegram Gateway"}
-          />
-        </div>
-
-        <div className="h-2" />
-        <div className="text-[12.5px] font-semibold text-ink-muted uppercase tracking-wide">Bytehand (SMS)</div>
-        <div>
-          <Label>Bytehand X-Service-Key</Label>
-          <Input
-            type="password"
-            value={bytehandKey}
-            onChange={(e) => setBytehandKey(e.target.value)}
-            placeholder={initial.hasBytehand ? "оставьте пустым — не менять" : "X-Service-Key из кабинета Bytehand"}
-          />
-        </div>
-        <div>
-          <Label>Подпись SMS-отправителя</Label>
-          <Input value={smsSender} onChange={(e) => setSmsSender(e.target.value)} placeholder="согласованная в Bytehand" />
-        </div>
-
-        <div className="h-2" />
-        <div className="text-[12.5px] font-semibold text-ink-muted uppercase tracking-wide">SMSC.ru (SMS / Telegram / Email — один аккаунт)</div>
-        <div>
-          <Label>Login</Label>
-          <Input
-            value={smscLogin}
-            onChange={(e) => setSmscLogin(e.target.value)}
-            placeholder={initial.hasSmsc ? "оставьте пустым — не менять" : "логин аккаунта SMSC.ru"}
-          />
-        </div>
-        <div>
-          <Label>Password</Label>
-          <Input
-            type="password"
-            value={smscPassword}
-            onChange={(e) => setSmscPassword(e.target.value)}
-            placeholder={initial.hasSmsc ? "оставьте пустым — не менять" : "пароль аккаунта SMSC.ru"}
-          />
-        </div>
-        <p className="text-[12px] text-ink-faint mt-0 mb-0">
-          Один и тот же логин/пароль — общий для всех трёх каналов; какой канал реально идёт через SMSC, выбирается
-          провайдером в строке канала выше.
+      <IntegrationCard
+        title="Кнопка входа InSales"
+        configured={hideLoginButton || !!authButtonText || !!authButtonColor || !!authButtonIcon || authButtonRounded}
+      >
+        <p className="text-sm text-ink-muted mt-0">
+          Отдельный скрипт (<code className="font-mono">/embed/{"{projectId}"}/auth-button.js</code>), не влияет на
+          основной виджет. Управляет нативной ссылкой «Войти через {"{"}приложение{"}"}» на странице входа: можно
+          скрыть целиком, либо задать свой текст, иконку, цвет и размер — тогда ссылка получает класс{" "}
+          <code className="font-mono">.button</code> темы магазина и выглядит как родная кнопка.
         </p>
-
-        <div>
-          <Button disabled={busy} onClick={saveSettings}>
-            Сохранить настройки
-          </Button>
-        </div>
-      </Card>
-
-      <h2 className="text-base font-semibold mt-8">Кнопка входа InSales</h2>
-      <p className="text-sm text-ink-muted mt-1">
-        Отдельный скрипт (<code className="font-mono">/embed/{"{projectId}"}/auth-button.js</code>), не влияет на
-        основной виджет. Управляет нативной ссылкой «Войти через {"{"}приложение{"}"}» на странице входа: можно скрыть
-        целиком, либо задать свой текст, иконку, цвет и размер — тогда ссылка получает класс{" "}
-        <code className="font-mono">.button</code> темы магазина и выглядит как родная кнопка.
-      </p>
-      <Card className="mt-3 flex flex-col gap-3">
-        <div className="flex justify-between items-center gap-3">
+        <div className="flex justify-between items-center gap-3 mt-3">
           <div className="text-sm">Скрыть кнопку целиком</div>
           <Toggle checked={hideLoginButton} onChange={saveButtonVisibility} />
         </div>
 
         {!hideLoginButton && (
           <>
-            <div className="h-px bg-border" />
+            <div className="h-px bg-border my-3" />
             <div>
               <Label>Текст на кнопке</Label>
               <Input value={authButtonText} onChange={(e) => setAuthButtonText(e.target.value)} placeholder="оставьте пустым — родной текст InSales" />
             </div>
-            <div>
+            <div className="mt-3">
               <Label>Иконка (SVG-разметка)</Label>
               <Textarea
                 value={authButtonIcon}
@@ -527,7 +459,7 @@ export default function AuthSettings({
                 className="font-mono text-xs"
               />
             </div>
-            <div className="flex gap-3">
+            <div className="flex gap-3 mt-3">
               <div className="flex-1">
                 <Label>Цвет кнопки</Label>
                 <div className="flex items-center gap-2">
@@ -552,30 +484,25 @@ export default function AuthSettings({
                 </Select>
               </div>
             </div>
-            <div className="flex justify-between items-center gap-3">
+            <div className="flex justify-between items-center gap-3 mt-3">
               <div className="text-sm">Скруглить до пилюли</div>
               <Toggle checked={authButtonRounded} onChange={setAuthButtonRounded} />
             </div>
-            <div>
+            <div className="mt-3">
               <Button size="sm" disabled={busy} onClick={saveButtonAppearance}>
                 Сохранить внешний вид
               </Button>
             </div>
           </>
         )}
-      </Card>
+      </IntegrationCard>
 
-      <h2 className="text-base font-semibold mt-8">Обогащение профиля для авторизованных клиентов</h2>
-      <p className="text-sm text-ink-muted mt-1">
-        На странице, где покупатель уже авторизован в InSales, можно вызвать после подключения нашего сниппета:
-      </p>
-      <CopyBox text={embedSnippet} />
-      <p className="text-[12.5px] text-ink-faint">
-        <code className="font-mono">ajaxAPI</code> — собственный JS API InSales, доступен на страницах магазина.{" "}
-        <code className="font-mono">PushSaaS.identify(...)</code> ничего не подделывает и не создаёт новую связку —
-        имя обновится, только если это устройство уже честно подтвердило присланный телефон или email кодом; всегда
-        безопасно (эндпоинт: <code className="font-mono">{appUrl}/api/public/identify</code>).
-      </p>
+      <IntegrationCard title="Обогащение профиля для авторизованных клиентов" configured>
+        <p className="text-sm text-ink-muted mt-0">
+          На странице, где покупатель уже авторизован в InSales, можно вызвать после подключения нашего сниппета:
+        </p>
+        <CopyBox text={embedSnippet} />
+      </IntegrationCard>
 
       {!projectDomain && (
         <Card className="mt-5 border-warn bg-warn-tint">
@@ -589,26 +516,6 @@ export default function AuthSettings({
   );
 }
 
-function channelHint(key: ChannelKey, provider: string | undefined, has: boolean): string {
-  if (key === "push") return "уже узнанные устройства — по телефону или по почте";
-  if (provider === "smsc") return has ? "SMSC: логин/пароль сохранены" : "SMSC: нужны логин и пароль ниже";
-  if (key === "telegram") return has ? "токен сохранён" : "нужен токен (см. docs/telegram-gateway.md)";
-  return has ? "ключ сохранён" : "нужен X-Service-Key из кабинета Bytehand";
-}
-
-function emailChannelHint(provider: string | undefined, hasSecret: boolean, hasFrom: boolean): string {
-  if (provider === "smsc") {
-    if (!hasSecret && !hasFrom) return "SMSC: нужны логин/пароль и отправитель (From) ниже";
-    if (!hasSecret) return "SMSC: нужны логин и пароль ниже";
-    if (!hasFrom) return "нужен отправитель (From) ниже";
-    return "SMSC: логин/пароль и отправитель заданы · код на введённый адрес";
-  }
-  if (!hasSecret && !hasFrom) return "нужен Server Token Haskimail и отправитель (From) ниже";
-  if (!hasSecret) return "нужен Server Token Haskimail";
-  if (!hasFrom) return "нужен отправитель (From) ниже — домен верифицирован у провайдера";
-  return "ключ и отправитель заданы · код на введённый адрес";
-}
-
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 py-1.5">
@@ -620,9 +527,8 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
 
 function ChannelRow({
   label,
-  hint,
-  tone,
   on,
+  locked,
   onChange,
   dragging,
   rowRef,
@@ -634,9 +540,8 @@ function ChannelRow({
   onProviderChange,
 }: {
   label: string;
-  hint: string;
-  tone?: "good" | "warn";
   on: boolean;
+  locked: boolean;
   onChange: (v: boolean) => void;
   dragging: boolean;
   rowRef: (el: HTMLDivElement | null) => void;
@@ -650,7 +555,7 @@ function ChannelRow({
   return (
     <div
       ref={rowRef}
-      className={`flex items-center justify-between gap-3 py-1.5 px-1.5 -mx-1.5 rounded-lg border transition-colors ${
+      className={`flex items-center justify-between gap-3 min-h-[52px] py-1.5 px-3 rounded-lg border transition-colors ${
         dragging ? "bg-surface-2 shadow-sm select-none border-border-strong" : "border-border"
       }`}
     >
@@ -666,14 +571,8 @@ function ChannelRow({
       >
         <IconGripVertical size={16} stroke={1.8} />
       </div>
-      <div className="flex-1">
-        <div className="text-[13.5px]">{label}</div>
-        <div className="text-[12px] text-ink-faint flex items-center gap-1.5">
-          {tone && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${tone === "good" ? "bg-good" : "bg-warn"}`} />}
-          {hint}
-        </div>
-      </div>
-      {providerOptions && providerOptions.length > 1 && (
+      <div className="flex-1 text-[13.5px]">{label}</div>
+      {providerOptions && providerOptions.length > 0 && (
         <Select value={provider} onChange={(e) => onProviderChange?.(e.target.value)} className="w-40 shrink-0">
           {providerOptions.map((p) => (
             <option key={p.id} value={p.id}>
@@ -682,7 +581,7 @@ function ChannelRow({
           ))}
         </Select>
       )}
-      <Toggle checked={on} onChange={onChange} />
+      <Toggle checked={on} onChange={onChange} disabled={locked} />
     </div>
   );
 }

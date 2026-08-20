@@ -1,4 +1,4 @@
-/* PushSaaS universal service worker.
+/* SENDERA universal service worker.
  * Host this file at the ROOT of your domain: https://your-site.com/service-worker.js
  * It is generic — the notification content comes from the push payload, so the
  * same file works for every project. Do not rename the path (scope must be "/").

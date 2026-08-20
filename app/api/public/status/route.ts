@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { checkRateLimit } from "@/lib/ratelimit";
 
-// Public "am I known" check — called by window.PushSaaS.isAuthenticated().
+// Public "am I known" check — called by window.sendera.isAuthenticated().
 // Identifies the device by its push subscription endpoint and reports
 // whether it's already linked (via a real OTP in /oidc/*/auth) to a
 // phone-verified identity AND/OR an email-verified identity — independently,

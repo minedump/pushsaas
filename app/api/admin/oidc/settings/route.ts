@@ -23,6 +23,8 @@ export async function POST(req: Request) {
     telegramToken,
     bytehandKey,
     haskimailToken,
+    haskimailTransactionalStream,
+    haskimailMarketingStream,
     smscLogin,
     smscPassword,
   } = await req.json().catch(() => ({}));
@@ -33,20 +35,41 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient();
 
-  const { data: client } = await admin
-    .from("oidc_clients")
-    .select("config")
-    .eq("project_id", projectId)
-    .maybeSingle();
-  if (!client) return NextResponse.json({ error: "Сначала включите вход по телефону" }, { status: 400 });
+  // client и secrets независимы друг от друга — читаем параллельно вместо
+  // двух последовательных round-trip'ов к Supabase (заметная доля задержки
+  // сохранения при удалённой БД).
+  const [{ data: client }, { data: secrets }] = await Promise.all([
+    admin.from("oidc_clients").select("config").eq("project_id", projectId).maybeSingle(),
+    admin
+      .from("project_secrets")
+      .select("telegram_gateway_token, bytehand_service_key, haskimail_server_token, smsc_login, smsc_password")
+      .eq("project_id", projectId)
+      .maybeSingle(),
+  ]);
 
-  // текущее (до этого сохранения) наличие секретов + то, что придёт в этом
-  // же вызове — чтобы включаемый канал не остался без данных для отправки.
-  const { data: secrets } = await admin
-    .from("project_secrets")
-    .select("telegram_gateway_token, bytehand_service_key, haskimail_server_token, smsc_login, smsc_password")
-    .eq("project_id", projectId)
-    .maybeSingle();
+  // Секреты (в т.ч. haskimail_marketing_stream) теперь используются не только
+  // авторизацией, но и кампаниями/API — их можно сохранить и без включённого
+  // входа по телефону. Настройки самого OIDC-каскада (channels/providers/
+  // кнопка входа) по-прежнему требуют client — применять их не к чему без него.
+  if (!client) {
+    const secretOnly: Record<string, string | null> = {};
+    if (telegramToken !== undefined) secretOnly.telegram_gateway_token = telegramToken || null;
+    if (bytehandKey !== undefined) secretOnly.bytehand_service_key = bytehandKey || null;
+    if (haskimailToken !== undefined) secretOnly.haskimail_server_token = haskimailToken || null;
+    if (haskimailTransactionalStream !== undefined) secretOnly.haskimail_transactional_stream = haskimailTransactionalStream || null;
+    if (haskimailMarketingStream !== undefined) secretOnly.haskimail_marketing_stream = haskimailMarketingStream || null;
+    if (smscLogin !== undefined) secretOnly.smsc_login = smscLogin || null;
+    if (smscPassword !== undefined) secretOnly.smsc_password = smscPassword || null;
+    if (Object.keys(secretOnly).length) {
+      await admin.from("project_secrets").update(secretOnly).eq("project_id", projectId);
+      return NextResponse.json({ ok: true });
+    }
+    return NextResponse.json({ error: "Сначала включите вход по телефону" }, { status: 400 });
+  }
+
+  // secrets уже прочитаны выше параллельно с client — текущее (до этого
+  // сохранения) наличие секретов + то, что придёт в этом же вызове, чтобы
+  // включаемый канал не остался без данных для отправки.
 
   // какой провайдер будет активен на каждый канал ПОСЛЕ этого сохранения —
   // от этого зависит, каких именно ключей достаточно для willHave ниже.
@@ -116,17 +139,23 @@ export async function POST(req: Request) {
 
   const updates: Record<string, unknown> = { config };
   if (isEnabled !== undefined) updates.is_enabled = !!isEnabled;
-  await admin.from("oidc_clients").update(updates).eq("project_id", projectId);
 
   const secretUpdates: Record<string, string | null> = {};
   if (telegramToken !== undefined) secretUpdates.telegram_gateway_token = telegramToken || null;
   if (bytehandKey !== undefined) secretUpdates.bytehand_service_key = bytehandKey || null;
   if (haskimailToken !== undefined) secretUpdates.haskimail_server_token = haskimailToken || null;
+  if (haskimailTransactionalStream !== undefined) secretUpdates.haskimail_transactional_stream = haskimailTransactionalStream || null;
+  if (haskimailMarketingStream !== undefined) secretUpdates.haskimail_marketing_stream = haskimailMarketingStream || null;
   if (smscLogin !== undefined) secretUpdates.smsc_login = smscLogin || null;
   if (smscPassword !== undefined) secretUpdates.smsc_password = smscPassword || null;
-  if (Object.keys(secretUpdates).length) {
-    await admin.from("project_secrets").update(secretUpdates).eq("project_id", projectId);
-  }
+
+  // Две независимые таблицы — пишем параллельно, не по очереди.
+  await Promise.all([
+    admin.from("oidc_clients").update(updates).eq("project_id", projectId),
+    Object.keys(secretUpdates).length
+      ? admin.from("project_secrets").update(secretUpdates).eq("project_id", projectId)
+      : Promise.resolve(),
+  ]);
 
   return NextResponse.json({ ok: true });
 }

@@ -112,6 +112,18 @@ export async function POST(req: Request) {
     }
   }
 
+  // событие подписки — тоже только для genuinely new (не при ротации
+  // endpoint/обновлении уже известного устройства)
+  if (!existing && saved) {
+    await admin
+      .from("push_events")
+      .insert({ project_id: projectId, subscriber_id: saved.id, type: "subscribed" })
+      .then(
+        () => {},
+        () => {}
+      );
+  }
+
   // welcome automation — fire once, for genuinely new subscribers only
   if (!existing && saved) {
     const { data: welcome } = await admin

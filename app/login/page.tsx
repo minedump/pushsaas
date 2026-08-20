@@ -44,7 +44,7 @@ function LoginForm() {
 
   return (
     <main className="max-w-sm mx-auto mt-20 px-5">
-      <h1 className="text-2xl font-semibold mb-1">PushSaaS</h1>
+      <h1 className="text-2xl font-semibold mb-1">SENDERA</h1>
       <p className="text-ink-muted mt-0 mb-7">
         {mode === "signin" ? "Вход в панель управления" : "Регистрация"}
       </p>

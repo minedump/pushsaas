@@ -9,7 +9,7 @@ export default async function TariffsPage() {
     .order("sort");
 
   return (
-    <main className="max-w-3xl mx-auto">
+    <main className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-semibold">Тарифы</h1>
       <p className="text-ink-muted mt-0">
         Глобальный каталог. Списание — за отправленный пуш; лимит тарифа = пушей на месяц.

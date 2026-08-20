@@ -164,7 +164,7 @@ export default function AutomationsManager({
       <h2 className="text-base font-semibold mt-8">Событийные (брошенная корзина и др.)</h2>
       <p className="text-ink-muted text-[13px]">
         Ловим событие, ждём заданное время и, если не пришло «отменяющее» событие, шлём пуш.
-        События сайт отправляет через <code className="font-mono">PushSaaS.event(&apos;имя&apos;)</code>.
+        События сайт отправляет через <code className="font-mono">sendera.event(&apos;имя&apos;)</code>.
       </p>
 
       {events.map((a) => (
@@ -219,13 +219,13 @@ export default function AutomationsManager({
           <Input value={ev.cancel} onChange={(e) => setEv({ ...ev, cancel: e.target.value })} placeholder="order_placed, cart_cleared" />
           <div className="h-3" />
           <div className="text-[12px] text-ink-faint bg-surface-2 border border-border rounded-lg px-3 py-2">
-            В заголовке и тексте можно подставлять данные из события: <code className="font-mono">{"{ключ}"}</code>.
+            В заголовке и тексте — полноценный Liquid: <code className="font-mono">{"{{ ключ }}"}</code>, фильтры, условия, циклы.
             Напр. если событие шлёт <code className="font-mono">{'{ total: 4500, product: "Кроссовки" }'}</code>, то
-            «Забыли {"{product}"} за {"{total}"} ₽» подставит значения. Данные обновляются каждым событием устройства.
+            «Забыли {"{{ product }}"} за {"{{ total }}"} ₽» подставит значения. Данные обновляются каждым событием устройства.
           </div>
           <div className="h-3" />
           <Label>Заголовок пуша</Label>
-          <Input value={ev.title} required onChange={(e) => setEv({ ...ev, title: e.target.value })} placeholder="Вы забыли {product} в корзине 🛒" />
+          <Input value={ev.title} required onChange={(e) => setEv({ ...ev, title: e.target.value })} placeholder="Вы забыли {{ product }} в корзине 🛒" />
           <div className="h-3" />
           <Label>Текст</Label>
           <Textarea value={ev.body} required onChange={(e) => setEv({ ...ev, body: e.target.value })} rows={2} placeholder="Завершите заказ — товары ещё ждут вас" />

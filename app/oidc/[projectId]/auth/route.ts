@@ -87,7 +87,7 @@ function page(title: string, inner: string): Response {
   .note{font-size:14px;color:#5a6570;margin-top:.7rem}
   .err{background:#fdecec;border:1px solid #e8a0a0;color:#8a2525;border-radius:8px;padding:.6rem .8rem;font-size:14px;margin-bottom:.8rem}
 </style></head><body>${inner}
-<p class="note" style="margin-top:3rem;font-size:12px">Работает на PushSaaS · вход по номеру телефона</p>
+<p class="note" style="margin-top:3rem;font-size:12px">Работает на SENDERA · вход по номеру телефона</p>
 <script>
   // Двойной клик/повторный сабмит на медленной сети = два запроса кода
   // на одну попытку (двойное списание, дублирующийся SMS/push). Блокируем

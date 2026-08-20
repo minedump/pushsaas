@@ -3,6 +3,7 @@ import { authenticateApiKey } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePath } from "@/lib/jsonpath";
 import { phonesToSubscriberIds } from "@/lib/identity";
+import { logApiCall } from "@/lib/apiLog";
 
 // POST /api/v1/attribute — order-attribution intake (last-click). Separate from
 // /api/v1/trigger on purpose: this endpoint records revenue, it never sends a push.
@@ -37,6 +38,7 @@ export async function POST(req: Request) {
   const campaignId = cookieVal.slice(0, dot);
   const clickedAt = Number(cookieVal.slice(dot + 1));
   if (!campaignId || !Number.isFinite(clickedAt)) {
+    await logApiCall(admin, projectId, "attribute", false, "malformed cookie", {});
     return NextResponse.json({ ok: true, skipped: "malformed cookie" });
   }
 
@@ -51,7 +53,10 @@ export async function POST(req: Request) {
     .eq("id", campaignId)
     .eq("project_id", projectId)
     .maybeSingle();
-  if (!campaign) return NextResponse.json({ ok: true, skipped: "campaign not found" });
+  if (!campaign) {
+    await logApiCall(admin, projectId, "attribute", false, "campaign not found", { campaignId });
+    return NextResponse.json({ ok: true, skipped: "campaign not found" });
+  }
 
   const orderNumber = String(resolvePath(body, project.attribution_order_id_path || "number") ?? "");
   const revenue = Number(resolvePath(body, project.attribution_revenue_path || "total_price") ?? 0) || 0;
@@ -73,5 +78,6 @@ export async function POST(req: Request) {
     raw_cookie: cookieVal,
   });
 
+  await logApiCall(admin, projectId, "attribute", true, null, { campaignId, orderNumber, revenue });
   return NextResponse.json({ ok: true, recorded: true, campaignId, revenue });
 }

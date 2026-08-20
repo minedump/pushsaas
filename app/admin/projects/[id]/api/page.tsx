@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureProjectAccessible } from "@/lib/guards";
 import CopyBox from "../CopyBox";
 import ApiKeys from "./ApiKeys";
@@ -12,6 +13,35 @@ export default async function ApiPage({ params }: { params: Promise<{ id: string
   const { data: project } = await supabase.from("projects").select("id, name, domain, is_active").eq("id", id).maybeSingle();
   if (!project) notFound();
   await ensureProjectAccessible(project.id, project.is_active);
+
+  // Какие провайдеры sms/email реально настроены (ключи в «Подключениях») —
+  // из них можно выбирать при создании API-ключа. best-effort: отсутствие
+  // haskimail_marketing_stream (миграция 0020) не должно ронять bytehand/smsc.
+  // Haskimail — один токен на аккаунт, нужен и токен, и ID рассылочного
+  // канала (MessageStream), иначе письмо уйдёт в дефолтный транзакционный.
+  const admin = createAdminClient();
+  const { data: secrets } = await admin
+    .from("project_secrets")
+    .select("bytehand_service_key, smsc_login, smsc_password, haskimail_server_token")
+    .eq("project_id", id)
+    .maybeSingle();
+  const { data: streamSecret, error: streamErr } = await admin
+    .from("project_secrets")
+    .select("haskimail_marketing_stream")
+    .eq("project_id", id)
+    .maybeSingle();
+  const smscReady = !!secrets?.smsc_login && !!secrets?.smsc_password;
+  const haskimailReady = !!secrets?.haskimail_server_token && !streamErr && !!streamSecret?.haskimail_marketing_stream;
+  const providerOptions = {
+    sms: [
+      ...(secrets?.bytehand_service_key ? [{ value: "bytehand", label: "Bytehand" }] : []),
+      ...(smscReady ? [{ value: "smsc", label: "SMSC.ru" }] : []),
+    ],
+    email: [
+      ...(haskimailReady ? [{ value: "haskimail", label: "Haskimail" }] : []),
+      ...(smscReady ? [{ value: "smsc", label: "SMSC.ru" }] : []),
+    ],
+  };
 
   // best-effort: настройки атрибуции — отдельный запрос, отсутствие колонок
   // (до миграции 0009) не роняет страницу.
@@ -26,20 +56,30 @@ export default async function ApiPage({ params }: { params: Promise<{ id: string
     windowDays: attrRow?.attribution_window_days || 7,
   };
 
-  const { data: keys } = await supabase
+  // best-effort: sms_provider/email_provider — колонки миграции 0019,
+  // отсутствие не должно ронять список ключей.
+  const { data: keysFull, error: keysErr } = await supabase
     .from("api_keys")
-    .select("id, name, key_prefix, is_active, last_used_at, created_at")
+    .select("id, name, key_prefix, is_active, last_used_at, created_at, sms_provider, email_provider")
     .eq("project_id", id)
     .order("created_at", { ascending: false });
+  const { data: keysBasic } = keysErr
+    ? await supabase
+        .from("api_keys")
+        .select("id, name, key_prefix, is_active, last_used_at, created_at")
+        .eq("project_id", id)
+        .order("created_at", { ascending: false })
+    : { data: null };
+  const keys = keysFull ?? keysBasic;
 
   const app = process.env.NEXT_PUBLIC_APP_URL || "";
 
   return (
-    <main className="max-w-3xl mx-auto">
-      <h1 className="text-2xl font-semibold">{project.name} · API</h1>
-      <p className="text-ink-muted mt-0">Отправляйте пуши из своего кода или CRM.</p>
+    <main className="max-w-4xl mx-auto">
+      <h1 className="text-2xl font-semibold">API</h1>
+      <p className="text-ink-muted mt-0">Отправляйте пуши, SMS и email из своего кода или CRM.</p>
 
-      <ApiKeys projectId={id} initial={keys ?? []} />
+      <ApiKeys projectId={id} initial={keys ?? []} providerOptions={providerOptions} />
 
       <h2 className="text-base font-semibold mt-9">Вебхуки (универсальный триггер)</h2>
       <p className="text-ink-muted text-[13px] mt-1">
@@ -98,6 +138,37 @@ curl -X POST ${app}/api/v1/send \\
   -H "Content-Type: application/json" \\
   -d '{"title":"Специально для вас","body":"...","emails":["client@example.com"]}'
 
+# Отправить SMS (провайдер закреплён за ключом — см. настройку выше)
+curl -X POST ${app}/api/v1/send \\
+  -H "Authorization: Bearer wpk_ВАШ_КЛЮЧ" \\
+  -H "Content-Type: application/json" \\
+  -d '{"channel":"sms","text":"Скидка 20% сегодня","phones":["+79991234567"]}'
+
+# Отправить письмо по шаблону (id — из GET /api/v1/templates)
+curl -X POST ${app}/api/v1/send \\
+  -H "Authorization: Bearer wpk_ВАШ_КЛЮЧ" \\
+  -H "Content-Type: application/json" \\
+  -d '{"channel":"email","templateId":"ШАБЛОН_ID","emails":["client@example.com"]}'
+
+# ...или со своим HTML вместо шаблона
+curl -X POST ${app}/api/v1/send \\
+  -H "Authorization: Bearer wpk_ВАШ_КЛЮЧ" \\
+  -H "Content-Type: application/json" \\
+  -d '{"channel":"email","subject":"Скидка недели","html":"<p>Привет!</p>","segmentTags":["vip"]}'
+
+# Шаблоны есть и для push/SMS (раздел «Шаблоны» → канал Push/SMS) — тот же
+# templateId, что и у email; в шаблоне доступен полноценный Liquid ({{ key }},
+# {% if %}, фильтры), данные — из templateData
+curl -X POST ${app}/api/v1/send \\
+  -H "Authorization: Bearer wpk_ВАШ_КЛЮЧ" \\
+  -H "Content-Type: application/json" \\
+  -d '{"templateId":"ШАБЛОН_ID","templateData":{"percent":"20"},"phones":["+79991234567"]}'
+
+# Список шаблонов проекта (id пригодится для templateId выше);
+# необязательный ?channel=push|sms|email фильтрует по каналу
+curl ${app}/api/v1/templates \\
+  -H "Authorization: Bearer wpk_ВАШ_КЛЮЧ"
+
 # Запустить триггерную автоматизацию по ключу
 curl -X POST ${app}/api/v1/trigger \\
   -H "Authorization: Bearer wpk_ВАШ_КЛЮЧ" \\
@@ -106,7 +177,16 @@ curl -X POST ${app}/api/v1/trigger \\
 
 # Статистика по подписчикам
 curl ${app}/api/v1/subscribers \\
-  -H "Authorization: Bearer wpk_ВАШ_КЛЮЧ"`}
+  -H "Authorization: Bearer wpk_ВАШ_КЛЮЧ"
+
+# Создать/отредактировать контакт и включить рассылку по каналу — вход по
+# коду (*_verified_at) сам по себе НЕ включает SMS/Email для рассылок,
+# только для входа; smsActive/emailActive — единственный способ дать
+# согласие (false — отписать обратно)
+curl -X POST ${app}/api/v1/contacts \\
+  -H "Authorization: Bearer wpk_ВАШ_КЛЮЧ" \\
+  -H "Content-Type: application/json" \\
+  -d '{"phone":"+79991234567","name":"Иван","smsActive":true,"emailActive":true}'`}
       </pre>
     </main>
   );

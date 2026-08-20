@@ -84,7 +84,7 @@ export default function WidgetSettings({
 
       <h2 className="text-base font-semibold mt-8">Плавающая кнопка подписки</h2>
       <p className="text-sm text-ink-muted mt-1">
-        Кнопка в углу экрана — вызывает <code className="font-mono">PushSaaS.subscribe()</code> по клику. Включена по
+        Кнопка в углу экрана — вызывает <code className="font-mono">sendera.subscribe()</code> по клику. Включена по
         умолчанию для всех, кто подключил скрипт выше.
       </p>
       <Card className={`mt-3 flex flex-col gap-3 ${busyButton ? "opacity-60" : ""}`}>
@@ -140,7 +140,7 @@ export default function WidgetSettings({
       <p className="text-sm text-ink-muted mt-1">
         Показывается ДО настоящего диалога браузера — на телефоне выезжает сверху экрана, на компьютере всплывает в
         левом верхнем углу, примерно там же, где браузер сам потом спросит разрешение. Клик «Разрешить» вызывает{" "}
-        <code className="font-mono">PushSaaS.subscribe()</code> и открывает настоящий системный диалог; «Не сейчас» —
+        <code className="font-mono">sendera.subscribe()</code> и открывает настоящий системный диалог; «Не сейчас» —
         прячет плашку и больше не показывает её на этом устройстве. Выключена по умолчанию.
       </p>
       <Card className={`mt-3 flex flex-col gap-3 ${busyPrompt ? "opacity-60" : ""}`}>

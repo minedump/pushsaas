@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { checkRateLimit } from "@/lib/ratelimit";
 
-// Public event ingestion — called from the client's site by window.PushSaaS.event().
+// Public event ingestion — called from the client's site by window.sendera.event().
 // Keyed by projectId; the device is identified by its push subscription endpoint.
 const CORS = {
   "Access-Control-Allow-Origin": "*",

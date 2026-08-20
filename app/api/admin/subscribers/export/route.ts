@@ -39,35 +39,71 @@ export async function GET(req: Request) {
 
   const phoneById = new Map<string, string>();
   const emailById = new Map<string, string>();
+  const nameById = new Map<string, string>();
   const insalesClientIdById = new Map<string, string>();
+  const smsActiveById = new Set<string>();
+  const emailActiveById = new Set<string>();
   if (rows.length) {
     const { data: links } = await admin
       .from("identity_devices")
-      .select("subscriber_id, identities!inner(phone, email, insales_client_id)")
+      .select("subscriber_id, identities!inner(phone, email, name, insales_client_id, sms_marketing_active_at, email_marketing_active_at)")
       .in("subscriber_id", rows.map((r) => r.id));
     for (const l of links ?? []) {
-      const ident = l.identities as unknown as { phone: string | null; email: string | null; insales_client_id: string | null };
+      const ident = l.identities as unknown as {
+        phone: string | null;
+        email: string | null;
+        name: string | null;
+        insales_client_id: string | null;
+        sms_marketing_active_at: string | null;
+        email_marketing_active_at: string | null;
+      };
       if (ident?.phone) phoneById.set(l.subscriber_id, ident.phone);
       if (ident?.email) emailById.set(l.subscriber_id, ident.email);
+      if (ident?.name) nameById.set(l.subscriber_id, ident.name);
       if (ident?.insales_client_id) insalesClientIdById.set(l.subscriber_id, ident.insales_client_id);
+      if (ident?.sms_marketing_active_at) smsActiveById.add(l.subscriber_id);
+      if (ident?.email_marketing_active_at) emailActiveById.add(l.subscriber_id);
     }
   }
 
-  const attrKeys = [...new Set(rows.flatMap((r) => Object.keys((r.attributes as object) || {})))];
-  const header = ["id", "phone", "email", "insales_client_id", "platform", "tags", "is_active", "paused", "created_at", ...attrKeys];
+  // attrKeys включает и "name" (теперь дублируется в attributes для {name} в
+  // шаблонах кампаний, см. /api/public/identify) — исключаем, чтобы не
+  // экспортировать одно и то же значение дважды под разными колонками.
+  const attrKeys = [...new Set(rows.flatMap((r) => Object.keys((r.attributes as object) || {})))].filter((k) => k !== "name");
+  const header = [
+    "id",
+    "name",
+    "phone",
+    "email",
+    "insales_client_id",
+    "platform",
+    "tags",
+    "is_active",
+    "paused",
+    "push_active",
+    "sms_active",
+    "email_active",
+    "created_at",
+    ...attrKeys,
+  ];
 
   const lines = [header.join(",")];
   for (const r of rows) {
     const attrs = (r.attributes as Record<string, unknown>) || {};
+    const paused = pausedIds.has(r.id);
     const line = [
       r.id,
+      nameById.get(r.id) || "",
       phoneById.get(r.id) || "",
       emailById.get(r.id) || "",
       insalesClientIdById.get(r.id) || "",
       r.platform,
       (r.tags || []).join("|"),
       r.is_active,
-      pausedIds.has(r.id),
+      paused,
+      r.is_active && !paused,
+      smsActiveById.has(r.id),
+      emailActiveById.has(r.id),
       r.created_at,
       ...attrKeys.map((k) => attrs[k]),
     ]

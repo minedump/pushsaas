@@ -9,8 +9,10 @@ import { applyTemplatePaths } from "@/lib/template";
 
 // Universal trigger — one endpoint for API calls AND platform webhooks.
 // Auth: Bearer / X-Api-Key / ?key= / Basic-in-URL.
-// The whole request body becomes template data: any {field} (incl. nested
-// {client.phone}) works in the automation's title/body/url.
+// The whole request body becomes Liquid scope for the automation's
+// title/body/url: any top-level field is a bare variable ({{ client_phone }}),
+// nested/array access goes through {{ data.client.phone }} / {{ data.items[0] }},
+// with the full filter set (where/first/map/...) for array lookups.
 //
 // The paths (phone / status match / order id) are configured ON THE AUTOMATION
 // (config.phone_path, config.status_field, config.status_value, config.order_id_path),
@@ -76,9 +78,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, skipped: "status not matched" });
   }
 
-  // Placeholders in the message resolve directly against the webhook body
-  // (any path, incl. arrays: {fields[name=Трек].value}). `map` is an optional
-  // shortcut to name a path — no longer required.
+  // `map` names arbitrary paths (incl. array find-by-property, via
+  // lib/jsonpath's own bracket syntax: fields[name=Трек].value) as short
+  // top-level Liquid variables — optional, since the full body is already
+  // reachable in the message as {{ data.<path> }} without it.
   const named: Record<string, unknown> = {};
   const map = q.get("map");
   if (map) {
@@ -156,6 +159,7 @@ export async function POST(req: Request) {
       url: applyTemplatePaths(automation.click_url || "", body, named) || undefined,
       segmentTags: subscriberIds ? undefined : segmentTags,
       actions: cfg.actions,
+      type: cfg.transactional ? "transactional" : "marketing",
     },
     subscriberIds
   );

@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 // The client embeds:  <script src="https://APP/embed/PROJECT_ID.js" async></script>
 // The public VAPID key is baked in; nothing secret is exposed.
 //
-// This is the CORE script — window.PushSaaS.{subscribe,identify,event,
+// This is the CORE script — window.sendera.{subscribe,identify,event,
 // isSubscribed,isAuthenticated} plus automatic, non-optional plumbing
 // (отскок привязки устройства, атрибуция кликов). The floating subscribe
 // BUTTON, the slide-in PROMPT, and the native-login-button visibility
@@ -26,7 +26,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ projectId: str
   const api = process.env.NEXT_PUBLIC_APP_URL || "";
 
   if (!project?.vapid_public_key) {
-    return new Response(`console.error("[PushSaaS] проект не найден: ${projectId}");`, {
+    return new Response(`console.error("[sendera] проект не найден: ${projectId}");`, {
       status: 404,
       headers: { "Content-Type": "application/javascript; charset=utf-8" },
     });
@@ -64,10 +64,13 @@ function widget(
   var PUBLIC_KEY = ${JSON.stringify(publicKey)};
   var API = ${JSON.stringify(api)};
 
-  // Атрибуция заказов к пушам (last-click): сервис-воркер помечает открытую по
-  // клику ссылку ?pss_c=<campaignId>, здесь превращаем это в куку first-party —
-  // магазин может передать её значение в вебхуке заказа, и мы свяжем заказ с кампанией.
-  ${attribution ? attributionSnippet(attribution) : ""}
+  // Клик-трекинг + атрибуция заказов к рассылкам (last-click): ссылки в
+  // push/SMS/email помечаются ?pss_c=<campaignId> (push — сервис-воркером,
+  // SMS/email — при отправке, см. lib/sender.ts injectClickTracking). Здесь
+  // всегда шлём клик в тот же campaigns.clicked_count, что уже используется
+  // в CTR/аналитике; если атрибуция включена — вдобавок ставим куку
+  // first-party, магазин передаёт её в вебхуке заказа, и мы свяжем заказ с кампанией.
+  ${attributionSnippet(attribution)}
 
   function urlB64ToUint8Array(b64){
     var pad = "=".repeat((4 - b64.length % 4) % 4);
@@ -82,7 +85,7 @@ function widget(
   var DT_KEY = "pss_dt_" + PROJECT_ID;
   function deviceToken(){ try { return localStorage.getItem(DT_KEY); } catch(e){ return null; } }
 
-  // PushSaaS.subscribe() — запрашивает разрешение на push и подписывает это
+  // sendera.subscribe() — запрашивает разрешение на push и подписывает это
   // устройство. Ничего не знает о кнопке/разметке — визуальный отклик после
   // подписки (если он нужен) обязанность вызывающего кода, см. widgets.js.
   async function subscribe(){
@@ -102,7 +105,7 @@ function widget(
     } catch(e){}
   }
 
-  // Отскок привязки телефона: страница входа PushSaaS вернула браузер на
+  // Отскок привязки телефона: страница входа SENDERA вернула браузер на
   // домен магазина с ?pss_link=<одноразовый тикет>. Предъявляем НАШ
   // device_token (только из localStorage, никогда из URL) и продолжаем вход.
   (function handleLink(){
@@ -122,7 +125,7 @@ function widget(
     });
   })();
 
-  // Возврат со страницы кода PushSaaS: ?pss_auth_failed=1 — авторизация не
+  // Возврат со страницы кода SENDERA: ?pss_auth_failed=1 — авторизация не
   // состоялась по тех. причине на нашей стороне (см. otp-status/route.ts),
   // не обычный отскок. Ничего не переподписываем и не трогаем deviceToken —
   // только убираем маркер из адресной строки, чтобы страница логина
@@ -131,7 +134,7 @@ function widget(
     var url;
     try { url = new URL(location.href); } catch(e){ return; }
     if(url.searchParams.get("pss_auth_failed") !== "1") return;
-    console.warn("[PushSaaS] авторизация не удалась по технической причине, попробуйте другой способ входа");
+    console.warn("[sendera] авторизация не удалась по технической причине, попробуйте другой способ входа");
     url.searchParams.delete("pss_auth_failed");
     history.replaceState(null, "", url.toString());
   })();
@@ -153,7 +156,7 @@ function widget(
     }).catch(function(){});
   })();
 
-  // PushSaaS.event(name, payload). Attaches the current device via its push
+  // sendera.event(name, payload). Attaches the current device via its push
   // subscription endpoint; only tracks opted-in devices.
   function track(name, payload){
     if(!name || !supported()) return;
@@ -168,7 +171,7 @@ function widget(
       .catch(function(){});
   }
 
-  // PushSaaS.identify({phone, email, name, insales_client_id}) — вызывается
+  // sendera.identify({phone, email, name, insales_client_id}) — вызывается
   // ТЕМОЙ магазина вручную (например, на странице, где покупатель уже
   // авторизован — после ajaxAPI.shop.client.get()). Требует активной
   // push-подписки этого браузера. НЕ создаёт новую связку ключ↔устройство —
@@ -181,7 +184,7 @@ function widget(
     return navigator.serviceWorker.ready
       .then(function(r){ return r.pushManager.getSubscription(); })
       .then(function(sub){
-        if(!sub) return Promise.reject(new Error("not subscribed — call PushSaaS.subscribe() first"));
+        if(!sub) return Promise.reject(new Error("not subscribed — call sendera.subscribe() first"));
         return fetch(API + "/api/public/identify", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -193,7 +196,7 @@ function widget(
       });
   }
 
-  // PushSaaS.isSubscribed() — есть ли у ЭТОГО браузера активная push-подписка.
+  // sendera.isSubscribed() — есть ли у ЭТОГО браузера активная push-подписка.
   // Проверка целиком клиентская (сам браузер — источник истины), сети не требует.
   function isSubscribed(){
     if(!supported() || !navigator.serviceWorker.getRegistration) return Promise.resolve(false);
@@ -203,7 +206,7 @@ function widget(
       .catch(function(){ return false; });
   }
 
-  // PushSaaS.isAuthenticated() — привязано ли ЭТО устройство к телефону
+  // sendera.isAuthenticated() — привязано ли ЭТО устройство к телефону
   // и/или к email, независимо подтверждённым реальным кодом (через
   // /oidc/*/auth). { authenticated, phone, email } — без самих значений,
   // только факт привязки; phone и email могут быть true одновременно,
@@ -222,21 +225,27 @@ function widget(
       .catch(function(){ return { authenticated:false, phone:false, email:false }; });
   }
 
-  window.PushSaaS = {
+  window.sendera = {
     subscribe: subscribe, event: track, identify: identify,
     isSubscribed: isSubscribed, isAuthenticated: isAuthenticated
   };
 })();`;
 }
 
-function attributionSnippet(cfg: { cookieName: string; windowDays: number }) {
+function attributionSnippet(cfg: { cookieName: string; windowDays: number } | null) {
   return `(function(){
     try {
-      var c = new URL(location.href).searchParams.get("pss_c");
+      var url0 = new URL(location.href);
+      var c = url0.searchParams.get("pss_c");
       if(!c) return;
-      var maxAge = ${cfg.windowDays} * 86400;
-      document.cookie = ${JSON.stringify(cfg.cookieName)} + "=" + c + "." + Date.now() + "; path=/; max-age=" + maxAge + "; SameSite=Lax";
-      var u = new URL(location.href); u.searchParams.delete("pss_c");
+      var r = url0.searchParams.get("pss_r"); // персональный токен sms/email-клика (миграция 0024), у push его нет
+      fetch(API + "/api/public/track", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ type: "clicked", campaignId: c, token: r || undefined })
+      }).catch(function(){});
+      ${cfg ? `var maxAge = ${cfg.windowDays} * 86400;
+      document.cookie = ${JSON.stringify(cfg.cookieName)} + "=" + c + "." + Date.now() + "; path=/; max-age=" + maxAge + "; SameSite=Lax";` : ""}
+      var u = new URL(location.href); u.searchParams.delete("pss_c"); u.searchParams.delete("pss_r");
       history.replaceState(null, "", u.toString());
     } catch(e){}
   })();`;

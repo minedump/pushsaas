@@ -29,7 +29,7 @@ export default async function AnalyticsPage({ params }: { params: Promise<{ id: 
     supabase.from("subscribers").select("platform, is_active, created_at").eq("project_id", id),
     supabase
       .from("campaigns")
-      .select("status, sent_count, delivered_count, failed_count, clicked_count, title")
+      .select("id, status, sent_count, delivered_count, failed_count, clicked_count, title, sent_at")
       .eq("project_id", id)
       .eq("status", "sent"),
     supabase.from("automation_log").select("source, status").eq("project_id", id).gte("created_at", since),
@@ -71,6 +71,12 @@ export default async function AnalyticsPage({ params }: { params: Promise<{ id: 
     .sort((a, b) => b.ctr - a.ctr)
     .slice(0, 5);
 
+  const chart = [...camp]
+    .sort((a, b) => new Date(b.sent_at || 0).getTime() - new Date(a.sent_at || 0).getTime())
+    .slice(0, 10)
+    .reverse();
+  const maxChartVal = Math.max(1, ...chart.map((c) => c.delivered_count || 0));
+
   const logRows = log ?? [];
   const bySource = logRows.reduce<Record<string, { sent: number; failed: number; skipped: number }>>((acc, r) => {
     acc[r.source] ??= { sent: 0, failed: 0, skipped: 0 };
@@ -84,16 +90,24 @@ export default async function AnalyticsPage({ params }: { params: Promise<{ id: 
 
   return (
     <main className="max-w-4xl mx-auto">
-      <h1 className="text-2xl font-semibold">{project.name} · Аналитика</h1>
-      <p className="text-ink-muted mt-0 text-[13px]">Сводка за последние {DAYS} дней и по всем кампаниям.</p>
+      <h1 className="text-2xl font-semibold">Аналитика</h1>
+      <p className="text-ink-muted mt-0 text-[13px]">Сводка за последние {DAYS} дней и по всем рассылкам.</p>
 
       {/* top tiles */}
       <div className="flex gap-3 mt-5 flex-wrap">
         <Tile label="Активных подписчиков" value={active.length} />
         <Tile label="Отправлено (всего)" value={totalSent} />
-        <Tile label="CTR по кампаниям" value={`${ctr}%`} />
+        <Tile label="CTR по рассылкам" value={`${ctr}%`} />
         <Tile label="Выручка с пушей" value={`${revenue.toLocaleString("ru-RU")} ₽`} />
       </div>
+
+      {/* delivered/clicked per recent campaign */}
+      {chart.length > 0 && (
+        <Card className="mt-5">
+          <div className="text-[13px] text-ink-muted mb-3">Отправки и клики по последним рассылкам</div>
+          <BarChart data={chart} max={maxChartVal} />
+        </Card>
+      )}
 
       {/* growth chart */}
       <Card className="mt-5">
@@ -120,9 +134,9 @@ export default async function AnalyticsPage({ params }: { params: Promise<{ id: 
 
       {/* top campaigns */}
       <Card className="mt-4">
-        <div className="text-[13px] text-ink-muted mb-3">Лучшие кампании по CTR</div>
+        <div className="text-[13px] text-ink-muted mb-3">Лучшие рассылки по CTR</div>
         {topByCtr.length === 0 ? (
-          <div className="text-ink-faint text-sm">Пока нет отправленных кампаний</div>
+          <div className="text-ink-faint text-sm">Пока нет отправленных рассылок</div>
         ) : (
           <div className="flex flex-col gap-2">
             {topByCtr.map((c, i) => (
@@ -171,6 +185,39 @@ export default async function AnalyticsPage({ params }: { params: Promise<{ id: 
         )}
       </Card>
     </main>
+  );
+}
+
+function BarChart({ data, max }: { data: { id: string; delivered_count: number; clicked_count: number }[]; max: number }) {
+  const W = 620, H = 160, pad = 24, gap = 10;
+  const bw = (W - pad * 2 - gap * (data.length - 1)) / data.length;
+  return (
+    <div className="overflow-x-auto">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[380px] block">
+        {data.map((c, i) => {
+          const x = pad + i * (bw + gap);
+          const dh = ((c.delivered_count || 0) / max) * (H - pad * 2);
+          const ch = ((c.clicked_count || 0) / max) * (H - pad * 2);
+          return (
+            <g key={c.id}>
+              <rect x={x} y={H - pad - dh} width={bw} height={dh} rx={3} fill="var(--accent-line)" />
+              <rect x={x} y={H - pad - ch} width={bw} height={ch} rx={3} fill="var(--accent)" />
+            </g>
+          );
+        })}
+        <line x1={pad} y1={H - pad} x2={W - pad} y2={H - pad} stroke="var(--border)" />
+      </svg>
+      <div className="flex gap-4 text-xs text-ink-muted mt-1.5">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: "var(--accent-line)" }} />
+          отправлено
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: "var(--accent)" }} />
+          клики
+        </span>
+      </div>
+    </div>
   );
 }
 

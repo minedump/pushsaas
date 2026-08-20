@@ -10,7 +10,7 @@ export default async function ProfilePage() {
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user!.id).maybeSingle();
 
   return (
-    <main className="max-w-lg mx-auto">
+    <main className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-semibold">Профиль</h1>
 
       <Card className="mt-4">
