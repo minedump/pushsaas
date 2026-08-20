@@ -58,7 +58,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!provider) {
       provider = await resolveChannelProvider(admin, projectId, campaign.channel, null, campaign.type);
       if (!provider) {
-        await admin.from("campaigns").update({ status: "failed" }).eq("id", campaignId);
+        await admin.from("campaigns").update({ status: "failed", error: "provider not configured" }).eq("id", campaignId);
         return NextResponse.json({ error: campaign.channel === "sms" ? "SMS не настроен" : "Email не настроен" }, { status: 402 });
       }
       await admin.from("campaigns").update({ provider }).eq("id", campaignId);

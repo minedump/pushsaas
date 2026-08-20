@@ -50,7 +50,7 @@ export type DispatchResult = { ok: boolean; delivered: number; failed: number; t
 // файле/identity.ts — не кросс-канальное сопоставление (у push нет единого
 // «целевого поля», в отличие от sms/email): просто ищем устройство и по
 // телефону, и по email отдельно, объединяем результат.
-async function resolvePushContactIds(projectId: string, contacts: string[], bypassPause: boolean): Promise<string[]> {
+export async function resolvePushContactIds(projectId: string, contacts: string[], bypassPause: boolean): Promise<string[]> {
   const phoneLike = contacts.filter((c) => !c.includes("@"));
   const emailLike = contacts.filter((c) => c.includes("@"));
   const [byPhone, byEmail] = await Promise.all([
@@ -103,6 +103,17 @@ function injectClickTracking(text: string, campaignId: string, token: string): s
       return url;
     }
   });
+}
+
+// Пиксель открытия письма — тот же token, что и у клик-трекинга (один
+// получатель = одна строка campaign_recipients, не заводим отдельный token
+// под открытия). /api/public/open отдаёт 1x1 GIF независимо от результата
+// записи — почтовый клиент не должен видеть сломанную картинку из-за сбоя на
+// нашей стороне. Перед </body>, если он есть — так пиксель не влияет на
+// видимую вёрстку письма даже в клиентах, где отображается "сырой" HTML.
+function injectOpenPixel(html: string, appUrl: string, campaignId: string, token: string): string {
+  const pixel = `<img src="${appUrl}/api/public/open?c=${campaignId}&t=${token}" width="1" height="1" alt="" style="display:none" />`;
+  return /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `${pixel}</body>`) : `${html}${pixel}`;
 }
 
 // SMS-версия: та же подмена, но вдобавок через clck.ru (lib/clck.ts)
@@ -255,13 +266,13 @@ export async function dispatchCampaign(campaign: CampaignRow, subscriberIds?: st
     .single();
 
   if (!secret?.vapid_private_key || !project?.vapid_public_key) {
-    await admin.from("campaigns").update({ status: "failed" }).eq("id", campaign.id);
+    await admin.from("campaigns").update({ status: "failed", error: "no vapid keys" }).eq("id", campaign.id);
     return { ok: false, delivered: 0, failed: 0, total: subs.length, error: "no vapid keys" };
   }
 
   const { data: covered } = await admin.rpc("spend_pushes", { p_project_id: campaign.project_id, p_count: subs.length });
   if (!covered) {
-    await admin.from("campaigns").update({ status: "failed" }).eq("id", campaign.id);
+    await admin.from("campaigns").update({ status: "failed", error: "insufficient balance" }).eq("id", campaign.id);
     return { ok: false, delivered: 0, failed: 0, total: subs.length, error: "insufficient balance" };
   }
 
@@ -622,6 +633,51 @@ export async function resolveSmsEmailAudience(
   return [...byContact.values()];
 }
 
+// Точное число получателей ДО отправки — для диалога подтверждения
+// («Уйдёт N получателям»), а не только для превью содержимого (см.
+// check-contacts/route.ts, тот отдельно — чистит поле «Контакты», этот
+// просто считает). Та же логика пересечения/broadcast-all, что и у
+// dispatchCampaign (push) и resolveSmsEmailAudience (sms/email) — дублируется
+// намеренно узко (только резолв id, без реальной отправки), не вызывает
+// dispatch* напрямую.
+export async function countAudience(
+  projectId: string,
+  channel: "push" | "sms" | "email",
+  opts: { contacts?: string[]; segmentTags?: string[]; bypassConsent: boolean }
+): Promise<number> {
+  const admin = createAdminClient();
+  const contacts = (opts.contacts || []).filter(Boolean);
+  const segmentTags = (opts.segmentTags || []).filter(Boolean);
+  const hasContacts = !!contacts.length;
+  const hasSegment = !!segmentTags.length;
+
+  if (channel !== "push") {
+    const field = channel === "sms" ? "phone" : "email";
+    const audience = await resolveSmsEmailAudience(admin, projectId, field, { contacts, segmentTags, bypassConsent: opts.bypassConsent });
+    return audience.length;
+  }
+
+  if (!hasContacts && !hasSegment) {
+    const { count } = await admin.from("subscribers").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("is_active", true);
+    return count || 0;
+  }
+  const ids = hasContacts ? await resolvePushContactIds(projectId, contacts, opts.bypassConsent) : [];
+  if (hasContacts && hasSegment) {
+    if (!ids.length) return 0;
+    const { count } = await admin
+      .from("subscribers")
+      .select("id", { count: "exact", head: true })
+      .eq("project_id", projectId)
+      .eq("is_active", true)
+      .in("id", ids)
+      .overlaps("tags", segmentTags);
+    return count || 0;
+  }
+  if (hasContacts) return ids.length;
+  const { count } = await admin.from("subscribers").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("is_active", true).overlaps("tags", segmentTags);
+  return count || 0;
+}
+
 // Какой провайдер реально настроен (есть креды) для sms/email на проекте.
 // hint (например api_keys.sms_provider, закреплённый за ключом при
 // создании) побеждает, если сам настроен; иначе — первый настроенный из
@@ -675,7 +731,7 @@ export async function dispatchSmsCampaign(campaign: SmsEmailCampaignRow, contact
     .eq("project_id", campaign.project_id)
     .maybeSingle();
   if (!secrets || (campaign.provider === "smsc" ? !secrets.smsc_login : !secrets.bytehand_service_key)) {
-    await admin.from("campaigns").update({ status: "failed" }).eq("id", campaign.id);
+    await admin.from("campaigns").update({ status: "failed", error: "provider not configured" }).eq("id", campaign.id);
     return { ok: false, delivered: 0, failed: 0, total: audience.length, error: "provider not configured" };
   }
 
@@ -737,7 +793,7 @@ export async function dispatchEmailCampaign(campaign: SmsEmailCampaignRow, conta
     .maybeSingle();
   const haskimailStream = campaign.type === "transactional" ? secrets?.haskimail_transactional_stream : secrets?.haskimail_marketing_stream;
   if (!secrets || (campaign.provider === "smsc" ? !secrets.smsc_login : !secrets.haskimail_server_token || !haskimailStream)) {
-    await admin.from("campaigns").update({ status: "failed" }).eq("id", campaign.id);
+    await admin.from("campaigns").update({ status: "failed", error: "provider not configured" }).eq("id", campaign.id);
     return { ok: false, delivered: 0, failed: 0, total: audience.length, error: "provider not configured" };
   }
 
@@ -761,7 +817,7 @@ export async function dispatchEmailCampaign(campaign: SmsEmailCampaignRow, conta
         const attrs = { ...c.attrs, ...(campaign.template_data || {}), unsubscribe_url: unsubscribeUrl(appUrl, campaign.project_id, c.value) };
         const token = genRecipientToken();
         const subject = applyTemplate(subjectRaw, attrs);
-        const html = injectClickTracking(applyTemplate(htmlRaw, attrs), campaign.id, token);
+        const html = injectOpenPixel(injectClickTracking(applyTemplate(htmlRaw, attrs), campaign.id, token), appUrl, campaign.id, token);
         const ok =
           campaign.provider === "smsc"
             ? (await sendEmailSmsc(secrets.smsc_login!, secrets.smsc_password!, c.value, subject, html, emailFrom)).ok

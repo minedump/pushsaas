@@ -17,6 +17,20 @@ function fmtDetail(d: Record<string, unknown> | null): string {
   return parts.join(" · ");
 }
 
+// Причина, по которой рассылка не смогла стартовать (campaigns.error,
+// миграция 0035) — короткие английские коды из lib/sender.ts/крона/
+// send-draft, переводим для отображения в «Журнале».
+const CAMPAIGN_ERROR_LABEL: Record<string, string> = {
+  "no vapid keys": "не настроены VAPID-ключи",
+  "insufficient balance": "недостаточно баланса",
+  "provider not configured": "не настроен провайдер",
+  "unsubscribe link required": "нет обязательной ссылки отписки в письме",
+};
+function campaignErrorDetail(status: string, error: string | null, sentCount: number): string {
+  if (status === "sent") return `0 из ${sentCount} доставлено`;
+  return error ? CAMPAIGN_ERROR_LABEL[error] || error : "";
+}
+
 // см. lib/otp/index.ts MAX_ATTEMPTS — тот же порог, чтобы "исчерпаны
 // попытки" в журнале совпадало с реальным поведением верификации.
 const MAX_OTP_ATTEMPTS = 5;
@@ -50,7 +64,7 @@ export default async function LogPage({ params }: { params: Promise<{ id: string
     // аудиторию (сегмент ни на кого не попал) — это не ошибка, слать было некому.
     supabase
       .from("campaigns")
-      .select("id, title, channel, status, sent_count, delivered_count, created_at")
+      .select("id, title, channel, status, sent_count, delivered_count, error, created_at")
       .eq("project_id", id)
       .in("status", ["failed", "sent"])
       .order("created_at", { ascending: false })
@@ -147,7 +161,7 @@ export default async function LogPage({ params }: { params: Promise<{ id: string
       // ошибку в любом случае, иначе увидим вводящее в заблуждение зелёное
       // "отправлено" в разделе, который весь про проблемы.
       status: "failed" as const,
-      detail: c.status === "sent" ? `0 из ${c.sent_count} доставлено` : "",
+      detail: campaignErrorDetail(c.status, c.error, c.sent_count),
       created_at: c.created_at,
     })),
     ...(autoLogAll ?? [])

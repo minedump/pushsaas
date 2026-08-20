@@ -267,9 +267,24 @@ export default function EditCampaignForm({
   async function sendNow() {
     const err = validate();
     if (err) return setError(err);
+
+    // См. NewCampaignForm.tsx — тот же принцип: точное число получателей
+    // прямо перед подтверждением, best-effort.
+    const contactList = contacts
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const countRes = await fetch("/api/admin/campaigns/audience-count", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, channel, contacts: contactList, segmentTags: segment, type: transactional ? "transactional" : "marketing" }),
+    }).catch(() => null);
+    const countJson = countRes && countRes.ok ? await countRes.json() : null;
+    const audienceNote = typeof countJson?.count === "number" ? ` Уйдёт ${countJson.count} получателям.` : "";
+
     const ok = await confirm({
       title: "Отправить сейчас?",
-      message: "Сообщения уйдут получателям немедленно — действие нельзя отменить.",
+      message: `Сообщения уйдут получателям немедленно — действие нельзя отменить.${audienceNote}`,
       confirmText: "Отправить",
     });
     if (!ok) return;

@@ -28,7 +28,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const admin = createAdminClient();
   const { data: campaign } = await admin
     .from("campaigns")
-    .select("id, title, sent_count, delivered_count, failed_count, clicked_count")
+    .select("id, title, channel, sent_count, delivered_count, failed_count, clicked_count, opened_count")
     .eq("id", campaignId)
     .eq("project_id", projectId)
     .maybeSingle();
@@ -36,7 +36,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
   const { data: rows } = await admin
     .from("campaign_recipients")
-    .select("channel, contact, status, clicked_at, created_at")
+    .select("channel, contact, status, clicked_at, opened_at, created_at")
     .eq("campaign_id", campaignId)
     .order("created_at", { ascending: true });
 
@@ -48,13 +48,20 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     ["failed", campaign.failed_count].map(csvEscape).join(","),
     ["clicked", campaign.clicked_count || 0].map(csvEscape).join(","),
     ["ctr", `${ctr}%`].map(csvEscape).join(","),
+    // opened — только у email (пиксель открытия, см. injectOpenPixel в
+    // lib/sender.ts); у push/sms открытие технически не отслеживается.
+    ...(campaign.channel === "email" ? [["opened", campaign.opened_count || 0].map(csvEscape).join(",")] : []),
     "",
   ];
 
-  const header = ["channel", "contact", "status", "clicked", "created_at"];
+  const header = campaign.channel === "email" ? ["channel", "contact", "status", "clicked", "opened", "created_at"] : ["channel", "contact", "status", "clicked", "created_at"];
   const lines = [...summary, header.join(",")];
   for (const r of rows ?? []) {
-    lines.push([r.channel, r.contact, r.status, r.clicked_at ? "да" : "нет", r.created_at].map(csvEscape).join(","));
+    const row =
+      campaign.channel === "email"
+        ? [r.channel, r.contact, r.status, r.clicked_at ? "да" : "нет", r.opened_at ? "да" : "нет", r.created_at]
+        : [r.channel, r.contact, r.status, r.clicked_at ? "да" : "нет", r.created_at];
+    lines.push(row.map(csvEscape).join(","));
   }
 
   return new Response(lines.join("\n"), {

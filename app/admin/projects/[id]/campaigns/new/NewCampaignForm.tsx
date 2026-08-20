@@ -220,19 +220,34 @@ export default function NewCampaignForm({
     if (err) return setError(err);
     const willSchedule = schedule && !forceNow;
     if (willSchedule && (!scheduleDate || !scheduleTime)) return setError("Укажите дату и время отправки");
+
+    const { body, contactList } = buildBody();
+    if (forceNow) body.scheduledAt = null;
+
+    // Точное число получателей прямо перед подтверждением — чтобы не узнать
+    // о реальном охвате постфактум (особенно с пустыми контактами/сегментом:
+    // это отправка всем известным/согласившимся, см. lib/sender.ts:
+    // countAudience). Best-effort — если счётчик не ответил, просто не
+    // показываем число, отправку это не блокирует.
+    const countRes = await fetch("/api/admin/campaigns/audience-count", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, channel, contacts: contactList, segmentTags: segment, type: body.type }),
+    }).catch(() => null);
+    const countJson = countRes && countRes.ok ? await countRes.json() : null;
+    const audienceNote = typeof countJson?.count === "number" ? ` Уйдёт ${countJson.count} получателям.` : "";
+
     const ok = await confirm({
       title: willSchedule ? "Запланировать рассылку?" : "Отправить рассылку?",
       message: willSchedule
-        ? "Сообщения уйдут получателям в указанное время."
-        : "Сообщения уйдут получателям прямо сейчас — действие нельзя отменить.",
+        ? `Сообщения уйдут получателям в указанное время.${audienceNote}`
+        : `Сообщения уйдут получателям прямо сейчас — действие нельзя отменить.${audienceNote}`,
       confirmText: willSchedule ? "Запланировать" : "Отправить",
     });
     if (!ok) return;
 
     setBusy(true);
     setError(null);
-    const { body } = buildBody();
-    if (forceNow) body.scheduledAt = null;
 
     const res = await fetch("/api/admin/campaigns/send", {
       method: "POST",

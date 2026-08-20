@@ -65,7 +65,7 @@ export async function GET(req: Request) {
 
     if (c.channel === "sms" || c.channel === "email") {
       if (c.channel === "email" && c.type !== "transactional" && !hasUnsubscribeTag(c.html_body || "")) {
-        await admin.from("campaigns").update({ status: "failed" }).eq("id", c.id);
+        await admin.from("campaigns").update({ status: "failed", error: "unsubscribe link required" }).eq("id", c.id);
         results[c.id] = "unsubscribe link required";
         continue;
       }
@@ -73,7 +73,7 @@ export async function GET(req: Request) {
       if (!provider) {
         provider = await resolveChannelProvider(admin, c.project_id, c.channel, null, c.type === "transactional" ? "transactional" : "marketing");
         if (!provider) {
-          await admin.from("campaigns").update({ status: "failed" }).eq("id", c.id);
+          await admin.from("campaigns").update({ status: "failed", error: "provider not configured" }).eq("id", c.id);
           results[c.id] = "no provider configured";
           continue;
         }
