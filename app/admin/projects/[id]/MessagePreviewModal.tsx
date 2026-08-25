@@ -58,8 +58,8 @@ export function MessagePreviewModal({
   };
 
   return (
-    <Modal onClose={onClose} className="max-w-md max-h-[85vh] overflow-y-auto">
-      <div className="flex items-center justify-between mb-4 gap-3">
+    <Modal onClose={onClose} className="max-w-md max-h-[85vh] flex flex-col">
+      <div className="flex items-center justify-between gap-3 pb-4 mb-4 border-b border-border shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <h3 className="text-base font-semibold m-0 truncate">{label}</h3>
           <Badge tone="accent">{CHANNEL_LABEL[content.channel]}</Badge>
@@ -69,14 +69,16 @@ export function MessagePreviewModal({
         </button>
       </div>
 
-      {content.channel === "email" && (
-        <div>
-          {rendered.subject && <div className="text-[12.5px] text-ink-muted mb-2">Тема: {rendered.subject}</div>}
-          <iframe srcDoc={rendered.html || ""} className="w-full h-96 border border-border rounded-lg bg-white" sandbox="" title="Превью письма" />
-        </div>
-      )}
-      {content.channel === "push" && <PushPreview content={rendered} />}
-      {content.channel === "sms" && <SmsPreview content={rendered} />}
+      <div className="pretty-scroll flex-1 min-h-0 overflow-y-auto -mr-2 pr-2">
+        {content.channel === "email" && (
+          <div>
+            {rendered.subject && <div className="text-[12.5px] text-ink-muted mb-2">Тема: {rendered.subject}</div>}
+            <iframe srcDoc={rendered.html || ""} className="w-full h-96 border border-border rounded-lg bg-white" sandbox="" title="Превью письма" />
+          </div>
+        )}
+        {content.channel === "push" && <PushPreview content={rendered} />}
+        {content.channel === "sms" && <SmsPreview content={rendered} />}
+      </div>
     </Modal>
   );
 }

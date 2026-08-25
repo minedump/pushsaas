@@ -4,7 +4,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureProjectAccessible } from "@/lib/guards";
 import CopyBox from "../CopyBox";
 import ApiKeys from "./ApiKeys";
-import AttributionSettings from "./AttributionSettings";
 
 export default async function ApiPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -41,19 +40,6 @@ export default async function ApiPage({ params }: { params: Promise<{ id: string
       ...(haskimailReady ? [{ value: "haskimail", label: "Haskimail" }] : []),
       ...(smscReady ? [{ value: "smsc", label: "SMSC.ru" }] : []),
     ],
-  };
-
-  // best-effort: настройки атрибуции — отдельный запрос, отсутствие колонок
-  // (до миграции 0009) не роняет страницу.
-  const { data: attrRow, error: attrErr } = await supabase
-    .from("projects")
-    .select("attribution_enabled, attribution_cookie_name, attribution_window_days")
-    .eq("id", id)
-    .maybeSingle();
-  const attribution = {
-    enabled: !attrErr && !!attrRow?.attribution_enabled,
-    cookieName: attrRow?.attribution_cookie_name || "pss_attr",
-    windowDays: attrRow?.attribution_window_days || 7,
   };
 
   // best-effort: sms_provider/email_provider — колонки миграции 0019,
@@ -108,14 +94,13 @@ export default async function ApiPage({ params }: { params: Promise<{ id: string
         <code className="font-mono">?segment=vip</code>. Если в теле окажется телефон — уйдёт точечно клиенту.
       </p>
 
-      <h2 className="text-base font-semibold mt-9">Атрибуция заказов к пушам</h2>
-      <p className="text-ink-muted text-[13px] mt-1">
-        Модель — последний клик: наш скрипт ставит покупателю куку по клику на пуш, InSales сохраняет её в заказ,
-        вебхук ниже записывает выручку к кампании (пуш не отправляет). Отчёт — в разделе <b>Аналитика</b>.
+      <p className="text-ink-faint text-[12px] mt-4">
+        Атрибуция заказов к пушам — в разделе{" "}
+        <a href={`/admin/projects/${id}/settings`} className="text-accent">
+          Настройки
+        </a>
+        , у неё свой отдельный вебхук-токен.
       </p>
-      <div className="text-[13px] font-semibold mt-3">Вебхук на создание/обновление заказа</div>
-      <CopyBox text={`${app}/api/v1/attribute?key=wpk_ВАШ_КЛЮЧ`} />
-      <AttributionSettings projectId={id} domain={project.domain} initial={attribution} />
 
       <h2 className="text-base font-semibold mt-9">Эндпоинты</h2>
       <pre className="bg-surface-2 border border-border rounded-xl p-4 text-[12.5px] overflow-x-auto font-mono leading-relaxed">

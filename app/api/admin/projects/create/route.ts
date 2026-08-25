@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateVapidKeys } from "@/lib/webpush";
+import { generateAttributionToken } from "@/lib/attribution";
 
 // Creates a project for the current user + its own VAPID key pair.
 // Uses the service-role client so it can also write the private key into
@@ -47,7 +48,7 @@ export async function POST(req: Request) {
 
   const { error: secretErr } = await admin
     .from("project_secrets")
-    .insert({ project_id: project.id, vapid_private_key: vapid.privateKey });
+    .insert({ project_id: project.id, vapid_private_key: vapid.privateKey, attribution_token: generateAttributionToken() });
 
   if (secretErr) {
     // roll back the project so we never leave one without its private key

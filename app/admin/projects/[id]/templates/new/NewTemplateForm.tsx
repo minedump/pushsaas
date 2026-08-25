@@ -7,8 +7,8 @@ import { createClient } from "@/lib/supabase/client";
 import { Button, CustomSelect, Input, Label, Textarea, useDialogs } from "@/app/ui";
 import { MessagePreviewModal, type PreviewContent } from "../../MessagePreviewModal";
 import { ContextField } from "../../ContextField";
+import { ContextDocs } from "../ContextDocs";
 import { smsSegments } from "@/lib/smsSegments";
-import { hasUnsubscribeTag } from "@/lib/unsubscribeTag";
 
 type Channel = "push" | "sms" | "email";
 type Folder = { id: string; name: string };
@@ -51,10 +51,10 @@ export default function NewTemplateForm({
   const [contextEnabled, setContextEnabled] = useState(false);
   const [contextJson, setContextJson] = useState("");
 
-  // Тестовый контекст только для превью — у шаблона нет своего template_data,
-  // реальные данные подставляются позже, при отправке рассылки с этим
-  // шаблоном (см. NewCampaignForm.tsx). Здесь — просто способ проверить, как
-  // Liquid отрендерит {{ name }} и подобное, не создавая рассылку.
+  // Контекст шаблона — сохраняется вместе с шаблоном (передаётся ПРИ КАЖДОЙ
+  // отправке этим шаблоном, см. lib/sender.ts resolvePushTemplate/
+  // resolveChannelTemplate) как дефолтные Liquid-данные; реальные данные
+  // контакта/разового вызова перекрывают его при совпадении ключа.
   let contextData: Record<string, unknown> | undefined;
   let contextError: string | null = null;
   if (contextEnabled && contextJson.trim()) {
@@ -80,6 +80,7 @@ export default function NewTemplateForm({
     if (channel === "email" && !html.trim()) return toast("HTML обязателен для email-шаблона", "bad");
     if (channel === "push" && (!title.trim() || !body.trim())) return toast("Заголовок и текст обязательны для push-шаблона", "bad");
     if (channel === "sms" && !body.trim()) return toast("Текст обязателен для SMS-шаблона", "bad");
+    if (contextEnabled && contextError) return toast(contextError, "bad");
 
     setBusy(true);
     const row = {
@@ -96,6 +97,7 @@ export default function NewTemplateForm({
       image_url: channel === "push" ? imageUrl.trim() || null : null,
       badge_url: channel === "push" ? badgeUrl.trim() || null : null,
       actions: channel === "push" ? actions.filter((a) => a.title.trim() && a.url.trim()).slice(0, 2) : [],
+      context: contextData || null,
     };
     const { error } = await supabase.from("templates").insert(row);
     setBusy(false);
@@ -114,15 +116,15 @@ export default function NewTemplateForm({
       <div className="mt-4">
         <form onSubmit={save} className="flex flex-col gap-3">
           <div>
-            <Label>Канал</Label>
-            <CustomSelect value={channel} onChange={(v) => setChannel(v as Channel)} options={CHANNEL_OPTIONS} className="w-full" ariaLabel="Канал" />
-          </div>
-
-          <div>
             <Label>
               Название <span className="text-bad">*</span>
             </Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Например, «Скидка недели»" required />
+          </div>
+
+          <div>
+            <Label>Канал</Label>
+            <CustomSelect value={channel} onChange={(v) => setChannel(v as Channel)} options={CHANNEL_OPTIONS} className="w-full" ariaLabel="Канал" />
           </div>
 
           <div>
@@ -137,6 +139,7 @@ export default function NewTemplateForm({
           </div>
 
           <ContextField enabled={contextEnabled} onToggle={setContextEnabled} value={contextJson} onChange={setContextJson} error={contextError} />
+          <ContextDocs />
 
           {channel === "email" && (
             <>
@@ -156,11 +159,6 @@ export default function NewTemplateForm({
                   placeholder="<p>Привет, {{ name }}!</p>"
                   required
                 />
-                {!hasUnsubscribeTag(html) && (
-                  <p className="text-[11px] text-ink-faint text-right mt-1 mb-0">
-                    Для маркетинговой рассылки понадобится ссылка отписки — добавьте <code>{'<a href="{{ unsubscribe_url }}">Отписаться</a>'}</code>
-                  </p>
-                )}
               </div>
             </>
           )}

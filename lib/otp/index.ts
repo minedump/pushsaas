@@ -321,8 +321,8 @@ async function sendPushCode(projectId: string, key: OtpKey, code: string, vapidP
     .select("subscriber_id, subscribers!inner(id, endpoint, p256dh, auth, is_active)")
     .eq("identity_id", identity.id);
   const subs = (links || [])
-    .map((l) => l.subscribers as unknown as { id: string; endpoint: string; p256dh: string; auth: string; is_active: boolean })
-    .filter((s) => s?.is_active);
+    .map((l) => l.subscribers as unknown as { id: string; endpoint: string | null; p256dh: string | null; auth: string | null; is_active: boolean })
+    .filter((s): s is { id: string; endpoint: string; p256dh: string; auth: string; is_active: boolean } => !!s?.is_active && !!s.endpoint);
   if (!subs.length) return { ok: false, reason: "no_subscription" };
 
   const { data: project } = await admin.from("projects").select("vapid_public_key").eq("id", projectId).single();

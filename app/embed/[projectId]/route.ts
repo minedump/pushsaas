@@ -33,18 +33,27 @@ export async function GET(_req: Request, ctx: { params: Promise<{ projectId: str
   }
 
   // best-effort: атрибуция — отдельный запрос, не роняет основной виджет,
-  // если миграция 0009 ещё не применена.
+  // если миграция 0009 ещё не применена. Всегда включена (см.
+  // lib/attribution.ts — нет отдельного флага "включено"), кука ставится по
+  // клику на ЛЮБОЙ канал рассылки (см. pss_c/pss_r в attributionSnippet
+  // ниже — не только push), нет заказов с этой кукой — просто нули в отчёте.
   let attribution: { cookieName: string; windowDays: number } | null = null;
   const { data: attrRow, error: attrErr } = await admin
     .from("projects")
-    .select("attribution_enabled, attribution_cookie_name, attribution_window_days")
+    .select("attribution_cookie_name, attribution_window_days")
     .eq("id", projectId)
     .maybeSingle();
-  if (!attrErr && attrRow?.attribution_enabled) {
+  if (!attrErr && attrRow) {
     attribution = { cookieName: attrRow.attribution_cookie_name || "pss_attr", windowDays: attrRow.attribution_window_days || 7 };
   }
 
-  const js = widget(project.id, project.vapid_public_key, api, attribution);
+  // best-effort: номер счётчика Метрики (см. «Настройки») — отдельный
+  // запрос по той же причине, что и атрибуция выше.
+  let ymCounterId: string | null = null;
+  const { data: ymRow, error: ymErr } = await admin.from("projects").select("ym_counter_id").eq("id", projectId).maybeSingle();
+  if (!ymErr && ymRow?.ym_counter_id) ymCounterId = ymRow.ym_counter_id;
+
+  const js = widget(project.id, project.vapid_public_key, api, attribution, ymCounterId);
   return new Response(js, {
     headers: {
       "Content-Type": "application/javascript; charset=utf-8",
@@ -57,12 +66,37 @@ function widget(
   projectId: string,
   publicKey: string,
   api: string,
-  attribution: { cookieName: string; windowDays: number } | null
+  attribution: { cookieName: string; windowDays: number } | null,
+  ymCounterId: string | null
 ) {
   return `(function(){
   var PROJECT_ID = ${JSON.stringify(projectId)};
   var PUBLIC_KEY = ${JSON.stringify(publicKey)};
   var API = ${JSON.stringify(api)};
+  var YM_COUNTER_ID = ${JSON.stringify(ymCounterId)};
+
+  // ClientID Яндекс.Метрики этого посетителя — читаем через официальный
+  // ym(counterId,'getClientID',cb), а не куку _ym_uid напрямую: та не
+  // привязана к конкретному счётчику, если их на странице несколько. Если
+  // счётчик не настроен в «Настройки» или ym ещё не готов (стаб от
+  // сниппета Метрики появляется синхронно, но реальный клиент может не
+  // ответить) — резолвим null за 1.5с, чтобы не подвешивать subscribe().
+  function getYmClientId(){
+    if(!YM_COUNTER_ID || typeof window.ym !== "function") return Promise.resolve(null);
+    return new Promise(function(resolve){
+      var done = false;
+      var timer = setTimeout(function(){ if(!done){ done = true; resolve(null); } }, 1500);
+      try {
+        window.ym(YM_COUNTER_ID, "getClientID", function(clientId){
+          if(done) return;
+          done = true; clearTimeout(timer);
+          resolve(clientId || null);
+        });
+      } catch(e){
+        if(!done){ done = true; clearTimeout(timer); resolve(null); }
+      }
+    });
+  }
 
   // Клик-трекинг + атрибуция заказов к рассылкам (last-click): ссылки в
   // push/SMS/email помечаются ?pss_c=<campaignId> (push — сервис-воркером,
@@ -95,9 +129,12 @@ function widget(
     var perm = await Notification.requestPermission();
     if(perm !== "granted") return;
     var sub = await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey: urlB64ToUint8Array(PUBLIC_KEY) });
+    var ymClientId = await getYmClientId();
+    var timezone = null;
+    try { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch(e){}
     var res = await fetch(API + "/api/public/subscribe", {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ projectId: PROJECT_ID, subscription: sub.toJSON(), userAgent: navigator.userAgent, deviceToken: deviceToken() })
+      body: JSON.stringify({ projectId: PROJECT_ID, subscription: sub.toJSON(), userAgent: navigator.userAgent, deviceToken: deviceToken(), ymClientId: ymClientId, timezone: timezone })
     });
     try {
       var data = await res.json();
@@ -156,44 +193,88 @@ function widget(
     }).catch(function(){});
   })();
 
-  // sendera.event(name, payload). Attaches the current device via its push
-  // subscription endpoint; only tracks opted-in devices.
-  function track(name, payload){
-    if(!name || !supported()) return;
-    navigator.serviceWorker.ready
+  // Устройство БЕЗ push тоже должно уметь трекаться/обогащаться (событие,
+  // identify) — не только push-подписанные. deviceToken() — единственный
+  // независимый от push идентификатор браузера; если его ещё нет (ни разу
+  // не подписывались на push), заводим "анонимную" строку subscribers через
+  // /api/public/register-device (см. migration 0071) — один раз, дальше он
+  // просто лежит в localStorage. Если позже человек всё же подпишется на
+  // push, /api/public/subscribe узнает эту же строку по device_token и
+  // просто дозаполнит её реальной подпиской, а не заведёт вторую.
+  var deviceTokenPromise = null;
+  function ensureDeviceToken(){
+    var dt = deviceToken();
+    if(dt) return Promise.resolve(dt);
+    if(deviceTokenPromise) return deviceTokenPromise;
+    var timezone = null;
+    try { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch(e){}
+    deviceTokenPromise = fetch(API + "/api/public/register-device", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ projectId: PROJECT_ID, userAgent: navigator.userAgent, timezone: timezone })
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if(d && d.deviceToken){ try { localStorage.setItem(DT_KEY, d.deviceToken); } catch(e){} return d.deviceToken; }
+      return null;
+    }).catch(function(){ return null; });
+    return deviceTokenPromise;
+  }
+  ensureDeviceToken();
+
+  // Текущая push-подписка ЭТОГО браузера, если она есть и браузер вообще
+  // поддерживает push API — иначе null (никогда не бросает).
+  function currentPushSub(){
+    if(!supported()) return Promise.resolve(null);
+    return navigator.serviceWorker.ready
       .then(function(r){ return r.pushManager.getSubscription(); })
-      .then(function(sub){
-        if(!sub) return;
-        var body = JSON.stringify({ projectId: PROJECT_ID, endpoint: sub.endpoint, name: name, payload: payload || {} });
-        try { navigator.sendBeacon(API + "/api/public/event", new Blob([body], { type: "application/json" })); }
-        catch(e){ fetch(API + "/api/public/event", { method:"POST", headers:{"Content-Type":"application/json"}, body: body, keepalive: true }); }
-      })
-      .catch(function(){});
+      .catch(function(){ return null; });
+  }
+
+  // sendera.event(name, payload) — по push-подписке, если она есть, иначе по
+  // device_token: устройство без push тоже трекается (см. ensureDeviceToken
+  // выше и migration 0071), просто персонализация дальше уйдёт по
+  // email/SMS, а не push.
+  function track(name, payload){
+    if(!name) return;
+    function sendWith(body){
+      var json = JSON.stringify(body);
+      try { navigator.sendBeacon(API + "/api/public/event", new Blob([json], { type: "application/json" })); }
+      catch(e){ fetch(API + "/api/public/event", { method:"POST", headers:{"Content-Type":"application/json"}, body: json, keepalive: true }); }
+    }
+    currentPushSub().then(function(sub){
+      if(sub){ sendWith({ projectId: PROJECT_ID, endpoint: sub.endpoint, name: name, payload: payload || {} }); return; }
+      ensureDeviceToken().then(function(dt){
+        if(!dt) return;
+        sendWith({ projectId: PROJECT_ID, deviceToken: dt, name: name, payload: payload || {} });
+      });
+    });
   }
 
   // sendera.identify({phone, email, name, insales_client_id}) — вызывается
   // ТЕМОЙ магазина вручную (например, на странице, где покупатель уже
-  // авторизован — после ajaxAPI.shop.client.get()). Требует активной
-  // push-подписки этого браузера. НЕ создаёт новую связку ключ↔устройство —
-  // это только обогащение: name и insales_client_id применятся, только если
-  // это устройство уже честно привязано к присланному phone ИЛИ к
-  // присланному email через код (независимо друг от друга — см.
-  // /api/public/identify).
+  // авторизован — после ajaxAPI.shop.client.get()). НЕ требует push —
+  // работает и по push-подписке (если есть), и по device_token (см. выше).
+  // НЕ создаёт новую связку ключ↔устройство — это только обогащение: name и
+  // insales_client_id применятся, только если это устройство уже честно
+  // привязано к присланному phone ИЛИ к присланному email через код
+  // (независимо друг от друга — см. /api/public/identify).
   function identify(data){
-    if(!supported() || !data) return Promise.reject(new Error("no data"));
-    return navigator.serviceWorker.ready
-      .then(function(r){ return r.pushManager.getSubscription(); })
-      .then(function(sub){
-        if(!sub) return Promise.reject(new Error("not subscribed — call sendera.subscribe() first"));
-        return fetch(API + "/api/public/identify", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            projectId: PROJECT_ID, endpoint: sub.endpoint,
-            phone: data.phone, email: data.email, name: data.name,
-            insales_client_id: data.insales_client_id || data.insalesClientId
-          })
-        }).then(function(r){ return r.json(); });
+    if(!data) return Promise.reject(new Error("no data"));
+    function sendWith(idBody){
+      return fetch(API + "/api/public/identify", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(Object.assign({
+          projectId: PROJECT_ID,
+          phone: data.phone, email: data.email, name: data.name,
+          insales_client_id: data.insales_client_id || data.insalesClientId
+        }, idBody))
+      }).then(function(r){ return r.json(); });
+    }
+    return currentPushSub().then(function(sub){
+      if(sub) return sendWith({ endpoint: sub.endpoint });
+      return ensureDeviceToken().then(function(dt){
+        if(!dt) return Promise.reject(new Error("no device"));
+        return sendWith({ deviceToken: dt });
       });
+    });
   }
 
   // sendera.isSubscribed() — есть ли у ЭТОГО браузера активная push-подписка.

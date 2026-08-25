@@ -18,7 +18,7 @@ import {
   IconSend,
 } from "@tabler/icons-react";
 import { createClient } from "@/lib/supabase/client";
-import { Badge, Button, ButtonLink, Checkbox, CustomSelect, Input, Label, Modal, useDialogs } from "@/app/ui";
+import { Badge, BulkActionsMenu, Button, ButtonLink, Checkbox, CustomSelect, Input, Label, Modal, SortableTh, useDialogs, type SortDir } from "@/app/ui";
 import { MessagePreviewModal } from "../MessagePreviewModal";
 
 const PAGE_SIZE = 25;
@@ -46,6 +46,7 @@ type Template = {
 };
 
 const CHANNEL_LABEL: Record<Channel, string> = { push: "Push", sms: "SMS", email: "Email" };
+type SortKey = "name" | "channel" | "folder" | "created_at" | "created_by";
 const CHANNEL_OPTIONS = [
   { value: "email", label: "Email" },
   { value: "push", label: "Push" },
@@ -74,8 +75,21 @@ export default function TemplatesManager({
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [moveOpen, setMoveOpen] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   const folderName = (id: string | null) => (id ? (initialFolders.find((f) => f.id === id)?.name ?? "—") : null);
+
+  function onSortClick(key: SortKey) {
+    if (sortKey !== key) {
+      setSortKey(key);
+      setSortDir("asc");
+    } else if (sortDir === "asc") {
+      setSortDir("desc");
+    } else {
+      setSortKey(null);
+    }
+  }
 
   const folderCounts = useMemo(() => {
     const m = new Map<string, number>();
@@ -88,14 +102,24 @@ export default function TemplatesManager({
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return initialTemplates.filter((t) => {
+    let list = initialTemplates.filter((t) => {
       if (channelFilter !== "all" && t.channel !== channelFilter) return false;
       if (folderFilter === "none" && t.folder_id) return false;
       if (folderFilter !== "all" && folderFilter !== "none" && t.folder_id !== folderFilter) return false;
       if (q && !t.name.toLowerCase().includes(q) && !t.id.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [initialTemplates, channelFilter, folderFilter, search]);
+    if (sortKey) {
+      const dir = sortDir === "asc" ? 1 : -1;
+      list = [...list].sort((a, b) => {
+        if (sortKey === "created_at") return (new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) * dir;
+        const av = sortKey === "folder" ? folderName(a.folder_id) || "" : sortKey === "created_by" ? a.created_by_email || "" : a[sortKey];
+        const bv = sortKey === "folder" ? folderName(b.folder_id) || "" : sortKey === "created_by" ? b.created_by_email || "" : b[sortKey];
+        return av.toString().localeCompare(bv.toString(), "ru") * dir;
+      });
+    }
+    return list;
+  }, [initialTemplates, channelFilter, folderFilter, search, sortKey, sortDir, initialFolders]);
 
   const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
   const pageSafe = Math.min(page, pageCount);
@@ -239,7 +263,7 @@ export default function TemplatesManager({
     <div className={busy ? "opacity-60" : ""}>
       <div className="flex justify-between items-center flex-wrap gap-2">
         <h1 className="text-2xl font-semibold">Шаблоны</h1>
-        <ButtonLink href={`/admin/projects/${projectId}/templates/new`} size="sm">
+        <ButtonLink href={`/admin/projects/${projectId}/templates/new`}>
           <IconPlus size={16} stroke={2} />
           Новый шаблон
         </ButtonLink>
@@ -314,14 +338,12 @@ export default function TemplatesManager({
             <div className="flex items-center gap-3 flex-wrap mb-3 px-3.5 py-2 rounded-lg bg-accent-tint">
               <span className="text-[13px] text-accent font-medium">Выбрано: {selected.size}</span>
               <div className="flex items-center gap-2 ml-auto">
-                <Button variant="secondary" size="sm" onClick={() => duplicateTemplates([...selected])}>
-                  <IconCopy size={14} stroke={1.8} />
-                  Копировать
-                </Button>
-                <Button variant="secondary" size="sm" onClick={() => setMoveOpen(true)}>
-                  <IconFolderPlus size={14} stroke={1.8} />
-                  Переместить
-                </Button>
+                <BulkActionsMenu
+                  items={[
+                    { label: "Копировать", icon: <IconCopy size={15} stroke={1.8} />, onClick: () => duplicateTemplates([...selected]) },
+                    { label: "Переместить", icon: <IconFolderPlus size={15} stroke={1.8} />, onClick: () => setMoveOpen(true) },
+                  ]}
+                />
                 <Button variant="secondary" size="sm" onClick={bulkDelete}>
                   <IconTrash size={14} stroke={1.8} />
                   Удалить
@@ -340,12 +362,12 @@ export default function TemplatesManager({
                   <Th>
                     <Checkbox checked={paged.length > 0 && paged.every((t) => selected.has(t.id))} onChange={toggleSelectPage} />
                   </Th>
-                  <Th>Название</Th>
-                  <Th>Канал</Th>
-                  <Th>Папка</Th>
+                  <SortableTh label="Название" sortKey="name" active={sortKey === "name"} dir={sortDir} onClick={onSortClick} />
+                  <SortableTh label="Канал" sortKey="channel" active={sortKey === "channel"} dir={sortDir} onClick={onSortClick} />
+                  <SortableTh label="Папка" sortKey="folder" active={sortKey === "folder"} dir={sortDir} onClick={onSortClick} />
                   <Th>ID</Th>
-                  <Th>Создан</Th>
-                  <Th>Автор</Th>
+                  <SortableTh label="Создан" sortKey="created_at" active={sortKey === "created_at"} dir={sortDir} onClick={onSortClick} />
+                  <SortableTh label="Автор" sortKey="created_by" active={sortKey === "created_by"} dir={sortDir} onClick={onSortClick} />
                   <Th> </Th>
                 </tr>
               </thead>

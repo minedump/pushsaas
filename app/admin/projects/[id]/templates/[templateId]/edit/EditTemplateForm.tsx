@@ -7,8 +7,8 @@ import { createClient } from "@/lib/supabase/client";
 import { Badge, Button, CustomSelect, Input, Label, Textarea, useDialogs } from "@/app/ui";
 import { MessagePreviewModal, type PreviewContent } from "../../../MessagePreviewModal";
 import { ContextField } from "../../../ContextField";
+import { ContextDocs } from "../../ContextDocs";
 import { smsSegments } from "@/lib/smsSegments";
-import { hasUnsubscribeTag } from "@/lib/unsubscribeTag";
 
 type Channel = "push" | "sms" | "email";
 type Folder = { id: string; name: string };
@@ -26,6 +26,7 @@ type Template = {
   image_url: string | null;
   badge_url: string | null;
   actions: { title: string; url: string }[] | null;
+  context: Record<string, unknown> | null;
 };
 
 const CHANNEL_LABEL: Record<Channel, string> = { push: "Push", sms: "SMS", email: "Email" };
@@ -49,10 +50,11 @@ export default function EditTemplateForm({ projectId, template, folders }: { pro
   const [actions, setActions] = useState<{ title: string; url: string }[]>(template.actions || []);
   const [busy, setBusy] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [contextEnabled, setContextEnabled] = useState(false);
-  const [contextJson, setContextJson] = useState("");
+  const [contextEnabled, setContextEnabled] = useState(!!template.context);
+  const [contextJson, setContextJson] = useState(template.context ? JSON.stringify(template.context, null, 2) : "");
 
-  // Тестовый контекст только для превью — та же логика, что и в форме создания.
+  // Контекст шаблона — та же логика, что и в форме создания (сохраняется, не
+  // только для превью).
   let contextData: Record<string, unknown> | undefined;
   let contextError: string | null = null;
   if (contextEnabled && contextJson.trim()) {
@@ -78,6 +80,7 @@ export default function EditTemplateForm({ projectId, template, folders }: { pro
     if (channel === "email" && !html.trim()) return toast("HTML обязателен для email-шаблона", "bad");
     if (channel === "push" && (!title.trim() || !body.trim())) return toast("Заголовок и текст обязательны для push-шаблона", "bad");
     if (channel === "sms" && !body.trim()) return toast("Текст обязателен для SMS-шаблона", "bad");
+    if (contextEnabled && contextError) return toast(contextError, "bad");
 
     setBusy(true);
     const row = {
@@ -92,6 +95,7 @@ export default function EditTemplateForm({ projectId, template, folders }: { pro
       image_url: channel === "push" ? imageUrl.trim() || null : null,
       badge_url: channel === "push" ? badgeUrl.trim() || null : null,
       actions: channel === "push" ? actions.filter((a) => a.title.trim() && a.url.trim()).slice(0, 2) : [],
+      context: contextData || null,
     };
     const { error } = await supabase.from("templates").update(row).eq("id", template.id);
     setBusy(false);
@@ -125,16 +129,16 @@ export default function EditTemplateForm({ projectId, template, folders }: { pro
 
       <div className="mt-4">
         <form onSubmit={save} className="flex flex-col gap-3">
-          <div className="flex items-center gap-2 mb-1">
-            <Badge tone="accent">{CHANNEL_LABEL[channel]}</Badge>
-            <span className="text-[12px] text-ink-faint">канал нельзя изменить после создания</span>
-          </div>
-
           <div>
             <Label>
               Название <span className="text-bad">*</span>
             </Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Например, «Скидка недели»" required />
+          </div>
+
+          <div className="flex items-center gap-2 mb-1">
+            <Badge tone="accent">{CHANNEL_LABEL[channel]}</Badge>
+            <span className="text-[12px] text-ink-faint">канал нельзя изменить после создания</span>
           </div>
 
           <div>
@@ -149,6 +153,7 @@ export default function EditTemplateForm({ projectId, template, folders }: { pro
           </div>
 
           <ContextField enabled={contextEnabled} onToggle={setContextEnabled} value={contextJson} onChange={setContextJson} error={contextError} />
+          <ContextDocs />
 
           {channel === "email" && (
             <>
@@ -168,11 +173,6 @@ export default function EditTemplateForm({ projectId, template, folders }: { pro
                   placeholder="<p>Привет, {{ name }}!</p>"
                   required
                 />
-                {!hasUnsubscribeTag(html) && (
-                  <p className="text-[11px] text-ink-faint text-right mt-1 mb-0">
-                    Для маркетинговой рассылки понадобится ссылка отписки — добавьте <code>{'<a href="{{ unsubscribe_url }}">Отписаться</a>'}</code>
-                  </p>
-                )}
               </div>
             </>
           )}

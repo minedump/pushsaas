@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { checkRateLimit } from "@/lib/ratelimit";
+import { sha256 } from "@/lib/oidc";
 
 // Public event ingestion — called from the client's site by window.sendera.event().
-// Keyed by projectId; the device is identified by its push subscription endpoint.
+// Keyed by projectId; the device is identified by its push subscription endpoint
+// if it has one, otherwise by its device_token (see migration 0071 —
+// subscribers no longer require an active push subscription to exist).
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -15,9 +18,10 @@ export async function OPTIONS() {
 }
 
 export async function POST(req: Request) {
-  const { projectId, endpoint, name, payload } = (await req.json().catch(() => ({}))) as {
+  const { projectId, endpoint, deviceToken, name, payload } = (await req.json().catch(() => ({}))) as {
     projectId?: string;
     endpoint?: string;
+    deviceToken?: string;
     name?: string;
     payload?: Record<string, unknown>;
   };
@@ -32,10 +36,12 @@ export async function POST(req: Request) {
   if (!project) return NextResponse.json({ error: "unknown project" }, { status: 404, headers: CORS });
 
   // защита от спама событиями с одного устройства/скрипта
-  const allowed = await checkRateLimit(`evt:${projectId}:${endpoint || "noendpoint"}`, 60_000, 60);
+  const allowed = await checkRateLimit(`evt:${projectId}:${endpoint || deviceToken || "noendpoint"}`, 60_000, 60);
   if (!allowed) return NextResponse.json({ error: "too many requests" }, { status: 429, headers: CORS });
 
-  // resolve the device (active subscriber) from its endpoint, if any
+  // resolve the device (active subscriber) — по push-endpoint, если есть, иначе
+  // по device_token (устройство без push-подписки, см. migration 0071 и
+  // /api/public/register-device).
   let subscriberId: string | null = null;
   if (endpoint) {
     const { data: sub } = await admin
@@ -43,6 +49,16 @@ export async function POST(req: Request) {
       .select("id")
       .eq("project_id", projectId)
       .eq("endpoint", endpoint)
+      .eq("is_active", true)
+      .maybeSingle();
+    subscriberId = sub?.id ?? null;
+  }
+  if (!subscriberId && deviceToken) {
+    const { data: sub } = await admin
+      .from("subscribers")
+      .select("id")
+      .eq("project_id", projectId)
+      .eq("device_token_hash", sha256(deviceToken))
       .eq("is_active", true)
       .maybeSingle();
     subscriberId = sub?.id ?? null;

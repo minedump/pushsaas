@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizePhone } from "@/lib/phone";
+import { fireWelcomeAutomations } from "@/lib/sender";
 
 // Best-effort: subset of ids whose subscriber row has paused=true. Returns an
 // empty set (excludes nobody) if the column doesn't exist yet — degrades to
@@ -70,6 +71,49 @@ export async function emailsToSubscriberIds(projectId: string, emails: string[],
     .in("identity_id", identities.map((i) => i.id));
 
   return activeUnpausedIds(admin, links, opts.bypassPause);
+}
+
+// Кому из контактов интересен конкретный товар (избранное/корзина/свой
+// именованный список) — для вебхук-триггеров «цена снижена»/«товар в
+// наличии» (см. app/api/v1/trigger). Список копится сам из client-side
+// событий cart_updated/favorite_updated (полный снимок) или {имя}_added/
+// {имя}_removed (свой список, любое имя — см. ingest_event, migration 0070),
+// это НЕ то же самое, что подписка на push — контакт может быть sms/email-
+// only. listType — "any" (в любом списке) или конкретное имя, не только
+// favorite/cart. Пусто — значит товар ни у кого не в списке, вызывающий код
+// просто ничего не отправляет.
+export async function resolveIdentitiesForProduct(
+  projectId: string,
+  productId: string,
+  listType: string
+): Promise<string[]> {
+  const admin = createAdminClient();
+  let query = admin.from("identity_product_lists").select("identity_id").eq("project_id", projectId).eq("product_id", productId);
+  if (listType !== "any") query = query.eq("list_type", listType);
+  const { data } = await query;
+  return [...new Set((data || []).map((r) => r.identity_id))];
+}
+
+// Забирает накопленный список «просмотров» (list_type='viewed', копится на
+// product_viewed/category_viewed — см. ingest_event, migration 0068) И СРАЗУ
+// ЖЕ очищает его одним запросом (DELETE...RETURNING, атомарно — не отдельные
+// select+delete) — используется настройкой «Очищать список после отправки»
+// у событийной автоматизации (см. run-automations): забрали то, что
+// накопилось с прошлой отправки, разослали, следующий цикл просмотров
+// начинается с нуля. Пусто — просмотров с прошлой отправки не было,
+// вызывающий код просто продолжит с одиночным id из самого события.
+// Очищаем ДО подтверждения успешной отправки (тот же принцип, что и у
+// claim'а automation_jobs выше по стеку — без повторной отправки при сбое).
+export async function consumeViewedProductIds(identityId: string): Promise<string[]> {
+  const admin = createAdminClient();
+  const { data } = await admin.from("identity_product_lists").delete().eq("identity_id", identityId).eq("list_type", "viewed").select("product_id");
+  return (data || []).map((r) => r.product_id);
+}
+
+export async function consumeViewedCategoryIds(identityId: string): Promise<string[]> {
+  const admin = createAdminClient();
+  const { data } = await admin.from("identity_category_lists").delete().eq("identity_id", identityId).eq("list_type", "viewed").select("category_id");
+  return (data || []).map((r) => r.category_id);
 }
 
 // Для кнопки «Проверить» у поля адресной push-отправки — какие ИМЕННО из
@@ -221,6 +265,7 @@ export type UpsertContactInput = {
   smsActive?: boolean;
   emailActive?: boolean;
   tags?: string[];
+  attributes?: Record<string, string | null>;
 };
 export type UpsertContactResult = { ok: true; id: string; created: boolean } | { ok: false; error: string };
 
@@ -244,7 +289,7 @@ export async function upsertContact(projectId: string, input: UpsertContactInput
   const admin = createAdminClient();
   const { data: existing } = await admin
     .from("identities")
-    .select("id, phone, email")
+    .select("id, name, phone, email, insales_client_id, tags, sms_marketing_active_at, email_marketing_active_at")
     .eq("project_id", projectId)
     .eq(phone ? "phone" : "email", phone || email)
     .maybeSingle();
@@ -261,7 +306,20 @@ export async function upsertContact(projectId: string, input: UpsertContactInput
 
   if (existing) {
     await admin.from("identities").update(patch).eq("id", existing.id);
-    logChannelEvents(admin, projectId, existing.id, input, phone || existing.phone, email || existing.email);
+    logChannelEvents(admin, projectId, existing.id, input, phone || existing.phone, email || existing.email, {
+      sms: !!existing.sms_marketing_active_at,
+      email: !!existing.email_marketing_active_at,
+    });
+    // Общая история изменений — только поля, реально пришедшие в patch.
+    const before: Record<string, unknown> = {};
+    const after: Record<string, unknown> = {};
+    for (const key of ["name", "phone", "email", "insales_client_id", "tags"] as const) {
+      if (key in patch) {
+        before[key] = existing[key as keyof typeof existing];
+        after[key] = patch[key];
+      }
+    }
+    logFieldChanges(admin, projectId, existing.id, before, after);
     return { ok: true, id: existing.id, created: false };
   }
   const { data: created, error } = await admin
@@ -270,30 +328,70 @@ export async function upsertContact(projectId: string, input: UpsertContactInput
     .select("id")
     .single();
   if (error || !created) return { ok: false, error: error?.message || "insert failed" };
-  logChannelEvents(admin, projectId, created.id, input, phone, email);
+  logChannelEvents(admin, projectId, created.id, input, phone, email, { sms: false, email: false });
   return { ok: true, id: created.id, created: true };
 }
 
 // Журнал включений/отключений SMS/Email-рассылки по identity (см. вкладку
 // «События подписчиков» в Журнале) — единственная точка записи, потому что
-// upsertContact — единственное место, где smsActive/emailActive реально
-// применяются. Best-effort: ошибка записи события не должна ронять сам upsert.
+// upsertContact/updateContact — единственные места, где smsActive/emailActive
+// реально применяются. Best-effort: ошибка записи события не должна ронять
+// сам upsert. `before` — было ли согласие уже включено ДО этой правки: канал
+// «Активен» впервые (было выключено/не было вовсе → включили) — единственный
+// момент, когда стреляют приветственные автоматизации этого канала (см.
+// fireWelcomeAutomations в lib/sender.ts); повторное сохранение с уже
+// включённым согласием их не дублирует.
 function logChannelEvents(
   admin: ReturnType<typeof createAdminClient>,
   projectId: string,
   identityId: string,
   input: UpsertContactInput,
   contactPhone: string | null,
-  contactEmail: string | null
+  contactEmail: string | null,
+  before: { sms: boolean; email: boolean }
 ) {
   const rows: { project_id: string; identity_id: string; channel: "sms" | "email"; active: boolean; contact: string }[] = [];
   if (input.smsActive !== undefined && contactPhone) {
     rows.push({ project_id: projectId, identity_id: identityId, channel: "sms", active: input.smsActive, contact: contactPhone });
+    if (input.smsActive && !before.sms) fireWelcomeAutomations(projectId, "sms", { identityId }).catch(() => {});
   }
   if (input.emailActive !== undefined && contactEmail) {
     rows.push({ project_id: projectId, identity_id: identityId, channel: "email", active: input.emailActive, contact: contactEmail });
+    if (input.emailActive && !before.email) fireWelcomeAutomations(projectId, "email", { identityId }).catch(() => {});
   }
   if (rows.length) admin.from("identity_channel_events").insert(rows).then(() => {}, () => {});
+}
+
+function normalizeForDiff(v: unknown): string | null {
+  if (v === null || v === undefined) return null;
+  if (Array.isArray(v)) return v.length ? [...v].map(String).sort().join(", ") : null;
+  return String(v);
+}
+
+// Общий журнал изменений данных контакта (см. identity_field_changes,
+// миграция 0041) — единая история для карточки подписчика, помимо
+// identity_channel_events (тот остаётся для SMS/Email-согласия). `before`/
+// `after` — плоские объекты с ОДИНАКОВЫМ набором ключей: только те поля,
+// которые реально затронуты этой правкой (не весь контакт целиком) — иначе
+// нетронутые поля считались бы "изменившимися" при первом же сравнении
+// undefined-с-undefined. Массивы (теги) сравниваются как множества —
+// перестановка порядка не считается изменением. Best-effort, не блокирует
+// сам апдейт.
+export function logFieldChanges(
+  admin: ReturnType<typeof createAdminClient>,
+  projectId: string,
+  identityId: string,
+  before: Record<string, unknown>,
+  after: Record<string, unknown>
+) {
+  const rows: { project_id: string; identity_id: string; field: string; old_value: string | null; new_value: string | null }[] = [];
+  for (const key of Object.keys(after)) {
+    const av = normalizeForDiff(before[key]);
+    const bv = normalizeForDiff(after[key]);
+    if (av === bv) continue;
+    rows.push({ project_id: projectId, identity_id: identityId, field: key, old_value: av, new_value: bv });
+  }
+  if (rows.length) admin.from("identity_field_changes").insert(rows).then(() => {}, () => {});
 }
 
 // Редактирование УЖЕ ИЗВЕСТНОГО контакта по его id (страница «Изменить
@@ -309,7 +407,12 @@ export async function updateContact(projectId: string, identityId: string, input
   if (!phone && !email) return { ok: false, error: "phone or email required" };
 
   const admin = createAdminClient();
-  const { data: existing } = await admin.from("identities").select("id").eq("id", identityId).eq("project_id", projectId).maybeSingle();
+  const { data: existing } = await admin
+    .from("identities")
+    .select("id, name, phone, email, insales_client_id, tags, attributes, sms_marketing_active_at, email_marketing_active_at")
+    .eq("id", identityId)
+    .eq("project_id", projectId)
+    .maybeSingle();
   if (!existing) return { ok: false, error: "not found" };
 
   const now = new Date().toISOString();
@@ -319,10 +422,53 @@ export async function updateContact(projectId: string, identityId: string, input
   if (input.smsActive !== undefined) patch.sms_marketing_active_at = input.smsActive ? now : null;
   if (input.emailActive !== undefined) patch.email_marketing_active_at = input.emailActive ? now : null;
   if (input.tags !== undefined) patch.tags = input.tags;
+  // Мёрж, не замена — форма редактирования показывает только ключи,
+  // встречавшиеся хотя бы у одного контакта проекта на момент открытия
+  // страницы (см. edit/page.tsx); ключ, добавленный кому-то ПОСЛЕ этого
+  // (например, свежим CSV-импортом), не должен потеряться здесь молча.
+  // Значение null — сигнал удалить ключ целиком (форма даёт убрать доп.
+  // поле), а не просто очистить его текстом.
+  let mergedAttrs: Record<string, unknown> | null = null;
+  if (input.attributes !== undefined) {
+    mergedAttrs = { ...((existing.attributes as object) || {}) };
+    for (const [key, value] of Object.entries(input.attributes)) {
+      if (value === null) delete mergedAttrs[key];
+      else mergedAttrs[key] = value;
+    }
+  }
+  if (mergedAttrs) patch.attributes = mergedAttrs;
 
   const { error } = await admin.from("identities").update(patch).eq("id", identityId);
   if (error) return { ok: false, error: error.message };
-  logChannelEvents(admin, projectId, identityId, input, phone, email);
+  logChannelEvents(admin, projectId, identityId, input, phone, email, {
+    sms: !!existing.sms_marketing_active_at,
+    email: !!existing.email_marketing_active_at,
+  });
+  // Общая история изменений (карточка подписчика) — только поля, которые
+  // реально пришли в этой правке, плюс изменившиеся доп. поля (attr:<ключ>,
+  // чтобы не путаться с одноимённым обычным полем контакта).
+  const before: Record<string, unknown> = { phone: existing.phone, email: existing.email };
+  const after: Record<string, unknown> = { phone, email };
+  if (input.name !== undefined) {
+    before.name = existing.name;
+    after.name = patch.name;
+  }
+  if (input.insalesClientId !== undefined) {
+    before.insales_client_id = existing.insales_client_id;
+    after.insales_client_id = patch.insales_client_id;
+  }
+  if (input.tags !== undefined) {
+    before.tags = existing.tags;
+    after.tags = input.tags;
+  }
+  if (input.attributes) {
+    const existingAttrs = (existing.attributes as Record<string, unknown>) || {};
+    for (const key of Object.keys(input.attributes)) {
+      before[`attr:${key}`] = existingAttrs[key];
+      after[`attr:${key}`] = input.attributes[key];
+    }
+  }
+  logFieldChanges(admin, projectId, identityId, before, after);
   return { ok: true, id: identityId, created: false };
 }
 
@@ -339,22 +485,59 @@ export async function deleteContact(projectId: string, identityId: string): Prom
   return { ok: true };
 }
 
-// Обогащение профиля: если у ПОДТВЕРЖДЁННОГО телефона в проекте ещё нет email,
-// а он пришёл в теле вебхука заказа рядом с телефоном — сохраняем. Так email
-// "попадает в базу" без отдельного флоу: он приезжает вместе с транзакционными
-// вебхуками (обычно client.email рядом с client.phone в заказе).
-export async function captureEmailForPhone(projectId: string, phoneDigits: string, email: string | null | undefined) {
-  const clean = (email || "").trim().toLowerCase();
-  if (!clean || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean)) return;
-
+// Очистка «Событий на сайте» карточки контакта (таблица events, см. миграцию
+// 0007/0070) — сырой трекинг-стрим, только диагностика/наглядность, ни на
+// что не влияет (списки избранного/корзины строятся отдельно, в
+// identity_product_lists, и этой очисткой не затрагиваются).
+export async function clearSiteEvents(projectId: string, identityId: string): Promise<{ ok: boolean; error?: string }> {
   const admin = createAdminClient();
-  const { data: identity } = await admin
-    .from("identities")
-    .select("id, email")
-    .eq("project_id", projectId)
-    .eq("phone", phoneDigits)
-    .maybeSingle();
-  if (identity && !identity.email) {
-    await admin.from("identities").update({ email: clean }).eq("id", identity.id);
+  const { data: links } = await admin.from("identity_devices").select("subscriber_id").eq("identity_id", identityId);
+  const subscriberIds = (links || []).map((l) => l.subscriber_id);
+  if (!subscriberIds.length) return { ok: true };
+  const { error } = await admin.from("events").delete().eq("project_id", projectId).in("subscriber_id", subscriberIds);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+// Очистка «Истории изменений» — переключения каналов (identity_channel_events)
+// и правки полей (identity_field_changes). Устройства в эту очистку
+// НЕ входят — это не история, а текущий список реальных push-подписок,
+// удалять их тут значило бы отвязать реальные устройства от контакта.
+export async function clearIdentityHistory(projectId: string, identityId: string): Promise<{ ok: boolean; error?: string }> {
+  const admin = createAdminClient();
+  const { error: e1 } = await admin.from("identity_channel_events").delete().eq("project_id", projectId).eq("identity_id", identityId);
+  if (e1) return { ok: false, error: e1.message };
+  const { error: e2 } = await admin.from("identity_field_changes").delete().eq("project_id", projectId).eq("identity_id", identityId);
+  if (e2) return { ok: false, error: e2.message };
+  return { ok: true };
+}
+
+// Обогащение профиля: identity уже резолвлена (по телефону, email ИЛИ
+// внешнему id — см. app/api/v1/trigger/route.ts), а тело вебхука может
+// нести и остальные поля рядом (обычно client.phone/client.email/client.id
+// вместе в одном заказе) — досохраняем то, чего у контакта ещё нет,
+// НИКОГДА не перезаписывая уже заданное значение (это не повторная
+// верификация, просто попутное заполнение профиля).
+export async function enrichIdentityFields(
+  identityId: string,
+  fields: { phone?: string | null; email?: string | null; insales_client_id?: string | null }
+): Promise<void> {
+  const admin = createAdminClient();
+  const { data: identity } = await admin.from("identities").select("phone, email, insales_client_id").eq("id", identityId).maybeSingle();
+  if (!identity) return;
+
+  const patch: Record<string, string> = {};
+  if (fields.phone && !identity.phone) {
+    const normalized = normalizePhone(fields.phone);
+    if (normalized) patch.phone = normalized;
+  }
+  if (fields.email && !identity.email) {
+    const clean = fields.email.trim().toLowerCase();
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean)) patch.email = clean;
+  }
+  if (fields.insales_client_id && !identity.insales_client_id) patch.insales_client_id = fields.insales_client_id;
+
+  if (Object.keys(patch).length) {
+    await admin.from("identities").update(patch).eq("id", identityId);
   }
 }

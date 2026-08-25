@@ -40,6 +40,15 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     .eq("campaign_id", campaignId)
     .order("created_at", { ascending: true });
 
+  // Заказы/выручка — та же атрибуция, что и в списке «Рассылки» (см.
+  // CampaignsTable.tsx), не завязана на канал: клик-трекинг с ?pss_c=
+  // работает одинаково у push/sms/email (см. injectClickTracking/
+  // injectClickTrackingSms в lib/sender.ts). Всегда включена (см.
+  // lib/attribution.ts) — нет заказов с этой кукой, просто 0/0.
+  const { data: attrRows } = await admin.from("order_attributions").select("revenue").eq("campaign_id", campaignId);
+  const orders = attrRows?.length || 0;
+  const revenue = (attrRows ?? []).reduce((sum, r) => sum + Number(r.revenue || 0), 0);
+
   const ctr = campaign.delivered_count ? Math.round(((campaign.clicked_count || 0) / campaign.delivered_count) * 100) : 0;
   const summary = [
     ["campaign", campaign.title].map(csvEscape).join(","),
@@ -51,6 +60,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     // opened — только у email (пиксель открытия, см. injectOpenPixel в
     // lib/sender.ts); у push/sms открытие технически не отслеживается.
     ...(campaign.channel === "email" ? [["opened", campaign.opened_count || 0].map(csvEscape).join(",")] : []),
+    ["orders", orders].map(csvEscape).join(","),
+    ["revenue", revenue].map(csvEscape).join(","),
     "",
   ];
 

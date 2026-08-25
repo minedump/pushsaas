@@ -9,21 +9,9 @@ export default async function CampaignsPage({ params }: { params: Promise<{ id: 
   const { id } = await params;
   const supabase = await createClient();
 
-  const { data: baseProject } = await supabase.from("projects").select("id, name, is_active").eq("id", id).maybeSingle();
-  if (!baseProject) notFound();
-  await ensureProjectAccessible(baseProject.id, baseProject.is_active);
-
-  // best-effort: атрибуция — отдельный запрос, не роняет страницу, если
-  // миграция 0009 ещё не применена (колонок пока нет). Настройки — в разделе API.
-  const { data: attrRow, error: attrErr } = await supabase
-    .from("projects")
-    .select("attribution_enabled")
-    .eq("id", id)
-    .maybeSingle();
-  const project = {
-    ...baseProject,
-    attribution_enabled: !attrErr && !!attrRow?.attribution_enabled,
-  };
+  const { data: project } = await supabase.from("projects").select("id, name, is_active").eq("id", id).maybeSingle();
+  if (!project) notFound();
+  await ensureProjectAccessible(project.id, project.is_active);
 
   // best-effort: channel/type/initiator — колонки миграций 0019/0025,
   // отсутствие не должно ронять список (просто все строки без явного канала
@@ -46,14 +34,37 @@ export default async function CampaignsPage({ params }: { params: Promise<{ id: 
 
   const list = (campaigns ?? []).map((c) => ({ channel: "push" as string, type: "marketing" as string, initiator: "manual" as string, internal_title: null as string | null, ...c }));
 
+  // Выручка показывается всегда — заказов пока нет, значит карты пустые и
+  // все строки просто читают 0 (см. lib/attribution.ts — вебхуку не нужно
+  // отдельное "включение", он либо получает данные, либо нет).
   let revenueByCampaign = new Map<string, number>();
-  if (project.attribution_enabled && list.length) {
+  let ordersByCampaign = new Map<string, number>();
+  let paidByCampaign = new Map<string, number>();
+  let paidOrdersByCampaign = new Map<string, number>();
+  if (list.length) {
     const { data: attrRows } = await supabase
       .from("order_attributions")
-      .select("campaign_id, revenue")
+      .select("campaign_id, revenue, is_paid, paid_amount")
       .in("campaign_id", list.map((c) => c.id));
     revenueByCampaign = (attrRows ?? []).reduce((m, r) => {
       if (r.campaign_id) m.set(r.campaign_id, (m.get(r.campaign_id) || 0) + Number(r.revenue || 0));
+      return m;
+    }, new Map<string, number>());
+    // Каждая строка order_attributions — один заказ (см. /api/v1/attribute,
+    // один UPSERT на заказ — миграция 0074 дедупит по номеру заказа),
+    // поэтому число заказов кампании — просто количество строк с её
+    // campaign_id, без отдельного запроса.
+    ordersByCampaign = (attrRows ?? []).reduce((m, r) => {
+      if (r.campaign_id) m.set(r.campaign_id, (m.get(r.campaign_id) || 0) + 1);
+      return m;
+    }, new Map<string, number>());
+    const paidRows = (attrRows ?? []).filter((r) => r.is_paid);
+    paidByCampaign = paidRows.reduce((m, r) => {
+      if (r.campaign_id) m.set(r.campaign_id, (m.get(r.campaign_id) || 0) + Number(r.paid_amount || 0));
+      return m;
+    }, new Map<string, number>());
+    paidOrdersByCampaign = paidRows.reduce((m, r) => {
+      if (r.campaign_id) m.set(r.campaign_id, (m.get(r.campaign_id) || 0) + 1);
       return m;
     }, new Map<string, number>());
   }
@@ -65,25 +76,30 @@ export default async function CampaignsPage({ params }: { params: Promise<{ id: 
     internal_title: c.internal_title,
     channel: c.channel,
     type: (c.type === "transactional" ? "transactional" : "marketing") as "transactional" | "marketing",
-    initiator: (c.initiator === "api" ? "api" : "manual") as "manual" | "api" | "automation" | "auth",
+    initiator: (c.initiator === "api" ? "api" : c.initiator === "automation" ? "automation" : "manual") as "manual" | "api" | "automation" | "auth",
     status: c.status,
     sent_count: c.sent_count,
     delivered_count: c.delivered_count,
     clicked_count: c.clicked_count,
     revenue: revenueByCampaign.get(c.id) || 0,
+    orders: ordersByCampaign.get(c.id) || 0,
+    paid: paidByCampaign.get(c.id) || 0,
+    paidOrders: paidOrdersByCampaign.get(c.id) || 0,
     created_at: c.sent_at || c.created_at,
   }));
 
-  // Event/welcome-автоматизации не создают строку в campaigns (см.
-  // lib/sender.sendOneOff) — только в automation_log, поэтому берём их
-  // ОТСЮДА отдельно. Вебхук/api-автоматизации (source webhook/api) СЮДА не
-  // включаем — они уже отражены выше через campaigns (createAndDispatch тоже
-  // создаёт кампанию), иначе одна отправка попала бы в список дважды.
+  // Event/welcome-автоматизации теперь тоже заводят campaigns-строку на
+  // каждую отправку (см. lib/sender.sendOneOff/sendWelcomeNow) — те уже
+  // отражены выше через campaignRows. Берём отсюда ТОЛЬКО строки без
+  // campaign_id — попытки, не дошедшие до реальной отправки (нет активного
+  // устройства/шаблона и т.п.), иначе одна отправка попала бы в список
+  // дважды.
   const { data: autoLog } = await supabase
     .from("automation_log")
-    .select("id, title, status, recipients, source, created_at")
+    .select("id, title, status, recipients, source, channel, campaign_id, created_at")
     .eq("project_id", id)
     .in("source", ["event", "welcome"])
+    .is("campaign_id", null)
     .order("created_at", { ascending: false })
     .limit(300);
   const automationRows = (autoLog ?? []).map((r) => ({
@@ -91,7 +107,7 @@ export default async function CampaignsPage({ params }: { params: Promise<{ id: 
     campaignId: null as string | null,
     title: r.title || (r.source === "welcome" ? "Welcome-автоматизация" : "Событийная автоматизация"),
     internal_title: null as string | null,
-    channel: "push",
+    channel: r.channel || "push",
     type: "marketing" as const,
     initiator: "automation" as const,
     status: r.status,
@@ -99,6 +115,9 @@ export default async function CampaignsPage({ params }: { params: Promise<{ id: 
     delivered_count: r.status === "sent" ? r.recipients : 0,
     clicked_count: 0,
     revenue: 0,
+    orders: 0,
+    paid: 0,
+    paidOrders: 0,
     created_at: r.created_at,
   }));
 
@@ -123,6 +142,9 @@ export default async function CampaignsPage({ params }: { params: Promise<{ id: 
     delivered_count: 1,
     clicked_count: 0,
     revenue: 0,
+    orders: 0,
+    paid: 0,
+    paidOrders: 0,
     created_at: r.created_at,
   }));
 
@@ -144,7 +166,7 @@ export default async function CampaignsPage({ params }: { params: Promise<{ id: 
         {rows.length === 0 ? (
           <Card className="text-ink-muted">Пока не было рассылок.</Card>
         ) : (
-          <CampaignsTable rows={rows} attributionEnabled={project.attribution_enabled} projectId={id} />
+          <CampaignsTable rows={rows} projectId={id} />
         )}
       </div>
     </main>

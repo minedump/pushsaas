@@ -177,9 +177,9 @@ export default async function SubscribersPage({ params }: { params: Promise<{ id
       <div className="flex justify-between items-center flex-wrap gap-2">
         <h1 className="text-2xl font-semibold">Подписчики</h1>
         <div className="flex items-center gap-2">
-          <ButtonLink href={`/admin/projects/${id}/subscribers/new`} variant="secondary" size="sm">
-            <IconPlus size={15} stroke={1.8} />
-            Добавить подписчика
+          <ButtonLink href={`/admin/projects/${id}/subscribers/new`}>
+            <IconPlus size={16} stroke={2} />
+            Новый подписчик
           </ButtonLink>
           <ExportImport projectId={id} />
         </div>

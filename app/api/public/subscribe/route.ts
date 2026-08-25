@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendOneOff } from "@/lib/sender";
+import { fireWelcomeAutomations } from "@/lib/sender";
 import { sha256 } from "@/lib/oidc";
 import { checkRateLimit } from "@/lib/ratelimit";
 
@@ -27,7 +27,7 @@ function detectPlatform(ua: string): "ios" | "android" | "desktop" | "unknown" {
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
-  const { projectId, subscription, userAgent, deviceToken } = body || {};
+  const { projectId, subscription, userAgent, deviceToken, ymClientId, timezone } = body || {};
 
   if (!projectId || !subscription?.endpoint || !subscription?.keys) {
     return NextResponse.json({ error: "bad payload" }, { status: 400, headers: CORS });
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "too many requests" }, { status: 429, headers: CORS });
   }
 
-  const row = {
+  const row: Record<string, unknown> = {
     project_id: projectId,
     endpoint: subscription.endpoint,
     p256dh: subscription.keys.p256dh,
@@ -55,13 +55,32 @@ export async function POST(req: Request) {
     platform: detectPlatform(userAgent || ""),
     is_active: true,
   };
+  // Часовой пояс устройства (Intl.DateTimeFormat().resolvedOptions().timeZone,
+  // см. виджет) — для окна отправки welcome-сообщений «по часовому поясу
+  // подписчика» (lib/sendWindow.ts). Валидируем перед записью: невалидная
+  // IANA-строка сломала бы Intl.DateTimeFormat при следующей отправке.
+  if (typeof timezone === "string" && timezone.length < 100) {
+    try {
+      Intl.DateTimeFormat(undefined, { timeZone: timezone });
+      row.timezone = timezone;
+    } catch {}
+  }
+
+  // ClientID Яндекс.Метрики (см. project.ym_counter_id и виджет — вызывает
+  // ym(counterId,'getClientID',cb) перед подпиской) — мёржим в attributes,
+  // а не затираем колонку целиком, иначе слетели бы уже накопленные
+  // событийные атрибуты этого устройства (корзина, последний просмотр и т.п.).
+  async function withYmMerged(existingAttrs: unknown) {
+    if (!ymClientId) return;
+    row.attributes = { ...((existingAttrs as object) || {}), ym_client_id: ymClientId };
+  }
 
   // Устройство с валидным device_token: обновляем ЕГО строку даже при ротации
   // endpoint браузером — так сохраняются id подписчика и привязки к телефону.
   if (deviceToken) {
     const { data: byToken } = await admin
       .from("subscribers")
-      .select("id, endpoint")
+      .select("id, endpoint, attributes")
       .eq("project_id", projectId)
       .eq("device_token_hash", sha256(deviceToken))
       .maybeSingle();
@@ -70,6 +89,7 @@ export async function POST(req: Request) {
         // endpoint переехал: убираем возможный дубль, севший на новый endpoint
         await admin.from("subscribers").delete().eq("endpoint", subscription.endpoint).neq("id", byToken.id);
       }
+      await withYmMerged(byToken.attributes);
       const { error: updErr } = await admin.from("subscribers").update(row).eq("id", byToken.id);
       if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500, headers: CORS });
       return NextResponse.json({ ok: true }, { headers: CORS });
@@ -80,9 +100,10 @@ export async function POST(req: Request) {
   // ВАЖНО: только старые колонки — путь подписки не должен зависеть от 0003
   const { data: existing } = await admin
     .from("subscribers")
-    .select("id")
+    .select("id, attributes")
     .eq("endpoint", subscription.endpoint)
     .maybeSingle();
+  await withYmMerged(existing?.attributes);
 
   const { data: saved, error } = await admin
     .from("subscribers")
@@ -124,29 +145,10 @@ export async function POST(req: Request) {
       );
   }
 
-  // welcome automation — fire once, for genuinely new subscribers only
+  // welcome automations — fire once, for genuinely new subscribers only;
+  // может быть несколько push-welcome с разной задержкой (см. AutomationsManager)
   if (!existing && saved) {
-    const { data: welcome } = await admin
-      .from("automations")
-      .select("id, title, body, click_url, delay_minutes, config")
-      .eq("project_id", projectId)
-      .eq("type", "welcome")
-      .eq("is_enabled", true)
-      .maybeSingle();
-    if (welcome?.title && welcome?.body) {
-      const actions = (welcome.config as { actions?: { title: string; url: string }[] } | null)?.actions;
-      if (welcome.delay_minutes > 0) {
-        // отложенный welcome — та же очередь, что у событийных автоматизаций
-        await admin.from("automation_jobs").insert({
-          project_id: projectId,
-          automation_id: welcome.id,
-          subscriber_id: saved.id,
-          fire_at: new Date(Date.now() + welcome.delay_minutes * 60_000).toISOString(),
-        });
-      } else {
-        await sendOneOff(projectId, saved, { title: welcome.title, body: welcome.body, url: welcome.click_url || "/", actions });
-      }
-    }
+    await fireWelcomeAutomations(projectId, "push", { subscriberId: saved.id });
   }
 
   return NextResponse.json({ ok: true, ...(issuedToken ? { deviceToken: issuedToken } : {}) }, { headers: CORS });

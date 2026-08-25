@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { dispatchCampaign, dispatchSmsCampaign, dispatchEmailCampaign, resolveChannelProvider } from "@/lib/sender";
+import { dispatchCampaign, dispatchSmsCampaign, dispatchEmailCampaign, resolveChannelProvider, enqueueWindowedCampaign } from "@/lib/sender";
 import { hasUnsubscribeTag } from "@/lib/unsubscribeTag";
 
 // Dispatches campaigns whose scheduled time has arrived. Protected by CRON_SECRET.
@@ -36,13 +36,20 @@ export async function GET(req: Request) {
         template_data?: Record<string, unknown> | null;
         type?: "transactional" | "marketing";
         contacts?: string[] | null;
+        send_window_enabled?: boolean;
+        send_days?: number[] | null;
+        send_time_from?: string | null;
+        send_time_to?: string | null;
+        send_window_subscriber_tz?: boolean;
+        spacing_enabled?: boolean;
+        spacing_minutes?: number | null;
       }[]
     | null = null;
   {
     const { data, error } = await admin
       .from("campaigns")
       .select(
-        "id, project_id, channel, title, body, subject, html_body, icon_url, image_url, click_url, badge_url, provider, segment_tags, platforms, actions, template_data, type, contacts"
+        "id, project_id, channel, title, body, subject, html_body, icon_url, image_url, click_url, badge_url, provider, segment_tags, platforms, actions, template_data, type, contacts, send_window_enabled, send_days, send_time_from, send_time_to, send_window_subscriber_tz, spacing_enabled, spacing_minutes"
       )
       .eq("status", "scheduled")
       .lte("scheduled_at", new Date().toISOString())
@@ -80,6 +87,14 @@ export async function GET(req: Request) {
         }
         await admin.from("campaigns").update({ provider }).eq("id", c.id);
       }
+      // Окно отправки/защита от наложения — вместо пакетной отправки заводим
+      // пер-получательские задания (см. lib/sender.ts enqueueWindowedCampaign),
+      // реальную отправку каждого делает отдельный крон run-campaign-jobs.
+      if (c.send_window_enabled || c.spacing_enabled) {
+        const r = await enqueueWindowedCampaign({ ...c, provider }, undefined);
+        results[c.id] = `enqueued ${r.enqueued}`;
+        continue;
+      }
       const row = {
         ...c,
         channel: c.channel,
@@ -90,6 +105,12 @@ export async function GET(req: Request) {
       };
       const r = c.channel === "sms" ? await dispatchSmsCampaign(row) : await dispatchEmailCampaign(row);
       results[c.id] = r.ok ? `sent ${r.delivered}/${r.total}` : r.error || "failed";
+      continue;
+    }
+
+    if (c.send_window_enabled || c.spacing_enabled) {
+      const r = await enqueueWindowedCampaign({ ...c, channel: "push" }, undefined);
+      results[c.id] = `enqueued ${r.enqueued}`;
       continue;
     }
 

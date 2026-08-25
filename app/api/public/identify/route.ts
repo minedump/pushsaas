@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizePhone } from "@/lib/phone";
 import { checkRateLimit } from "@/lib/ratelimit";
+import { sha256 } from "@/lib/oidc";
 
 // Public "enrich my own subscription" endpoint — called by the merchant's OWN
 // theme JS (window.sendera.identify({phone,email,name,insales_client_id})),
@@ -37,9 +38,10 @@ export async function OPTIONS() {
 }
 
 export async function POST(req: Request) {
-  const { projectId, endpoint, phone, email, name, insales_client_id, insalesClientId } = (await req.json().catch(() => ({}))) as {
+  const { projectId, endpoint, deviceToken, phone, email, name, insales_client_id, insalesClientId } = (await req.json().catch(() => ({}))) as {
     projectId?: string;
     endpoint?: string;
+    deviceToken?: string;
     phone?: string;
     email?: string;
     name?: string;
@@ -47,8 +49,8 @@ export async function POST(req: Request) {
     insalesClientId?: string;
   };
 
-  if (!projectId || !endpoint) {
-    return NextResponse.json({ error: "projectId, endpoint required" }, { status: 400, headers: CORS });
+  if (!projectId || (!endpoint && !deviceToken)) {
+    return NextResponse.json({ error: "projectId and (endpoint or deviceToken) required" }, { status: 400, headers: CORS });
   }
 
   const admin = createAdminClient();
@@ -57,14 +59,30 @@ export async function POST(req: Request) {
   const allowed = await checkRateLimit(`identify:${projectId}:${ip}`, 60_000, 20);
   if (!allowed) return NextResponse.json({ error: "too many requests" }, { status: 429, headers: CORS });
 
-  const { data: subscriber } = await admin
-    .from("subscribers")
-    .select("id")
-    .eq("project_id", projectId)
-    .eq("endpoint", endpoint)
-    .eq("is_active", true)
-    .maybeSingle();
-  if (!subscriber) return NextResponse.json({ error: "unknown device — subscribe first" }, { status: 404, headers: CORS });
+  // Устройство — по push-endpoint, если есть, иначе по device_token (без
+  // push-подписки, см. migration 0071 и /api/public/register-device).
+  let subscriber: { id: string; timezone: string | null } | null = null;
+  if (endpoint) {
+    const { data } = await admin
+      .from("subscribers")
+      .select("id, timezone")
+      .eq("project_id", projectId)
+      .eq("endpoint", endpoint)
+      .eq("is_active", true)
+      .maybeSingle();
+    subscriber = data;
+  }
+  if (!subscriber && deviceToken) {
+    const { data } = await admin
+      .from("subscribers")
+      .select("id, timezone")
+      .eq("project_id", projectId)
+      .eq("device_token_hash", sha256(deviceToken))
+      .eq("is_active", true)
+      .maybeSingle();
+    subscriber = data;
+  }
+  if (!subscriber) return NextResponse.json({ error: "unknown device — subscribe or register first" }, { status: 404, headers: CORS });
   const subscriberId = subscriber.id;
   const extId = (insales_client_id ?? insalesClientId ?? "").toString().trim();
 
@@ -130,6 +148,9 @@ export async function POST(req: Request) {
     if (identity.matchedVia === "email" && phoneDigits) patch.phone = phoneDigits;
     if (cleanName) patch.name = cleanName;
     if (extId) patch.insales_client_id = extId;
+    // Часовой пояс — с устройства, которым матчились (наиболее «текущий»
+    // источник); та же логика best-effort, что и у имени.
+    if (subscriber.timezone) patch.timezone = subscriber.timezone;
     if (Object.keys(patch).length) {
       await admin
         .from("identities")

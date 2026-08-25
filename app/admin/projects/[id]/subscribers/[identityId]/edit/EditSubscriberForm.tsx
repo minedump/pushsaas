@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { IconPlus, IconX } from "@tabler/icons-react";
 import { Button, Input, Label, TagEditor, Toggle, useDialogs } from "@/app/ui";
 
 type Identity = {
@@ -13,9 +14,18 @@ type Identity = {
   tags: string[] | null;
   sms_marketing_active_at: string | null;
   email_marketing_active_at: string | null;
+  attributes: Record<string, unknown> | null;
 };
 
-export default function EditSubscriberForm({ projectId, identity }: { projectId: string; identity: Identity }) {
+export default function EditSubscriberForm({
+  projectId,
+  identity,
+  attributeKeys,
+}: {
+  projectId: string;
+  identity: Identity;
+  attributeKeys: string[];
+}) {
   const router = useRouter();
   const { confirm, toast } = useDialogs();
 
@@ -26,11 +36,31 @@ export default function EditSubscriberForm({ projectId, identity }: { projectId:
   const [tags, setTags] = useState<string[]>(identity.tags || []);
   const [smsActive, setSmsActive] = useState(!!identity.sms_marketing_active_at);
   const [emailActive, setEmailActive] = useState(!!identity.email_marketing_active_at);
+  // Доп. поля — набор ключей, встречавшихся хотя бы у одного контакта
+  // проекта (см. page.tsx), не только у текущего: поле, расширенное через
+  // CSV-импорт одному подписчику, должно быть видно и заполняемо у всех
+  // остальных отсюда же, а не только через повторный импорт. Редактируются
+  // построчно (ключ+значение, добавление новой строки — «+ Поле»), тем же
+  // паттерном, что «Кнопки действий» в форме push-рассылки.
+  const [attrRows, setAttrRows] = useState<{ key: string; value: string }[]>(() =>
+    attributeKeys.map((k) => ({ key: k, value: identity.attributes?.[k] != null ? String(identity.attributes[k]) : "" }))
+  );
   const [busy, setBusy] = useState(false);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!phone.trim() && !email.trim()) return toast("Укажите телефон или email", "bad");
+
+    // Значение null удаляет ключ целиком (см. updateContact) — так помечаем
+    // ключи, у которых убрали строку в форме, а не просто очистили текст.
+    const attributes: Record<string, string | null> = {};
+    for (const row of attrRows) {
+      const key = row.key.trim();
+      if (key) attributes[key] = row.value.trim();
+    }
+    for (const key of attributeKeys) {
+      if (!(key in attributes)) attributes[key] = null;
+    }
 
     setBusy(true);
     const res = await fetch(`/api/admin/subscribers/${identity.id}/update`, {
@@ -45,6 +75,7 @@ export default function EditSubscriberForm({ projectId, identity }: { projectId:
         smsActive,
         emailActive,
         tags,
+        attributes,
       }),
     });
     const json = await res.json();
@@ -109,6 +140,33 @@ export default function EditSubscriberForm({ projectId, identity }: { projectId:
         <div>
           <Label>Теги</Label>
           <TagEditor tags={tags} onChange={setTags} />
+        </div>
+
+        <div>
+          <Label>Доп. поля</Label>
+          <div>
+            {attrRows.map((row, i) => (
+              <div key={i} className="flex gap-2 mb-2">
+                <Input
+                  value={row.key}
+                  onChange={(e) => setAttrRows((rs) => rs.map((r, j) => (j === i ? { ...r, key: e.target.value } : r)))}
+                  placeholder="Ключ, например loyalty_tier"
+                />
+                <Input
+                  value={row.value}
+                  onChange={(e) => setAttrRows((rs) => rs.map((r, j) => (j === i ? { ...r, value: e.target.value } : r)))}
+                  placeholder="Значение"
+                />
+                <Button type="button" variant="secondary" size="sm" onClick={() => setAttrRows((rs) => rs.filter((_, j) => j !== i))}>
+                  <IconX size={15} stroke={2} />
+                </Button>
+              </div>
+            ))}
+            <Button type="button" variant="secondary" size="sm" onClick={() => setAttrRows((rs) => [...rs, { key: "", value: "" }])}>
+              <IconPlus size={15} stroke={2} />
+              Поле
+            </Button>
+          </div>
         </div>
 
         <div className="flex items-center gap-2 mt-2">

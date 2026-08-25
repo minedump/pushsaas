@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { IconChevronLeft, IconChevronRight, IconDownload, IconSearch, IconX, IconSend, IconTrash, IconPencil, IconCopy } from "@tabler/icons-react";
-import { Badge, Button, Input, useDialogs } from "@/app/ui";
+import { Badge, Button, Input, SortableTh, useDialogs, type SortDir } from "@/app/ui";
 import { CustomSelect, type ComboOption } from "@/app/ui/CustomSelect";
 import { createClient } from "@/lib/supabase/client";
 
@@ -24,7 +24,12 @@ type Row = {
   clicked_count: number;
   created_at: string;
   revenue: number;
+  orders: number;
+  paid: number;
+  paidOrders: number;
 };
+
+type SortKey = "title" | "channel" | "type" | "status" | "delivered_count" | "clicked_count" | "ctr" | "orders" | "revenue" | "paid" | "created_at";
 
 const statusTone = (s: string) => (s === "sent" ? "good" : s === "failed" ? "bad" : s === "skipped" ? "neutral" : "warn");
 const CHANNEL_LABEL: Record<string, string> = { push: "Push", sms: "SMS", email: "Email" };
@@ -53,16 +58,33 @@ const INITIATOR_OPTIONS: ComboOption[] = [
   { value: "auth", label: "Авторизация" },
 ];
 
-export default function CampaignsTable({ rows, attributionEnabled, projectId }: { rows: Row[]; attributionEnabled: boolean; projectId: string }) {
+export default function CampaignsTable({ rows, projectId }: { rows: Row[]; projectId: string }) {
   const [page, setPage] = useState(1);
   const [typeFilter, setTypeFilter] = useState("all");
   const [initiatorFilter, setInitiatorFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [titleOverrides, setTitleOverrides] = useState<Record<string, string>>({});
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
   const router = useRouter();
   const { confirm, toast } = useDialogs();
   const supabase = createClient();
+
+  function ctrOf(r: Row): number {
+    return r.delivered_count ? (r.clicked_count / r.delivered_count) * 100 : 0;
+  }
+
+  function onSortClick(key: SortKey) {
+    if (sortKey !== key) {
+      setSortKey(key);
+      setSortDir("asc");
+    } else if (sortDir === "asc") {
+      setSortDir("desc");
+    } else {
+      setSortKey(null);
+    }
+  }
 
   function updateSearch(v: string) {
     setSearch(v);
@@ -135,13 +157,33 @@ export default function CampaignsTable({ rows, attributionEnabled, projectId }: 
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return rows.filter(
+    let list = rows.filter(
       (r) =>
         (typeFilter === "all" || r.type === typeFilter) &&
         (initiatorFilter === "all" || r.initiator === initiatorFilter) &&
         (!q || r.title.toLowerCase().includes(q) || (r.internal_title || "").toLowerCase().includes(q))
     );
-  }, [rows, typeFilter, initiatorFilter, search]);
+    if (sortKey) {
+      const dir = sortDir === "asc" ? 1 : -1;
+      list = [...list].sort((a, b) => {
+        switch (sortKey) {
+          case "delivered_count":
+          case "clicked_count":
+          case "orders":
+          case "revenue":
+          case "paid":
+            return (a[sortKey] - b[sortKey]) * dir;
+          case "ctr":
+            return (ctrOf(a) - ctrOf(b)) * dir;
+          case "created_at":
+            return (new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) * dir;
+          default:
+            return (a[sortKey] || "").toString().localeCompare((b[sortKey] || "").toString(), "ru") * dir;
+        }
+      });
+    }
+    return list;
+  }, [rows, typeFilter, initiatorFilter, search, sortKey, sortDir]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageSafe = Math.min(page, pageCount);
@@ -188,22 +230,23 @@ export default function CampaignsTable({ rows, attributionEnabled, projectId }: 
         <table className="w-full border-collapse text-[13.5px]">
           <thead>
             <tr className="bg-surface-2 text-left">
-              <Th>Заголовок</Th>
-              <Th>Канал</Th>
-              <Th>Тип</Th>
+              <SortableTh label="Заголовок" sortKey="title" active={sortKey === "title"} dir={sortDir} onClick={onSortClick} />
+              <SortableTh label="Канал" sortKey="channel" active={sortKey === "channel"} dir={sortDir} onClick={onSortClick} />
+              <SortableTh label="Тип" sortKey="type" active={sortKey === "type"} dir={sortDir} onClick={onSortClick} />
               <Th>Инициатор</Th>
-              <Th>Статус</Th>
-              <Th right>Отправлено</Th>
-              <Th right>Клики</Th>
-              <Th right>CTR</Th>
-              {attributionEnabled && <Th right>Выручка</Th>}
-              <Th>Дата</Th>
+              <SortableTh label="Статус" sortKey="status" active={sortKey === "status"} dir={sortDir} onClick={onSortClick} />
+              <SortableTh label="Отправлено" sortKey="delivered_count" active={sortKey === "delivered_count"} dir={sortDir} onClick={onSortClick} right />
+              <SortableTh label="Клики" sortKey="clicked_count" active={sortKey === "clicked_count"} dir={sortDir} onClick={onSortClick} right />
+              <SortableTh label="CTR" sortKey="ctr" active={sortKey === "ctr"} dir={sortDir} onClick={onSortClick} right />
+              <SortableTh label="Заказы" sortKey="orders" active={sortKey === "orders"} dir={sortDir} onClick={onSortClick} right />
+              <SortableTh label="Выручка" sortKey="revenue" active={sortKey === "revenue"} dir={sortDir} onClick={onSortClick} right />
+              <SortableTh label="Оплачено" sortKey="paid" active={sortKey === "paid"} dir={sortDir} onClick={onSortClick} right />
+              <SortableTh label="Дата" sortKey="created_at" active={sortKey === "created_at"} dir={sortDir} onClick={onSortClick} />
               <Th> </Th>
             </tr>
           </thead>
           <tbody>
             {paged.map((c) => {
-              const isPush = c.channel === "push";
               const cctr = c.delivered_count ? Math.round((c.clicked_count / c.delivered_count) * 100) : 0;
               const titleOverride = c.campaignId ? titleOverrides[c.campaignId] : undefined;
               const displayTitle = titleOverride !== undefined ? titleOverride || c.title : c.internal_title || c.title;
@@ -230,8 +273,10 @@ export default function CampaignsTable({ rows, attributionEnabled, projectId }: 
                   </Td>
                   <Td right>{c.delivered_count}</Td>
                   <Td right>{c.campaignId ? c.clicked_count : "—"}</Td>
-                  {attributionEnabled && <Td right>{isPush && c.campaignId ? `${c.revenue.toLocaleString("ru-RU")} ₽` : "—"}</Td>}
                   <Td right>{c.campaignId && c.status === "sent" ? `${cctr}%` : "—"}</Td>
+                  <Td right>{c.campaignId ? c.orders : "—"}</Td>
+                  <Td right>{c.campaignId ? `${c.revenue.toLocaleString("ru-RU")} ₽` : "—"}</Td>
+                  <Td right>{c.campaignId && c.paidOrders ? `${c.paid.toLocaleString("ru-RU")} ₽` : "—"}</Td>
                   <Td className="text-ink-faint">{new Date(c.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}</Td>
                   <Td className="text-right">
                     <div className="flex justify-end gap-1">
@@ -291,7 +336,7 @@ export default function CampaignsTable({ rows, attributionEnabled, projectId }: 
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={attributionEnabled ? 11 : 10} className="px-3.5 py-6 text-center text-ink-muted">
+                <td colSpan={13} className="px-3.5 py-6 text-center text-ink-muted">
                   Ничего не найдено
                 </td>
               </tr>

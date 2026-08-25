@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { dispatchCampaign, insertCampaign, createAndDispatchChannel, resolvePushTemplate, resolveChannelTemplate } from "@/lib/sender";
+import { dispatchCampaign, insertCampaign, createAndDispatchChannel, resolvePushTemplate, resolveChannelTemplate, mergeTemplateContext, enqueueWindowedCampaign } from "@/lib/sender";
 import { phonesToSubscriberIds, emailsToSubscriberIds } from "@/lib/identity";
+import { resolveProductsByRule, type ProductsRule } from "@/lib/productFeed";
 import { withShortenedLinks } from "@/lib/linkPreview";
 import { hasUnsubscribeTag } from "@/lib/unsubscribe";
 
@@ -43,7 +44,15 @@ export async function POST(req: Request) {
     type,
     draft,
     internalTitle,
-    data,
+    data: dataInput,
+    productsRule,
+    sendWindowEnabled,
+    sendDays,
+    sendTimeFrom,
+    sendTimeTo,
+    sendWindowSubscriberTz,
+    spacingEnabled,
+    spacingMinutes,
   } = body as {
     projectId?: string;
     channel?: "push" | "sms" | "email";
@@ -68,6 +77,23 @@ export async function POST(req: Request) {
     draft?: boolean;
     internalTitle?: string;
     data?: Record<string, unknown>;
+    productsRule?: ProductsRule;
+    sendWindowEnabled?: boolean;
+    sendDays?: number[];
+    sendTimeFrom?: string;
+    sendTimeTo?: string;
+    sendWindowSubscriberTz?: boolean;
+    spacingEnabled?: boolean;
+    spacingMinutes?: number;
+  };
+  const sendWindowRow = {
+    send_window_enabled: !!sendWindowEnabled,
+    send_days: sendWindowEnabled && sendDays?.length ? sendDays : null,
+    send_time_from: sendWindowEnabled ? sendTimeFrom || null : null,
+    send_time_to: sendWindowEnabled ? sendTimeTo || null : null,
+    send_window_subscriber_tz: !!sendWindowSubscriberTz,
+    spacing_enabled: !!spacingEnabled,
+    spacing_minutes: spacingEnabled ? spacingMinutes || null : null,
   };
   const msgType: "transactional" | "marketing" = type === "transactional" ? "transactional" : "marketing";
 
@@ -77,6 +103,19 @@ export async function POST(req: Request) {
   if (!access.ok) return NextResponse.json({ error: "Нет доступа" }, { status: access.status });
 
   const admin = createAdminClient();
+
+  // Товары по правилу (ProductPicker в форме рассылки) — резолвится один раз
+  // здесь и замораживается в template_data вместе с ручным контекстом, тем
+  // же путём, что и весь остальной data (см. комментарий у insertCampaign
+  // ниже) — кампания разовая/на конкретное время, а не повторяющаяся
+  // автоматизация, поэтому «заморозка на момент отправки/планирования» здесь
+  // корректна (в отличие от sendWelcomeNow, который резолвит правило заново
+  // при каждой отправке).
+  let data = dataInput;
+  if (productsRule) {
+    const products = await resolveProductsByRule(projectId, productsRule);
+    if (products.length) data = { ...(data || {}), products, product: products[0] };
+  }
 
   // blocked (unpaid) projects can't send — superadmin bypasses
   const { data: proj } = await admin.from("projects").select("is_active").eq("id", projectId).single();
@@ -113,6 +152,7 @@ export async function POST(req: Request) {
       type: msgType,
       initiator: "manual",
       created_by: access.user!.id,
+      ...sendWindowRow,
       template_id: templateId || null,
       internal_title: internalTitle || null,
       template_data: data || null,
@@ -123,6 +163,7 @@ export async function POST(req: Request) {
       row.title = resolved.body?.trim() || "";
       row.body = resolved.body?.trim() || "";
       row.provider = provider || null;
+      row.template_data = mergeTemplateContext(resolved.context, data);
     } else if (channel === "email") {
       const resolved = await resolveChannelTemplate(admin, projectId, "email", templateId, { subject, html });
       // Ссылка отписки обязательна для маркетингового письма — см.
@@ -136,6 +177,7 @@ export async function POST(req: Request) {
       row.subject = resolved.subject || null;
       row.html_body = resolved.html || null;
       row.provider = provider || null;
+      row.template_data = mergeTemplateContext(resolved.context, data);
     } else {
       let pushTitle = title?.trim() || "";
       let pushBody = message?.trim() || "";
@@ -153,6 +195,7 @@ export async function POST(req: Request) {
         pushImage = resolved.image;
         pushBadge = resolved.badge;
         pushActions = resolved.actions || [];
+        row.template_data = mergeTemplateContext(resolved.context, data);
       }
       // Лимит проверяем и здесь (не только на клиенте) — иначе прямой вызов
       // API мог бы сохранить черновик с заголовком/текстом длиннее того, что
@@ -200,9 +243,10 @@ export async function POST(req: Request) {
           type: msgType,
           initiator: "manual",
           created_by: access.user!.id,
+          ...sendWindowRow,
           template_id: templateId || null,
           internal_title: internalTitle || null,
-          template_data: data || null,
+          template_data: mergeTemplateContext(resolved.context, data),
           contacts: rawContacts,
         })
         .select("id")
@@ -214,7 +258,19 @@ export async function POST(req: Request) {
     const result = await createAndDispatchChannel(
       projectId,
       "sms",
-      { title: text?.trim() || "", body: text?.trim(), templateId, segmentTags, providerHint: provider, type: msgType, initiator: "manual", internalTitle, data },
+      {
+        title: text?.trim() || "",
+        body: text?.trim(),
+        templateId,
+        segmentTags,
+        providerHint: provider,
+        type: msgType,
+        initiator: "manual",
+        internalTitle,
+        data,
+        sendWindow: sendWindowEnabled ? { enabled: true, days: sendDays || null, timeFrom: sendTimeFrom || null, timeTo: sendTimeTo || null, subscriberTz: !!sendWindowSubscriberTz } : undefined,
+        spacing: spacingEnabled ? { enabled: true, minutes: spacingMinutes || null } : undefined,
+      },
       rawContacts.length ? rawContacts : undefined
     );
     if (!result.ok) return NextResponse.json({ error: result.error === "no provider configured" ? "SMS не настроен" : "Ошибка отправки" }, { status: 402 });
@@ -248,9 +304,10 @@ export async function POST(req: Request) {
           type: msgType,
           initiator: "manual",
           created_by: access.user!.id,
+          ...sendWindowRow,
           template_id: templateId || null,
           internal_title: internalTitle || null,
-          template_data: data || null,
+          template_data: mergeTemplateContext(resolved.context, data),
           contacts: rawContacts,
         })
         .select("id")
@@ -273,6 +330,8 @@ export async function POST(req: Request) {
         initiator: "manual",
         internalTitle,
         data,
+        sendWindow: sendWindowEnabled ? { enabled: true, days: sendDays || null, timeFrom: sendTimeFrom || null, timeTo: sendTimeTo || null, subscriberTz: !!sendWindowSubscriberTz } : undefined,
+        spacing: spacingEnabled ? { enabled: true, minutes: spacingMinutes || null } : undefined,
       },
       rawContacts.length ? rawContacts : undefined
     );
@@ -298,6 +357,7 @@ export async function POST(req: Request) {
   let pushImage = image;
   let pushBadge = badge;
   let pushActions = Array.isArray(actions) ? actions.filter((a) => a.title?.trim() && a.url?.trim()).slice(0, 2) : [];
+  let pushTemplateContext: Record<string, unknown> | null | undefined;
   if (templateId) {
     const resolved = await resolvePushTemplate(admin, projectId, templateId, { title: pushTitle, body: pushBody, url, icon, image, badge, actions: pushActions });
     pushTitle = resolved.title;
@@ -307,6 +367,7 @@ export async function POST(req: Request) {
     pushImage = resolved.image;
     pushBadge = resolved.badge;
     pushActions = resolved.actions || [];
+    pushTemplateContext = resolved.context;
   }
   if (!pushTitle.trim() || !pushBody.trim()) {
     return NextResponse.json({ error: "Заполните заголовок и текст" }, { status: 400 });
@@ -357,8 +418,9 @@ export async function POST(req: Request) {
     type: msgType,
     initiator: "manual",
     internal_title: internalTitle || null,
-    template_data: data || null,
+    template_data: mergeTemplateContext(pushTemplateContext, data),
     contacts: rawContacts,
+    ...sendWindowRow,
   });
 
   if (!campaign) {
@@ -367,6 +429,15 @@ export async function POST(req: Request) {
 
   if (scheduled) {
     return NextResponse.json({ scheduled: true, at: scheduledAt });
+  }
+
+  // Окно отправки/защита от наложения — вместо немедленной пакетной
+  // отправки заводим пер-получательские задания (см. lib/sender.ts
+  // enqueueWindowedCampaign), реальную отправку каждого делает отдельный
+  // крон run-campaign-jobs.
+  if (sendWindowEnabled || spacingEnabled) {
+    const r = await enqueueWindowedCampaign({ ...campaign, channel: "push" }, subscriberIds);
+    return NextResponse.json({ ok: r.ok, delivered: 0, failed: 0, total: r.enqueued });
   }
 
   const result = await dispatchCampaign(campaign, subscriberIds);

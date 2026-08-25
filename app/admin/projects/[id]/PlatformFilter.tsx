@@ -7,6 +7,7 @@ const PLATFORM_OPTIONS: { value: string; label: string }[] = [
   { value: "android", label: "Android" },
   { value: "desktop", label: "Desktop" },
 ];
+export const PLATFORM_VALUES = PLATFORM_OPTIONS.map((o) => o.value);
 
 // Доп. фильтр push-аудитории по платформе устройства — сужает уже
 // резолвленных по контактам/сегменту получателей, не отдельный источник

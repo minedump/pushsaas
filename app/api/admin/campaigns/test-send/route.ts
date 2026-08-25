@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendTestMessage, resolvePushTemplate, resolveChannelTemplate } from "@/lib/sender";
+import { sendTestMessage, resolvePushTemplate, resolveChannelTemplate, mergeTemplateContext } from "@/lib/sender";
 import { withShortenedLinks } from "@/lib/linkPreview";
+import { resolveProductsByRule, type ProductsRule } from "@/lib/productFeed";
 
 // Тестовая отправка одному контакту из формы создания/редактирования
 // рассылки — не создаёт кампанию и не расходует аудиторию, только проверяет,
 // как выглядит контент. См. sendTestMessage в lib/sender.ts.
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const { projectId, channel, contact, title, message, url, icon, image, badge, actions, text, subject, html, templateId, provider, data } = body as {
+  const { projectId, channel, contact, title, message, url, icon, image, badge, actions, text, subject, html, templateId, provider, data: dataInput, productsRule } = body as {
     projectId?: string;
     channel?: "push" | "sms" | "email";
     contact?: string;
@@ -26,6 +27,7 @@ export async function POST(req: Request) {
     templateId?: string;
     provider?: string;
     data?: Record<string, unknown>;
+    productsRule?: ProductsRule;
   };
 
   if (!projectId || !channel || !contact?.trim()) {
@@ -37,6 +39,12 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient();
 
+  let data = dataInput;
+  if (productsRule) {
+    const products = await resolveProductsByRule(projectId, productsRule);
+    if (products.length) data = { ...(data || {}), products, product: products[0] };
+  }
+
   if (channel === "push") {
     let pushTitle = title?.trim() || "";
     let pushBody = message?.trim() || "";
@@ -45,6 +53,7 @@ export async function POST(req: Request) {
     let pushImage = image;
     let pushBadge = badge;
     let pushActions = actions;
+    let pushTemplateContext: Record<string, unknown> | null | undefined;
     if (templateId) {
       const resolved = await resolvePushTemplate(admin, projectId, templateId, { title: pushTitle, body: pushBody, url, icon, image, badge, actions });
       pushTitle = resolved.title;
@@ -54,6 +63,7 @@ export async function POST(req: Request) {
       pushImage = resolved.image;
       pushBadge = resolved.badge;
       pushActions = resolved.actions;
+      pushTemplateContext = resolved.context;
     }
     if (!pushTitle.trim() || !pushBody.trim()) {
       return NextResponse.json({ error: "Заполните заголовок и текст" }, { status: 400 });
@@ -68,7 +78,7 @@ export async function POST(req: Request) {
       image: pushImage,
       badge: pushBadge,
       actions: pushActions,
-      data,
+      data: mergeTemplateContext(pushTemplateContext, data),
     });
     if (!result.ok) return NextResponse.json({ error: result.error || "Ошибка отправки" }, { status: 400 });
     return NextResponse.json({ ok: true });
@@ -77,7 +87,7 @@ export async function POST(req: Request) {
   if (channel === "sms") {
     const resolved = await resolveChannelTemplate(admin, projectId, "sms", templateId, { body: text });
     if (!resolved.body?.trim()) return NextResponse.json({ error: "Заполните текст SMS или выберите шаблон" }, { status: 400 });
-    const result = await sendTestMessage(projectId, "sms", contact.trim(), { text: resolved.body, provider, data });
+    const result = await sendTestMessage(projectId, "sms", contact.trim(), { text: resolved.body, provider, data: mergeTemplateContext(resolved.context, data) });
     if (!result.ok) return NextResponse.json({ error: result.error || "Ошибка отправки" }, { status: 400 });
     return NextResponse.json({ ok: true });
   }
@@ -85,7 +95,7 @@ export async function POST(req: Request) {
   // email
   const resolved = await resolveChannelTemplate(admin, projectId, "email", templateId, { subject, html });
   if (!resolved.html?.trim()) return NextResponse.json({ error: "Выберите шаблон или заполните HTML" }, { status: 400 });
-  const result = await sendTestMessage(projectId, "email", contact.trim(), { subject: resolved.subject || subject, html: resolved.html, provider, data });
+  const result = await sendTestMessage(projectId, "email", contact.trim(), { subject: resolved.subject || subject, html: resolved.html, provider, data: mergeTemplateContext(resolved.context, data) });
   if (!result.ok) return NextResponse.json({ error: result.error || "Ошибка отправки" }, { status: 400 });
   return NextResponse.json({ ok: true });
 }

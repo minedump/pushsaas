@@ -372,7 +372,7 @@ export default function AuthSettings({
       )}
 
       <h2 className="text-base font-semibold mt-8">Каскад отправки кода</h2>
-      <Card className="mt-3 flex flex-col gap-1.5">
+      <div className="mt-3 flex flex-col gap-1.5">
         {order.map((key) => (
           <ChannelRow
             key={key}
@@ -390,7 +390,7 @@ export default function AuthSettings({
             onProviderChange={(p) => handleProviderChange(key, p)}
           />
         ))}
-      </Card>
+      </div>
 
       <h2 className="text-base font-semibold mt-8">Настройки</h2>
 
@@ -401,7 +401,7 @@ export default function AuthSettings({
               ? "Вход включён — покупатели видят кнопку и могут войти"
               : "Вход выключен — недоступен покупателям, даже если кнопка видна"}
           </div>
-          <Toggle checked={isEnabled} onChange={saveEnabled} disabled={busy} />
+          <Toggle checked={isEnabled} onChange={saveEnabled} disabled={busy} label={isEnabled ? "Вкл" : "Выкл"} />
         </div>
         <p className="text-[12px] text-ink-faint mt-2 mb-0">
           Включайте, только когда выше настроен и включён хотя бы один канал с кодом (Email, Telegram или SMS) —
@@ -439,7 +439,7 @@ export default function AuthSettings({
         </p>
         <div className="flex justify-between items-center gap-3 mt-3">
           <div className="text-sm">Скрыть кнопку целиком</div>
-          <Toggle checked={hideLoginButton} onChange={saveButtonVisibility} />
+          <Toggle checked={hideLoginButton} onChange={saveButtonVisibility} label={hideLoginButton ? "Вкл" : "Выкл"} />
         </div>
 
         {!hideLoginButton && (
@@ -486,7 +486,7 @@ export default function AuthSettings({
             </div>
             <div className="flex justify-between items-center gap-3 mt-3">
               <div className="text-sm">Скруглить до пилюли</div>
-              <Toggle checked={authButtonRounded} onChange={setAuthButtonRounded} />
+              <Toggle checked={authButtonRounded} onChange={setAuthButtonRounded} label={authButtonRounded ? "Вкл" : "Выкл"} />
             </div>
             <div className="mt-3">
               <Button size="sm" disabled={busy} onClick={saveButtonAppearance}>
@@ -581,7 +581,7 @@ function ChannelRow({
           ))}
         </Select>
       )}
-      <Toggle checked={on} onChange={onChange} disabled={locked} />
+      <Toggle checked={on} onChange={onChange} disabled={locked} label={on ? "Вкл" : "Выкл"} />
     </div>
   );
 }

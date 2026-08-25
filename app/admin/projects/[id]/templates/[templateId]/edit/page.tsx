@@ -13,7 +13,7 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
 
   const { data: template } = await supabase
     .from("templates")
-    .select("id, name, channel, folder_id, subject, html, title, body, url, icon_url, image_url, badge_url, actions")
+    .select("id, name, channel, folder_id, subject, html, title, body, url, icon_url, image_url, badge_url, actions, context")
     .eq("id", templateId)
     .eq("project_id", id)
     .maybeSingle();

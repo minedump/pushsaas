@@ -15,7 +15,7 @@ export default async function NewCampaignPage({
   const { channel: initialChannel, templateId: initialTemplateId } = await searchParams;
   const supabase = await createClient();
 
-  const { data: project } = await supabase.from("projects").select("id, is_active").eq("id", id).maybeSingle();
+  const { data: project } = await supabase.from("projects").select("id, is_active, timezone, product_feed_url").eq("id", id).maybeSingle();
   if (!project) notFound();
   await ensureProjectAccessible(project.id, project.is_active);
 
@@ -66,6 +66,8 @@ export default async function NewCampaignPage({
       segmentOptions={segmentOptions}
       initialChannel={initialChannel === "push" || initialChannel === "sms" || initialChannel === "email" ? initialChannel : undefined}
       initialTemplateId={initialTemplateId}
+      projectTimezone={project.timezone || "Europe/Moscow"}
+      hasFeed={!!project.product_feed_url}
     />
   );
 }

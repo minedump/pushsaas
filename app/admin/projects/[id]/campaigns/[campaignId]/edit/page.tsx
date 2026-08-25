@@ -8,14 +8,14 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
   const { id, campaignId } = await params;
   const supabase = await createClient();
 
-  const { data: project } = await supabase.from("projects").select("id, is_active").eq("id", id).maybeSingle();
+  const { data: project } = await supabase.from("projects").select("id, is_active, timezone, product_feed_url").eq("id", id).maybeSingle();
   if (!project) notFound();
   await ensureProjectAccessible(project.id, project.is_active);
 
   const { data: campaign } = await supabase
     .from("campaigns")
     .select(
-      "id, channel, status, title, body, subject, html_body, icon_url, image_url, click_url, badge_url, segment_tags, platforms, actions, type, template_id, scheduled_at, internal_title, template_data, contacts, provider"
+      "id, channel, status, title, body, subject, html_body, icon_url, image_url, click_url, badge_url, segment_tags, platforms, actions, type, template_id, scheduled_at, internal_title, template_data, contacts, provider, send_window_enabled, send_days, send_time_from, send_time_to, send_window_subscriber_tz, spacing_enabled, spacing_minutes"
     )
     .eq("id", campaignId)
     .eq("project_id", id)
@@ -30,7 +30,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
 
   const { data: templates } = await supabase
     .from("templates")
-    .select("id, name, channel, subject, html, title, body, url, icon_url, image_url, badge_url, actions")
+    .select("id, name, channel, subject, html, title, body, url, icon_url, image_url, badge_url, actions, context")
     .eq("project_id", id)
     .order("updated_at", { ascending: false });
 
@@ -71,6 +71,8 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
       templates={templates ?? []}
       segmentOptions={segmentOptions}
       providerOptions={providerOptions}
+      projectTimezone={project.timezone || "Europe/Moscow"}
+      hasFeed={!!project.product_feed_url}
     />
   );
 }

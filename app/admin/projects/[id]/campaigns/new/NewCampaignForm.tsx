@@ -5,10 +5,15 @@ import { useRouter } from "next/navigation";
 import { IconX, IconPlus, IconEye } from "@tabler/icons-react";
 import { Button, Input, Textarea, Label, Toggle, useDialogs } from "@/app/ui";
 import { CustomSelect, type ComboOption } from "@/app/ui/CustomSelect";
+import { SearchSelect } from "@/app/ui/SearchSelect";
 import { MessagePreviewModal, type PreviewContent } from "../../MessagePreviewModal";
 import { SegmentTagsInput } from "../../SegmentTagsInput";
-import { PlatformFilter } from "../../PlatformFilter";
+import { PlatformFilter, PLATFORM_VALUES } from "../../PlatformFilter";
+import { SendWindowFields, SEND_WINDOW_DEFAULTS, sendWindowError, type SendWindowState } from "../../SendWindowFields";
 import { ContextField } from "../../ContextField";
+import { ContextDocs } from "../../templates/ContextDocs";
+import { ProductPicker } from "../../ProductPicker";
+import type { ProductsRule } from "@/lib/productFeed";
 import { smsSegments } from "@/lib/smsSegments";
 import { withShortenedLinks } from "@/lib/linkPreview";
 import { hasUnsubscribeTag } from "@/lib/unsubscribeTag";
@@ -38,6 +43,8 @@ export default function NewCampaignForm({
   segmentOptions = [],
   initialChannel,
   initialTemplateId,
+  projectTimezone,
+  hasFeed,
 }: {
   projectId: string;
   providerOptions: { sms: ComboOption[]; email: ComboOption[] };
@@ -45,6 +52,8 @@ export default function NewCampaignForm({
   segmentOptions?: string[];
   initialChannel?: Channel;
   initialTemplateId?: string;
+  projectTimezone: string;
+  hasFeed: boolean;
 }) {
   const { toast, confirm, prompt } = useDialogs();
   const router = useRouter();
@@ -79,8 +88,16 @@ export default function NewCampaignForm({
   const [internalTitle, setInternalTitle] = useState("");
   const [contextEnabled, setContextEnabled] = useState(false);
   const [contextJson, setContextJson] = useState("");
+  const [productsRule, setProductsRule] = useState<ProductsRule | null>(null);
   const [segment, setSegment] = useState<string[]>([]);
-  const [platforms, setPlatforms] = useState<string[]>([]);
+  // Предвыбраны все платформы — явно видно, куда уйдёт рассылка; снятие
+  // галочки сужает аудиторию. Все 3 выбраны эквивалентно отсутствию фильтра
+  // (см. effectivePlatforms) — иначе push на устройства с platform="unknown"
+  // (не удалось определить при подписке) молча перестали бы получать
+  // рассылки по умолчанию.
+  const [platforms, setPlatforms] = useState<string[]>(PLATFORM_VALUES);
+  const effectivePlatforms = platforms.length === PLATFORM_VALUES.length ? undefined : platforms;
+  const [sendWindow, setSendWindow] = useState<SendWindowState>(SEND_WINDOW_DEFAULTS);
   const [contacts, setContacts] = useState("");
   const [busy, setBusy] = useState(false);
   const [testBusy, setTestBusy] = useState(false);
@@ -170,12 +187,20 @@ export default function NewCampaignForm({
       channel,
       internalTitle: internalTitle.trim() || undefined,
       segmentTags,
-      platforms: channel === "push" ? platforms : undefined,
+      platforms: channel === "push" ? effectivePlatforms : undefined,
       phones: phones.length ? phones : undefined,
       emails: emails.length ? emails : undefined,
       type: transactional ? "transactional" : "marketing",
       data: contextData,
+      productsRule: productsRule || undefined,
       scheduledAt: schedule && scheduleDate && scheduleTime ? new Date(`${scheduleDate}T${scheduleTime}`).toISOString() : null,
+      sendWindowEnabled: sendWindow.sendWindowEnabled,
+      sendDays: sendWindow.sendDays,
+      sendTimeFrom: sendWindow.sendTimeFrom,
+      sendTimeTo: sendWindow.sendTimeTo,
+      sendWindowSubscriberTz: sendWindow.sendWindowSubscriberTz,
+      spacingEnabled: sendWindow.spacingEnabled,
+      spacingMinutes: Math.max(1, sendWindow.spacingAmount * sendWindow.spacingUnit),
     };
     if (channel === "push") {
       body.title = title;
@@ -204,7 +229,10 @@ export default function NewCampaignForm({
   // создавала пустых записей, которые потом нельзя пересохранить при
   // редактировании (там та же проверка блокирует и обычное сохранение).
   function validate(): string | null {
+    if (!internalTitle.trim()) return "Укажите внутреннее название";
     if (contextError) return contextError;
+    if (channel === "push" && platforms.length === 0) return "Выберите хотя бы одну платформу";
+    if (sendWindowError(sendWindow)) return sendWindowError(sendWindow);
     if (channel === "push" && (!title.trim() || !message.trim())) return "Заполните заголовок и текст";
     if (channel === "push" && title.length > 80) return "Заголовок длиннее 80 символов";
     // Ссылки в тексте сократятся при отправке (см. lib/sender.ts), поэтому
@@ -235,7 +263,7 @@ export default function NewCampaignForm({
     const countRes = await fetch("/api/admin/campaigns/audience-count", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, channel, contacts: contactList, segmentTags: segment, platforms: channel === "push" ? platforms : undefined, type: body.type }),
+      body: JSON.stringify({ projectId, channel, contacts: contactList, segmentTags: segment, platforms: body.platforms, type: body.type }),
     }).catch(() => null);
     const countJson = countRes && countRes.ok ? await countRes.json() : null;
     const audienceNote = typeof countJson?.count === "number" ? ` Уйдёт ${countJson.count} получателям.` : "";
@@ -354,7 +382,7 @@ export default function NewCampaignForm({
     if (!testContact?.trim()) return;
 
     setTestBusy(true);
-    const body: Record<string, unknown> = { projectId, channel, contact: testContact.trim(), data: contextData };
+    const body: Record<string, unknown> = { projectId, channel, contact: testContact.trim(), data: contextData, productsRule: productsRule || undefined };
     if (channel === "push") {
       body.title = title;
       body.message = message;
@@ -395,17 +423,17 @@ export default function NewCampaignForm({
 
       <div className="mt-4">
         <form onSubmit={(e) => send(e, true)} className="flex flex-col gap-3">
+          <div>
+            <Label>Внутреннее название</Label>
+            <Input value={internalTitle} onChange={(e) => setInternalTitle(e.target.value)} placeholder="Для себя — получателям не видно" required />
+          </div>
+
           <div className="flex items-end gap-4">
             <div className="flex-1">
               <Label>Канал</Label>
               <CustomSelect value={channel} onChange={(v) => setChannel(v as Channel)} options={channelOptions} className="w-full" />
             </div>
             <Toggle checked={transactional} onChange={setTransactional} label="Транзакционная" className="pb-2.5" />
-          </div>
-
-          <div>
-            <Label>Внутреннее название</Label>
-            <Input value={internalTitle} onChange={(e) => setInternalTitle(e.target.value)} placeholder="Для себя — получателям не видно" />
           </div>
 
           {channel === "sms" && providerOptions.sms.length > 1 && (
@@ -425,9 +453,10 @@ export default function NewCampaignForm({
             <>
               <div>
                 <Label>Шаблон</Label>
-                <CustomSelect value={pushTemplateId} onChange={selectPushTemplate} options={pushTemplateOptions} className="w-full" />
+                <SearchSelect value={pushTemplateId} onChange={selectPushTemplate} options={pushTemplateOptions} className="w-full" />
               </div>
               <ContextField enabled={contextEnabled} onToggle={setContextEnabled} value={contextJson} onChange={setContextJson} error={contextError} />
+              <ContextDocs variant="campaign" />
               <div>
                 <Label>
                   Заголовок <span className="text-bad">*</span>
@@ -502,9 +531,10 @@ export default function NewCampaignForm({
                 <>
                   <div>
                     <Label>Шаблон</Label>
-                    <CustomSelect value={smsTemplateId} onChange={selectSmsTemplate} options={smsTemplateOptions} className="w-full" />
+                    <SearchSelect value={smsTemplateId} onChange={selectSmsTemplate} options={smsTemplateOptions} className="w-full" />
                   </div>
                   <ContextField enabled={contextEnabled} onToggle={setContextEnabled} value={contextJson} onChange={setContextJson} error={contextError} />
+                  <ContextDocs variant="campaign" />
                   <div>
                     <Label>
                       Текст сообщения <span className="text-bad">*</span>
@@ -529,9 +559,10 @@ export default function NewCampaignForm({
                 <>
                   <div>
                     <Label>Шаблон</Label>
-                    <CustomSelect value={templateId} onChange={selectEmailTemplate} options={templateOptions} className="w-full" />
+                    <SearchSelect value={templateId} onChange={selectEmailTemplate} options={templateOptions} className="w-full" />
                   </div>
                   <ContextField enabled={contextEnabled} onToggle={setContextEnabled} value={contextJson} onChange={setContextJson} error={contextError} />
+                  <ContextDocs variant="campaign" />
                   <div>
                     <Label>
                       Тема письма <span className="text-bad">*</span>
@@ -576,11 +607,14 @@ export default function NewCampaignForm({
             <SegmentTagsInput value={segment} onChange={setSegment} options={segmentOptions} />
           </div>
 
+          <ProductPicker projectId={projectId} hasFeed={hasFeed} value={productsRule} onChange={setProductsRule} />
+
           {channel === "push" && (
             <div>
-              <Label>Платформы</Label>
+              <Label>
+                Платформы <span className="text-bad">*</span>
+              </Label>
               <PlatformFilter value={platforms} onChange={setPlatforms} />
-              <p className="text-[11px] text-ink-faint mt-1 mb-0">Ничего не выбрано — уйдёт на все платформы.</p>
             </div>
           )}
 
@@ -598,6 +632,8 @@ export default function NewCampaignForm({
               </Button>
             </div>
           </div>
+
+          <SendWindowFields value={sendWindow} onChange={setSendWindow} projectTimezone={projectTimezone} />
 
           {error && <p className="text-bad text-[13px] mt-0 mb-0">{error}</p>}
 

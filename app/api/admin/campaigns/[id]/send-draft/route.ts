@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { dispatchCampaign, dispatchSmsCampaign, dispatchEmailCampaign, resolveChannelProvider } from "@/lib/sender";
+import { dispatchCampaign, dispatchSmsCampaign, dispatchEmailCampaign, resolveChannelProvider, enqueueWindowedCampaign } from "@/lib/sender";
 import { hasUnsubscribeTag } from "@/lib/unsubscribeTag";
 
 // Отправляет прямо сейчас ранее сохранённый черновик (status='draft') ИЛИ
@@ -34,7 +34,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { data: campaign } = await admin
     .from("campaigns")
     .select(
-      "id, project_id, channel, status, title, body, subject, html_body, icon_url, image_url, click_url, badge_url, segment_tags, platforms, actions, provider, type, template_data, contacts"
+      "id, project_id, channel, status, title, body, subject, html_body, icon_url, image_url, click_url, badge_url, segment_tags, platforms, actions, provider, type, template_data, contacts, send_window_enabled, send_days, send_time_from, send_time_to, send_window_subscriber_tz, spacing_enabled, spacing_minutes"
     )
     .eq("id", campaignId)
     .eq("project_id", projectId)
@@ -63,10 +63,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }
       await admin.from("campaigns").update({ provider }).eq("id", campaignId);
     }
+    // Окно отправки/защита от наложения — размазываем по пер-получательским
+    // заданиям вместо немедленной пакетной отправки (см. lib/sender.ts).
+    if (campaign.send_window_enabled || campaign.spacing_enabled) {
+      const r = await enqueueWindowedCampaign({ ...campaign, provider }, undefined);
+      return NextResponse.json({ ok: r.ok, delivered: 0, failed: 0, total: r.enqueued });
+    }
     const row = { ...campaign, channel: campaign.channel as "sms" | "email", provider };
     const result = campaign.channel === "sms" ? await dispatchSmsCampaign(row) : await dispatchEmailCampaign(row);
     if (!result.ok) return NextResponse.json({ error: "Ошибка отправки" }, { status: 402 });
     return NextResponse.json({ ok: true, delivered: result.delivered, failed: result.failed, total: result.total });
+  }
+
+  if (campaign.send_window_enabled || campaign.spacing_enabled) {
+    const r = await enqueueWindowedCampaign({ ...campaign, channel: "push" }, undefined);
+    return NextResponse.json({ ok: r.ok, delivered: 0, failed: 0, total: r.enqueued });
   }
 
   const result = await dispatchCampaign(campaign);

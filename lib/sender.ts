@@ -9,12 +9,69 @@ import { sendSmsSmsc, sendEmailSmsc } from "@/lib/otp/smsc";
 import { shortenUrl } from "@/lib/clck";
 import { normalizePhone } from "@/lib/phone";
 import { unsubscribeUrl, hasUnsubscribeTag } from "@/lib/unsubscribe";
+import { isWithinSendWindow, nextWindowStart, type SendWindow } from "@/lib/sendWindow";
+import { resolveProductContext, expandProductRefs, resolveCategoryContext, expandCategoryRefs, resolveCollectionContext, expandCollectionRefs } from "@/lib/productFeed";
 
 // Непрозрачный per-recipient токен для клика (?pss_r=...) — без PII в
 // ссылке (см. миграцию 0024). 6 байт -> 8 символов base64url, достаточно
 // для уникальности в пределах одной рассылки, не для криптографии.
 function genRecipientToken(): string {
   return crypto.randomBytes(6).toString("base64url");
+}
+
+// products/product, categories/category И collections/collection
+// id-ссылки в одном месте — все идут по одному и тому же принципу (см.
+// expandProductRefs/expandCategoryRefs/expandCollectionRefs в
+// lib/productFeed.ts), вызывающему коду не нужно помнить про все три отдельно.
+async function expandRefs(projectId: string, ctx: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const withProducts = await expandProductRefs(projectId, ctx);
+  const withCategories = await expandCategoryRefs(projectId, withProducts);
+  return expandCollectionRefs(projectId, withCategories);
+}
+
+// Контекст шаблона (templates.context) замораживается в campaign.template_data
+// на момент СОЗДАНИЯ кампании — под резервным ключом __template, ОТДЕЛЬНО от
+// разового контекста самой рассылки, а не смешивается с ним. Раньше оба
+// сливались в один плоский объект, и одноимённый ключ рассылки тихо перекрывал
+// значение шаблона (не видно было, что оно вообще было). Это ломало сценарий
+// «в шаблоне дефолт, на рассылке иногда переопределяем» — оба должны быть
+// одновременно доступны, не состязаться. См. splitTemplateData — читает
+// обратно на стороне отправки, в attrs шаблона context.* остаётся плоским
+// (как раньше, обратная совместимость), а template.* — только через это поле.
+export function mergeTemplateContext(
+  context: Record<string, unknown> | null | undefined,
+  data: Record<string, unknown> | null | undefined
+): Record<string, unknown> | null {
+  const base = { ...(data || {}) };
+  if (context && Object.keys(context).length) (base as Record<string, unknown>).__template = context;
+  return Object.keys(base).length ? base : null;
+}
+
+// Обратное к mergeTemplateContext — на стороне отправки достаёт контекст
+// шаблона отдельным неймспейсом (template.*), а остальное (context.*) —
+// это разовый контекст рассылки/автоматизации, как и раньше остаётся ещё и
+// плоским в attrs (обратная совместимость + сценарий, где состязание не
+// проблема — рассылка сама явно задаёт значение).
+export function splitTemplateData(
+  templateData: Record<string, unknown> | null | undefined
+): { template: Record<string, unknown>; context: Record<string, unknown> } {
+  if (!templateData) return { template: {}, context: {} };
+  const { __template, ...rest } = templateData as Record<string, unknown> & { __template?: Record<string, unknown> };
+  return { template: (__template as Record<string, unknown>) || {}, context: rest };
+}
+
+// splitTemplateData + свежий резолв products/product и categories/category по
+// id из кеша фида (см. expandProductRefs/expandCategoryRefs) — отдельно для
+// template.* и для context.*, при каждой отправке заново (не замораживается
+// вместе с остальным template_data). Основной способ получить template/context
+// для attrs.
+export async function resolveTemplateData(
+  projectId: string,
+  templateData: Record<string, unknown> | null | undefined
+): Promise<{ template: Record<string, unknown>; context: Record<string, unknown> }> {
+  const { template, context } = splitTemplateData(templateData);
+  const [expandedTemplate, expandedContext] = await Promise.all([expandRefs(projectId, template), expandRefs(projectId, context)]);
+  return { template: expandedTemplate, context: expandedContext };
 }
 
 // Кнопки действий (rich push) поддерживают Liquid в тексте и ссылке точно
@@ -202,9 +259,26 @@ async function excludePaused<T extends { id: string }>(
 // реальной отправки: раньше на планировании контакты приходилось резолвить
 // заранее (или вовсе запрещать), теперь актуальное состояние устройств
 // смотрим прямо перед отправкой, а не на момент создания черновика.
-export async function dispatchCampaign(campaign: CampaignRow, subscriberIds?: string[]): Promise<DispatchResult> {
+type PushAudienceRow = { id: string; endpoint: string; p256dh: string; auth: string; attributes: Record<string, unknown> | null; timezone: string | null };
+// Только поля, реально нужные для резолва аудитории — НЕ полный CampaignRow
+// (тот требует icon_url/click_url/title/body, которых нет у sms/email
+// кампаний, вызывающих этот резолв через enqueueWindowedCampaign).
+type CampaignAudienceQuery = {
+  id: string;
+  project_id: string;
+  contacts?: string[] | null;
+  segment_tags?: string[] | null;
+  platforms?: string[] | null;
+  type?: "transactional" | "marketing";
+};
+
+// Резолв аудитории push-кампании (контакты/сегмент/платформа) — вынесено из
+// dispatchCampaign, чтобы тот же резолв использовал enqueueWindowedCampaign
+// (окно отправки/защита от наложения, см. ниже) без дублирования логики
+// пересечения контактов и сегмента.
+async function resolvePushCampaignAudience(campaign: CampaignAudienceQuery, subscriberIds?: string[]): Promise<PushAudienceRow[]> {
   const admin = createAdminClient();
-  const SEL = "id, endpoint, p256dh, auth, attributes";
+  const SEL = "id, endpoint, p256dh, auth, attributes, timezone";
 
   // Контакты и сегмент — если заданы оба, это пересечение (AND): уходит
   // только тем из указанных контактов, кто ТАКЖЕ входит в сегмент, а не
@@ -221,10 +295,10 @@ export async function dispatchCampaign(campaign: CampaignRow, subscriberIds?: st
   // список устройств, а не резолвит его сама. Пусто = без фильтра.
   const platforms = campaign.platforms?.filter(Boolean) || [];
 
-  let subsRaw: { id: string; endpoint: string; p256dh: string; auth: string; attributes: Record<string, unknown> | null }[] | null;
+  let subsRaw: PushAudienceRow[] | null;
   if (!hasContacts && !hasSegment) {
     // ни контактов, ни сегмента — «пусто = всем», широковещательная рассылка.
-    let q = admin.from("subscribers").select(SEL).eq("project_id", campaign.project_id).eq("is_active", true);
+    let q = admin.from("subscribers").select(SEL).eq("project_id", campaign.project_id).eq("is_active", true).not("endpoint", "is", null);
     if (platforms.length) q = q.in("platform", platforms);
     const { data } = await q;
     subsRaw = data;
@@ -238,14 +312,14 @@ export async function dispatchCampaign(campaign: CampaignRow, subscriberIds?: st
       const intersected = ids.filter((id) => segmentIds.includes(id));
       if (!intersected.length) subsRaw = [];
       else {
-        let q = admin.from("subscribers").select(SEL).eq("project_id", campaign.project_id).eq("is_active", true).in("id", intersected);
+        let q = admin.from("subscribers").select(SEL).eq("project_id", campaign.project_id).eq("is_active", true).not("endpoint", "is", null).in("id", intersected);
         if (platforms.length) q = q.in("platform", platforms);
         const { data } = await q;
         subsRaw = data;
       }
     }
   } else if (hasContacts) {
-    let q = admin.from("subscribers").select(SEL).eq("project_id", campaign.project_id).eq("is_active", true).in("id", ids);
+    let q = admin.from("subscribers").select(SEL).eq("project_id", campaign.project_id).eq("is_active", true).not("endpoint", "is", null).in("id", ids);
     if (platforms.length) q = q.in("platform", platforms);
     const { data } = await q;
     subsRaw = data;
@@ -253,7 +327,7 @@ export async function dispatchCampaign(campaign: CampaignRow, subscriberIds?: st
     const segmentIds = await resolvePushSegmentIds(campaign.project_id, campaign.segment_tags!);
     if (!segmentIds.length) subsRaw = [];
     else {
-      let q = admin.from("subscribers").select(SEL).eq("project_id", campaign.project_id).eq("is_active", true).in("id", segmentIds);
+      let q = admin.from("subscribers").select(SEL).eq("project_id", campaign.project_id).eq("is_active", true).not("endpoint", "is", null).in("id", segmentIds);
       if (platforms.length) q = q.in("platform", platforms);
       const { data } = await q;
       subsRaw = data;
@@ -265,6 +339,12 @@ export async function dispatchCampaign(campaign: CampaignRow, subscriberIds?: st
   // erroring (and silently zeroing) the whole audience query above.
   // Транзакционные рассылки игнорируют paused (см. excludePaused).
   const subs = await excludePaused(admin, campaign.project_id, subsRaw, campaign.type === "transactional");
+  return subs || [];
+}
+
+export async function dispatchCampaign(campaign: CampaignRow, subscriberIds?: string[]): Promise<DispatchResult> {
+  const admin = createAdminClient();
+  const subs = await resolvePushCampaignAudience(campaign, subscriberIds);
 
   if (!subs?.length) {
     await admin.from("campaigns").update({ status: "sent", sent_at: new Date().toISOString() }).eq("id", campaign.id);
@@ -301,6 +381,7 @@ export async function dispatchCampaign(campaign: CampaignRow, subscriberIds?: st
   const deadSubscriberIds: string[] = [];
   const recipients: { contact: string; status: "delivered" | "failed" }[] = [];
   const linkCache = new Map<string, string>();
+  const { template: templateCtx, context: sendCtx } = await resolveTemplateData(campaign.project_id, campaign.template_data);
 
   const CONCURRENCY = 20;
   for (let i = 0; i < subs.length; i += CONCURRENCY) {
@@ -309,8 +390,11 @@ export async function dispatchCampaign(campaign: CampaignRow, subscriberIds?: st
       chunk.map(async (s) => {
         // явные данные вызова (см. createAndDispatch data{}) побеждают атрибуты
         // подписчика при совпадении ключа — это разовые параметры ИМЕННО этой
-        // отправки (номер заказа и т.п.), а не свойство подписчика.
-        const attrs = { ...(((s as { attributes?: Record<string, unknown> }).attributes) || {}), ...(campaign.template_data || {}) };
+        // отправки (номер заказа и т.п.), а не свойство подписчика. sendCtx
+        // остаётся ещё и плоским (context.* дублирует те же ключи) — только
+        // template.* контекст шаблона больше НЕ подмешивается в плоский
+        // namespace, иначе одноимённый ключ рассылки тихо перекрывал бы его.
+        const attrs = { ...(((s as { attributes?: Record<string, unknown> }).attributes) || {}), ...sendCtx, template: templateCtx, context: sendCtx, automation: {} };
         const payload: PushPayload = {
           title: applyTemplate(campaign.title, attrs),
           body: await shortenBodyLinks(applyTemplate(campaign.body, attrs), linkCache),
@@ -367,6 +451,239 @@ export async function dispatchCampaign(campaign: CampaignRow, subscriberIds?: st
   return { ok: true, delivered, failed, total: subs.length };
 }
 
+// ---------------------------------------------------------------------
+// Окно отправки / защита от наложения для обычных кампаний (migration
+// 0056) — опционально, по умолчанию выключено (кампании без изменений).
+// Вместо немедленной пакетной отправки резолвим аудиторию ОДИН раз и
+// заводим пер-получательское задание (campaign_jobs) на каждого — тот же
+// принцип, что и welcome-автоматизации (sendWelcomeNow), просто на пачку
+// получателей сразу, а не на одного. Реальную отправку каждого задания
+// делает cron run-campaign-jobs (sendCampaignJobNow).
+// ---------------------------------------------------------------------
+
+// Не наследует CampaignRow целиком (icon_url/image_url/click_url там
+// обязательны) — enqueueWindowedCampaign нужны только поля аудитории, их
+// незачем требовать и от sms/email-кампаний, у которых их нет.
+type WindowedCampaign = {
+  id: string;
+  project_id: string;
+  channel?: "push" | "sms" | "email";
+  type?: "transactional" | "marketing";
+  provider?: string | null;
+  segment_tags?: string[] | null;
+  platforms?: string[] | null;
+  contacts?: string[] | null;
+  send_window_enabled?: boolean | null;
+  send_days?: number[] | null;
+  send_time_from?: string | null;
+  send_time_to?: string | null;
+  send_window_subscriber_tz?: boolean | null;
+  spacing_enabled?: boolean | null;
+  spacing_minutes?: number | null;
+};
+
+export async function enqueueWindowedCampaign(campaign: WindowedCampaign, subscriberIds?: string[]): Promise<{ ok: boolean; enqueued: number }> {
+  const admin = createAdminClient();
+  const channel = campaign.channel || "push";
+  const { data: project } = await admin.from("projects").select("timezone").eq("id", campaign.project_id).maybeSingle();
+  const projectTimezone = project?.timezone || "Europe/Moscow";
+  const win: SendWindow = {
+    enabled: !!campaign.send_window_enabled,
+    days: campaign.send_days || null,
+    timeFrom: campaign.send_time_from || null,
+    timeTo: campaign.send_time_to || null,
+    useSubscriberTz: !!campaign.send_window_subscriber_tz,
+  };
+  const spacingMinutes = campaign.spacing_enabled ? campaign.spacing_minutes || null : null;
+
+  type Recipient = { subscriberId?: string; contact?: string; timezone?: string | null };
+  let recipients: Recipient[];
+  if (channel === "push") {
+    const subs = await resolvePushCampaignAudience(campaign, subscriberIds);
+    recipients = subs.map((s) => ({ subscriberId: s.id, timezone: s.timezone }));
+  } else {
+    const contacts = await resolveSmsEmailAudience(admin, campaign.project_id, channel === "sms" ? "phone" : "email", {
+      contacts: campaign.contacts || undefined,
+      segmentTags: campaign.segment_tags,
+      bypassConsent: campaign.type === "transactional",
+    });
+    recipients = contacts.map((c) => ({ contact: c.value, timezone: c.timezone }));
+  }
+
+  if (!recipients.length) {
+    await admin.from("campaigns").update({ status: "sent", sent_at: new Date().toISOString() }).eq("id", campaign.id);
+    return { ok: true, enqueued: 0 };
+  }
+
+  const now = new Date();
+  const jobs: { campaign_id: string; project_id: string; channel: string; subscriber_id: string | null; contact: string | null; fire_at: string }[] = [];
+  const CONCURRENCY = 20;
+  for (let i = 0; i < recipients.length; i += CONCURRENCY) {
+    const chunk = recipients.slice(i, i + CONCURRENCY);
+    await Promise.all(
+      chunk.map(async (r) => {
+        const tz = (win.useSubscriberTz && r.timezone) || projectTimezone;
+        let fireAt = now;
+        if (win.enabled && !isWithinSendWindow(win, tz, now)) {
+          fireAt = nextWindowStart(win, tz, now);
+        } else if (spacingMinutes) {
+          const contactKey = channel === "push" ? r.subscriberId! : r.contact!;
+          const lastSentAt = await findRecentSendAt(admin, campaign.project_id, channel, contactKey, spacingMinutes);
+          if (lastSentAt) fireAt = new Date(new Date(lastSentAt).getTime() + spacingMinutes * 60_000);
+        }
+        jobs.push({
+          campaign_id: campaign.id,
+          project_id: campaign.project_id,
+          channel,
+          subscriber_id: channel === "push" ? r.subscriberId || null : null,
+          contact: channel === "push" ? null : r.contact || null,
+          fire_at: fireAt.toISOString(),
+        });
+      })
+    );
+  }
+
+  for (let i = 0; i < jobs.length; i += 500) {
+    await admin.from("campaign_jobs").insert(jobs.slice(i, i + 500));
+  }
+  await admin.from("campaigns").update({ status: "sending", sent_at: new Date().toISOString() }).eq("id", campaign.id);
+  return { ok: true, enqueued: jobs.length };
+}
+
+// Once one campaign_jobs row finishes — bumps the campaign's aggregate
+// counters and, if it was the LAST pending job, flips the campaign to
+// "sent". Read-then-write, safe as long as run-campaign-jobs processes jobs
+// sequentially within one invocation (same assumption as run-automations).
+async function bumpCampaignCounts(admin: ReturnType<typeof createAdminClient>, campaignId: string, status: "sent" | "failed"): Promise<void> {
+  const { data: c } = await admin.from("campaigns").select("sent_count, delivered_count, failed_count").eq("id", campaignId).maybeSingle();
+  if (c) {
+    await admin
+      .from("campaigns")
+      .update({
+        sent_count: (c.sent_count || 0) + 1,
+        delivered_count: (c.delivered_count || 0) + (status === "sent" ? 1 : 0),
+        failed_count: (c.failed_count || 0) + (status === "failed" ? 1 : 0),
+      })
+      .eq("id", campaignId);
+  }
+  const { count } = await admin.from("campaign_jobs").select("id", { count: "exact", head: true }).eq("campaign_id", campaignId).eq("status", "pending");
+  if (!count) await admin.from("campaigns").update({ status: "sent", sent_at: new Date().toISOString() }).eq("id", campaignId);
+}
+
+// Реальная отправка одного пер-получательского задания (campaign_jobs) —
+// вызывается кроном run-campaign-jobs. Контент берётся из уже существующей
+// campaigns-строки (campaignId у неё СВОЙ, не создаётся заново — в отличие
+// от sendOneOff/sendWelcomeNow, здесь кампания одна на всех получателей).
+export async function sendCampaignJobNow(
+  admin: ReturnType<typeof createAdminClient>,
+  job: { id: string; campaign_id: string; project_id: string; channel: "push" | "sms" | "email"; subscriber_id: string | null; contact: string | null }
+): Promise<"sent" | "failed"> {
+  let status: "sent" | "failed" = "failed";
+
+  if (job.channel === "push" && job.subscriber_id) {
+    const { data: campaign } = await admin
+      .from("campaigns")
+      .select("id, title, body, icon_url, image_url, click_url, badge_url, actions, template_data")
+      .eq("id", job.campaign_id)
+      .maybeSingle();
+    const { data: sub } = await admin
+      .from("subscribers")
+      .select("id, endpoint, p256dh, auth, attributes, is_active, paused")
+      .eq("id", job.subscriber_id)
+      .maybeSingle();
+    if (campaign && sub?.is_active && !sub.paused && sub.endpoint) {
+      const { data: secret } = await admin.from("project_secrets").select("vapid_private_key").eq("project_id", job.project_id).maybeSingle();
+      const { data: project } = await admin.from("projects").select("vapid_public_key").eq("id", job.project_id).maybeSingle();
+      if (secret?.vapid_private_key && project?.vapid_public_key) {
+        const { data: covered } = await admin.rpc("spend_pushes", { p_project_id: job.project_id, p_count: 1 });
+        if (covered) {
+          const { template: templateCtx, context: sendCtx } = await resolveTemplateData(job.project_id, campaign.template_data as Record<string, unknown> | null);
+          const attrs = { ...((sub.attributes as Record<string, unknown>) || {}), ...sendCtx, template: templateCtx, context: sendCtx, automation: {} };
+          try {
+            await sendPush(
+              { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+              {
+                title: applyTemplate(campaign.title, attrs),
+                body: await shortenBodyLinks(applyTemplate(campaign.body, attrs), new Map()),
+                icon: campaign.icon_url ? applyTemplate(campaign.icon_url, attrs) : undefined,
+                image: campaign.image_url ? applyTemplate(campaign.image_url, attrs) : undefined,
+                badge: campaign.badge_url ? applyTemplate(campaign.badge_url, attrs) : undefined,
+                url: applyTemplate(campaign.click_url || "/", attrs) || "/",
+                actions: renderPushActions(campaign.actions as PushAction[] | null, attrs),
+                campaignId: campaign.id,
+                subscriberId: sub.id,
+                api: process.env.NEXT_PUBLIC_APP_URL || "",
+              },
+              { publicKey: project.vapid_public_key, privateKey: secret.vapid_private_key }
+            );
+            status = "sent";
+          } catch {
+            await admin.rpc("refund_pushes", { p_project_id: job.project_id, p_count: 1 });
+          }
+        }
+      }
+    }
+    if (campaign) {
+      await logRecipients(admin, job.campaign_id, job.project_id, "push", [{ contact: job.subscriber_id, status: status === "sent" ? "delivered" : "failed" }]);
+      await bumpCampaignCounts(admin, job.campaign_id, status);
+    }
+  } else if ((job.channel === "sms" || job.channel === "email") && job.contact) {
+    const { data: campaign } = await admin
+      .from("campaigns")
+      .select("id, body, subject, html_body, provider, template_data, type")
+      .eq("id", job.campaign_id)
+      .maybeSingle();
+    if (campaign) {
+      const field = job.channel === "sms" ? "phone" : "email";
+      const { data: identity } = await admin
+        .from("identities")
+        .select("name, phone, email, tags, attributes")
+        .eq("project_id", job.project_id)
+        .eq(field, job.contact)
+        .maybeSingle();
+      const { data: secrets } = await admin
+        .from("project_secrets")
+        .select("bytehand_service_key, smsc_login, smsc_password, haskimail_server_token, haskimail_marketing_stream, haskimail_transactional_stream")
+        .eq("project_id", job.project_id)
+        .maybeSingle();
+      const { data: oidc } = await admin.from("oidc_clients").select("config").eq("project_id", job.project_id).maybeSingle();
+      const contactAttrs = identity
+        ? { name: identity.name, phone: identity.phone, email: identity.email, tags: identity.tags, ...((identity.attributes as Record<string, unknown>) || {}) }
+        : {};
+      const { template: templateCtx, context: sendCtx } = await resolveTemplateData(job.project_id, campaign.template_data as Record<string, unknown> | null);
+      const attrs = { ...contactAttrs, ...sendCtx, template: templateCtx, context: sendCtx, automation: {} };
+      const token = genRecipientToken();
+      if (secrets && campaign.provider) {
+        if (job.channel === "sms") {
+          const smsSender = (oidc?.config as { sms_sender?: string } | null)?.sms_sender || undefined;
+          const text = await injectClickTrackingSms(applyTemplate(campaign.body, attrs), job.campaign_id, token);
+          const result =
+            campaign.provider === "smsc"
+              ? await sendSmsSmsc(secrets.smsc_login!, secrets.smsc_password!, job.contact, text, smsSender)
+              : await sendSms(secrets.bytehand_service_key!, job.contact, text, smsSender);
+          status = result.ok ? "sent" : "failed";
+        } else {
+          const emailFrom = (oidc?.config as { email_from?: string } | null)?.email_from || "";
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
+          const emailAttrs = { ...attrs, unsubscribe_url: unsubscribeUrl(appUrl, job.project_id, job.contact) };
+          const subject = applyTemplate(campaign.subject || "", emailAttrs);
+          const html = injectOpenPixel(injectClickTracking(applyTemplate(campaign.html_body || "", emailAttrs), job.campaign_id, token), appUrl, job.campaign_id, token);
+          const haskimailStream = campaign.type === "transactional" ? secrets.haskimail_transactional_stream : secrets.haskimail_marketing_stream;
+          const ok =
+            campaign.provider === "smsc"
+              ? (await sendEmailSmsc(secrets.smsc_login!, secrets.smsc_password!, job.contact, subject, html, emailFrom)).ok
+              : await sendEmail(secrets.haskimail_server_token!, job.contact, { subject, html }, emailFrom || undefined, haskimailStream!);
+          status = ok ? "sent" : "failed";
+        }
+      }
+      await logRecipients(admin, job.campaign_id, job.project_id, job.channel, [{ contact: job.contact, status: status === "sent" ? "delivered" : "failed", token }]);
+      await bumpCampaignCounts(admin, job.campaign_id, status);
+    }
+  }
+
+  return status;
+}
+
 // Inserts a campaign row. `actions` (rich-push buttons, migration 0009) and
 // `badge_url` (rich-push badge, migration 0019) are attempted first; if a
 // column isn't migrated yet, retries without it so campaign creation — the
@@ -389,11 +706,18 @@ export async function insertCampaign(
     scheduled_at?: string | null;
     created_by?: string;
     type?: "transactional" | "marketing";
-    initiator?: "manual" | "api";
+    initiator?: "manual" | "api" | "automation";
     template_id?: string | null;
     template_data?: Record<string, unknown> | null;
     internal_title?: string | null;
     contacts?: string[];
+    send_window_enabled?: boolean;
+    send_days?: number[] | null;
+    send_time_from?: string | null;
+    send_time_to?: string | null;
+    send_window_subscriber_tz?: boolean;
+    spacing_enabled?: boolean;
+    spacing_minutes?: number | null;
   }
 ): Promise<CampaignRow | null> {
   const full = "id, project_id, title, body, icon_url, image_url, click_url, badge_url, segment_tags, platforms, actions, template_data, type, contacts";
@@ -428,10 +752,20 @@ export async function resolvePushTemplate(
   projectId: string,
   templateId: string,
   explicit: { title?: string; body?: string; icon?: string; image?: string; url?: string; badge?: string; actions?: PushAction[] } = {}
-): Promise<{ title: string; body: string; icon?: string; image?: string; url?: string; badge?: string; actions?: PushAction[] }> {
+): Promise<{
+  title: string;
+  body: string;
+  icon?: string;
+  image?: string;
+  url?: string;
+  badge?: string;
+  actions?: PushAction[];
+  name?: string;
+  context?: Record<string, unknown> | null;
+}> {
   const { data: tpl } = await admin
     .from("templates")
-    .select("title, body, url, icon_url, image_url, badge_url, actions")
+    .select("name, title, body, url, icon_url, image_url, badge_url, actions, context")
     .eq("id", templateId)
     .eq("project_id", projectId)
     .eq("channel", "push")
@@ -444,6 +778,8 @@ export async function resolvePushTemplate(
     url: explicit.url ?? tpl?.url ?? undefined,
     badge: explicit.badge ?? tpl?.badge_url ?? undefined,
     actions: explicit.actions?.length ? explicit.actions : ((tpl?.actions as PushAction[] | null) ?? undefined),
+    name: tpl?.name,
+    context: tpl?.context as Record<string, unknown> | null | undefined,
   };
 }
 
@@ -464,6 +800,7 @@ export async function createAndDispatch(
     badge?: string;
     url?: string;
     segmentTags?: string[];
+    platforms?: string[];
     actions?: PushAction[];
     type?: "transactional" | "marketing";
     templateId?: string;
@@ -478,6 +815,7 @@ export async function createAndDispatch(
   let icon = content.icon;
   let image = content.image;
   let url = content.url;
+  let templateContext: Record<string, unknown> | null | undefined;
   if (content.templateId) {
     const resolved = await resolvePushTemplate(admin, projectId, content.templateId, content);
     title = resolved.title;
@@ -485,6 +823,7 @@ export async function createAndDispatch(
     icon = resolved.icon;
     image = resolved.image;
     url = resolved.url;
+    templateContext = resolved.context;
   }
   if (!title.trim() || !body.trim()) {
     return { ok: false, delivered: 0, failed: 0, total: 0, error: "title and body required (or a valid templateId)" };
@@ -499,52 +838,675 @@ export async function createAndDispatch(
     click_url: url || null,
     badge_url: content.badge || null,
     segment_tags: content.segmentTags || [],
+    platforms: content.platforms || [],
     actions: content.actions || [],
     status: "sending",
     type: content.type,
     initiator: "api",
     template_id: content.templateId || null,
-    template_data: content.data || null,
+    template_data: mergeTemplateContext(templateContext, content.data),
   });
   if (!campaign) return { ok: false, delivered: 0, failed: 0, total: 0, error: "campaign create failed" };
   return dispatchCampaign(campaign, subscriberIds);
 }
 
-// Sends a single one-off push to one subscriber (welcome automation).
-// Spends 1 unit; refunds on failure. No campaign row.
+// Sends a single one-off push to one subscriber (welcome/событийная
+// автоматизация) — заводит campaigns-строку на одного получателя (тот же
+// приём, что и у транзакционных вебхук-триггеров, см. createAndDispatch),
+// иначе клик некому трекать и заказ/выручку (order_attributions) физически
+// не к чему привязать — атрибуция матчит СТРОГО по campaign_id из клик-куки.
+// Spends 1 unit; refunds on failure.
 export async function sendOneOff(
   projectId: string,
   subscriber: { id: string; endpoint: string; p256dh: string; auth: string },
-  content: { title: string; body: string; url?: string; actions?: PushAction[] },
-  attrs: Record<string, unknown> = {}
-): Promise<boolean> {
+  content: { title: string; body: string; url?: string; icon?: string; image?: string; badge?: string; actions?: PushAction[] },
+  attrs: Record<string, unknown> = {},
+  meta: { type?: "transactional" | "marketing" } = {}
+): Promise<{ ok: boolean; campaignId: string | null }> {
   const admin = createAdminClient();
+
+  const title = applyTemplate(content.title, attrs);
+  const body = applyTemplate(content.body, attrs);
+  const icon = content.icon ? applyTemplate(content.icon, attrs) : null;
+  const image = content.image ? applyTemplate(content.image, attrs) : null;
+  const badge = content.badge ? applyTemplate(content.badge, attrs) : null;
+  const url = applyTemplate(content.url || "/", attrs) || "/";
+  const actions = renderPushActions(content.actions, attrs);
+
+  const campaign = await insertCampaign(admin, {
+    project_id: projectId,
+    title,
+    body,
+    icon_url: icon,
+    image_url: image,
+    click_url: url,
+    badge_url: badge,
+    segment_tags: [],
+    actions: actions || [],
+    status: "sending",
+    type: meta.type || "marketing",
+    initiator: "automation",
+  });
+  const campaignId = campaign?.id || null;
 
   const { data: secret } = await admin.from("project_secrets").select("vapid_private_key").eq("project_id", projectId).single();
   const { data: project } = await admin.from("projects").select("vapid_public_key").eq("id", projectId).single();
-  if (!secret?.vapid_private_key || !project?.vapid_public_key) return false;
+  if (!secret?.vapid_private_key || !project?.vapid_public_key) {
+    if (campaignId) await admin.from("campaigns").update({ status: "failed", error: "no vapid keys" }).eq("id", campaignId);
+    return { ok: false, campaignId };
+  }
 
   const { data: covered } = await admin.rpc("spend_pushes", { p_project_id: projectId, p_count: 1 });
-  if (!covered) return false;
+  if (!covered) {
+    if (campaignId) await admin.from("campaigns").update({ status: "failed", error: "insufficient balance" }).eq("id", campaignId);
+    return { ok: false, campaignId };
+  }
 
   try {
     await sendPush(
       { endpoint: subscriber.endpoint, keys: { p256dh: subscriber.p256dh, auth: subscriber.auth } },
       {
-        title: applyTemplate(content.title, attrs),
-        body: applyTemplate(content.body, attrs),
-        url: applyTemplate(content.url || "/", attrs) || "/",
-        actions: content.actions?.length ? content.actions : undefined,
+        title,
+        body,
+        icon: icon || undefined,
+        image: image || undefined,
+        badge: badge || undefined,
+        url,
+        actions,
+        campaignId: campaignId || undefined,
         subscriberId: subscriber.id,
         api: process.env.NEXT_PUBLIC_APP_URL || "",
       },
       { publicKey: project.vapid_public_key, privateKey: secret.vapid_private_key }
     );
-    return true;
+    if (campaignId) {
+      await admin
+        .from("campaigns")
+        .update({ status: "sent", sent_at: new Date().toISOString(), sent_count: 1, delivered_count: 1 })
+        .eq("id", campaignId);
+      await logRecipients(admin, campaignId, projectId, "push", [{ contact: subscriber.id, status: "delivered" }]);
+    }
+    return { ok: true, campaignId };
   } catch {
     await admin.rpc("refund_pushes", { p_project_id: projectId, p_count: 1 });
-    return false;
+    if (campaignId) {
+      await admin
+        .from("campaigns")
+        .update({ status: "sent", sent_at: new Date().toISOString(), sent_count: 1, failed_count: 1 })
+        .eq("id", campaignId);
+      await logRecipients(admin, campaignId, projectId, "push", [{ contact: subscriber.id, status: "failed" }]);
+    }
+    return { ok: false, campaignId };
   }
+}
+
+// Какие из трёх каналов у этого контакта СЕЙЧАС активны — только среди
+// каналов, для которых вообще настроена хоть одна welcome-цепочка
+// (`configured`): нет смысла отдавать приоритет каналу, который всё равно
+// никогда не отправит приветствие. push — есть хотя бы одно активное
+// устройство, привязанное к identity; sms/email — соответствующий
+// *_marketing_active_at установлен.
+export async function activeConfiguredChannels(
+  admin: ReturnType<typeof createAdminClient>,
+  identityId: string,
+  configured: Set<"push" | "sms" | "email">
+): Promise<Set<"push" | "sms" | "email">> {
+  const active = new Set<"push" | "sms" | "email">();
+  if (configured.has("sms") || configured.has("email")) {
+    const { data: identity } = await admin
+      .from("identities")
+      .select("sms_marketing_active_at, email_marketing_active_at")
+      .eq("id", identityId)
+      .maybeSingle();
+    if (identity?.sms_marketing_active_at && configured.has("sms")) active.add("sms");
+    if (identity?.email_marketing_active_at && configured.has("email")) active.add("email");
+  }
+  if (configured.has("push")) {
+    const { data: links } = await admin
+      .from("identity_devices")
+      .select("subscriber_id, subscribers!inner(is_active)")
+      .eq("identity_id", identityId);
+    if ((links || []).some((l) => (l.subscribers as unknown as { is_active: boolean } | null)?.is_active)) active.add("push");
+  }
+  return active;
+}
+
+// Резолвит, каким именно каналом уйдёт каскадная (мультиканальная) welcome/
+// событийная автоматизация — среди каналов, для которых в карточке задан
+// шаблон (channel_templates), берём активный (см. activeConfiguredChannels)
+// и включённый в проекте, побеждает первый по общему «Приоритету каналов».
+// Без identityId (анонимный push, ссылку на identity ещё не нашли) активность
+// сравнивать не с чем — если среди настроенных каналов есть push, он и
+// побеждает (тот же best-effort принцип, что и respects_priority без
+// identity у обычных, не каскадных автоматизаций).
+export async function resolveCascadeChannel(
+  admin: ReturnType<typeof createAdminClient>,
+  projectId: string,
+  identityId: string | undefined,
+  channelTemplates: Partial<Record<"push" | "sms" | "email", string>>
+): Promise<{ channel: "push" | "sms" | "email"; templateId: string } | null> {
+  const configured = new Set(Object.keys(channelTemplates).filter((c) => channelTemplates[c as "push" | "sms" | "email"]) as ("push" | "sms" | "email")[]);
+  if (!configured.size) return null;
+
+  const { data: project } = await admin
+    .from("projects")
+    .select("welcome_channel_priority, welcome_channel_enabled")
+    .eq("id", projectId)
+    .maybeSingle();
+  const enabled = (project?.welcome_channel_enabled as Record<string, boolean> | null) || {};
+  const order = (project?.welcome_channel_priority as ("push" | "sms" | "email")[] | null) || ["push", "sms", "email"];
+
+  let active: Set<"push" | "sms" | "email">;
+  if (identityId) {
+    active = await activeConfiguredChannels(admin, identityId, configured);
+  } else if (configured.has("push")) {
+    active = new Set(["push"]);
+  } else {
+    active = new Set();
+  }
+
+  const winner = order.find((c) => configured.has(c) && active.has(c) && enabled[c] !== false);
+  if (!winner) return null;
+  return { channel: winner, templateId: channelTemplates[winner]! };
+}
+
+// ---------------------------------------------------------------------
+// Приветственные автоматизации (welcome) — многоканальные, на основе
+// шаблонов (раздел «Шаблоны»); несколько штук на канал допустимо (цепочка
+// из N сообщений с разной задержкой), несколько каналов одновременно тоже
+// допустимо (см. AutomationsManager). Триггер: push — новое устройство
+// подписалось (app/api/public/subscribe/route.ts); sms/email — контакт
+// только что стал «Активным» по каналу, т.е. *_marketing_active_at
+// сменился с null на значение (см. logChannelEvents в lib/identity.ts).
+// delay_minutes=0 — шлём сразу; иначе ставим в ту же очередь
+// automation_jobs, что и событийные автоматизации (см.
+// app/api/cron/run-automations), но с identity_id вместо subscriber_id для
+// sms/email — у контакта может не быть push-устройства.
+export async function fireWelcomeAutomations(
+  projectId: string,
+  channel: "push" | "sms" | "email",
+  recipient: { subscriberId?: string; identityId?: string }
+): Promise<void> {
+  const admin = createAdminClient();
+
+  const { data: allWelcomes } = await admin
+    .from("automations")
+    .select(
+      "id, name, channel, delay_minutes, template_id, segment_tags, spacing_enabled, spacing_minutes, send_window_enabled, send_days, send_time_from, send_time_to, send_window_subscriber_tz, config, cascade, channel_templates, provider, platforms"
+    )
+    .eq("project_id", projectId)
+    .eq("type", "welcome")
+    .eq("is_enabled", true);
+  // Каскадные карточки (см. resolveCascadeChannel) рассматриваем, если ИМЕННО
+  // этот активировавшийся канал вообще числится среди её настроенных —
+  // реальный победитель по приоритету резолвится позже, отдельно для каждой
+  // карточки, не здесь.
+  let candidates = (allWelcomes || []).filter((a) =>
+    a.cascade ? !!(a.channel_templates as Record<string, string> | null)?.[channel] : a.channel === channel && a.template_id
+  );
+  if (!candidates.length) return;
+
+  // push обычно триггерится ДО того, как устройство привязано к identity —
+  // но если привязка уже есть (вернувшийся/залогиненный посетитель),
+  // используем её: без этого приоритет и сегмент для push никогда бы не
+  // сработали, только для sms/email (там identityId уже известен всегда).
+  let identityId = recipient.identityId;
+  if (!identityId && channel === "push" && recipient.subscriberId) {
+    const { data: link } = await admin
+      .from("identity_devices")
+      .select("identity_id")
+      .eq("subscriber_id", recipient.subscriberId)
+      .limit(1)
+      .maybeSingle();
+    identityId = link?.identity_id || undefined;
+  }
+
+  const { data: project } = await admin
+    .from("projects")
+    .select("welcome_channel_priority, welcome_channel_enabled, welcome_channel_provider, timezone")
+    .eq("id", projectId)
+    .maybeSingle();
+  const projectTimezone = project?.timezone || "Europe/Moscow";
+
+  // Канал целиком отключён для welcome (быстрый выключатель, отдельный от
+  // is_enabled каждого сообщения) — см. «Приоритет каналов» в Автоматизациях.
+  const channelEnabled = (project?.welcome_channel_enabled as Record<string, boolean> | null)?.[channel];
+  if (channelEnabled === false) return;
+
+  // Сегмент по тегам — сообщение с непустым segment_tags уходит только
+  // контактам, чьи identities.tags пересекаются со списком; без identity
+  // (анонимный push) сегментированные сообщения пропускаются — тегов взять
+  // неоткуда, несегментированные (пусто = всем) продолжают работать как раньше.
+  let identityTags: string[] = [];
+  if (identityId) {
+    const { data: identity } = await admin.from("identities").select("tags").eq("id", identityId).maybeSingle();
+    identityTags = (identity?.tags as string[] | null) || [];
+  }
+  candidates = candidates.filter((a) => {
+    const tags = (a.segment_tags as string[] | null) || [];
+    return !tags.length || tags.some((t) => identityTags.includes(t));
+  });
+  if (!candidates.length) return;
+
+  // Приоритет каналов больше не сравнивается для одноканальных карточек —
+  // они всегда уходят на своём канале независимо от активности контакта на
+  // других (это и есть способ намеренно продублировать волну по нескольким
+  // каналам). Взаимоисключение по приоритету — только у каскадных карточек,
+  // резолвится отдельно для каждой (resolveCascadeChannel), не здесь.
+  const toFire = candidates;
+
+  // Цепочка (все welcome-автоматизации канала, что реально сработали в этом
+  // событии) запускается максимум ОДИН раз на контакт+канал — не при каждом
+  // повторном вкл/выкл согласия. Push это гарантирует сам вызывающий код
+  // (fires only for a genuinely new device row, см. /api/public/subscribe);
+  // sms/email — явный маркер на identities, иначе повторное включение
+  // согласия слало бы welcome заново. Атомарный claim (update ... where col
+  // is null): проходит только для первого вызова, конкурентный повтор не
+  // запустит цепочку дважды.
+  if ((channel === "sms" || channel === "email") && identityId) {
+    const col = channel === "sms" ? "sms_welcomed_at" : "email_welcomed_at";
+    const { data: claimed } = await admin
+      .from("identities")
+      .update({ [col]: new Date().toISOString() })
+      .eq("id", identityId)
+      .is(col, null)
+      .select("id");
+    if (!claimed?.length) return;
+  }
+
+  const globalProviderHint = (project?.welcome_channel_provider as Record<string, string> | null)?.[channel] || null;
+
+  for (const a of toFire) {
+    if (!a.cascade && !a.template_id) continue;
+    if (a.cascade) {
+      // Каскадная карточка может сработать от РАЗНЫХ активаций канала
+      // (push/sms/email) — реальный канал резолвится позже, в момент разбора
+      // очереди (run-automations), поэтому всегда ставим задание в
+      // automation_jobs (даже при delay=0 — уйдёт со следующим тиком крона,
+      // до минуты), а не шлём напрямую. Ключ дедупа — identity_id, когда он
+      // известен, ВНЕ ЗАВИСИМОСТИ от того, какой канал сейчас триггерит: так
+      // существующий уникальный индекс uq_pending_job_identity сам не даст
+      // создать вторую pending-задачу для той же карточки+контакта, если
+      // активируется другой канал раньше, чем эта уже отправилась. Без
+      // identity (анонимный push) дедуп по subscriber_id — тот же best-effort
+      // предел, что и везде при отсутствии identity.
+      await admin
+        .from("automation_jobs")
+        .insert({
+          project_id: projectId,
+          automation_id: a.id,
+          subscriber_id: identityId ? null : recipient.subscriberId || null,
+          identity_id: identityId || null,
+          fire_at: new Date(Date.now() + (a.delay_minutes || 0) * 60_000).toISOString(),
+        })
+        .then(
+          () => {},
+          () => {}
+        );
+      continue;
+    }
+    if ((a.delay_minutes || 0) > 0) {
+      await admin
+        .from("automation_jobs")
+        .insert({
+          project_id: projectId,
+          automation_id: a.id,
+          subscriber_id: channel === "push" ? recipient.subscriberId : null,
+          identity_id: channel !== "push" ? identityId : null,
+          fire_at: new Date(Date.now() + a.delay_minutes * 60_000).toISOString(),
+        })
+        .then(
+          () => {},
+          () => {}
+        );
+    } else {
+      await sendWelcomeNow(
+        admin,
+        projectId,
+        a.id,
+        channel,
+        a.template_id,
+        recipient,
+        a.provider || globalProviderHint,
+        a.name,
+        a.spacing_enabled ? a.spacing_minutes || null : null,
+        {
+          enabled: !!a.send_window_enabled,
+          days: (a.send_days as number[] | null) || null,
+          timeFrom: a.send_time_from,
+          timeTo: a.send_time_to,
+          useSubscriberTz: !!a.send_window_subscriber_tz,
+        },
+        projectTimezone,
+        "welcome",
+        null,
+        (a.platforms as string[] | null) || null
+      );
+    }
+  }
+}
+
+// Ищет последнюю отправку этому контакту на этот канал за окно
+// windowMinutes — по ЛЮБОМУ источнику (кампания или другая автоматизация),
+// не только по welcome. contact — subscriber_id для push, телефон/email для
+// sms/email (тот же формат, что campaign_recipients.contact).
+async function findRecentSendAt(
+  admin: ReturnType<typeof createAdminClient>,
+  projectId: string,
+  channel: "push" | "sms" | "email",
+  contact: string,
+  windowMinutes: number
+): Promise<string | null> {
+  const since = new Date(Date.now() - windowMinutes * 60_000).toISOString();
+  const [{ data: campRows }, { data: logRows }] = await Promise.all([
+    admin
+      .from("campaign_recipients")
+      .select("created_at")
+      .eq("project_id", projectId)
+      .eq("channel", channel)
+      .eq("contact", contact)
+      .eq("status", "delivered")
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(1),
+    admin
+      .from("automation_log")
+      .select("created_at")
+      .eq("project_id", projectId)
+      .eq("channel", channel)
+      .eq("contact", contact)
+      .eq("status", "sent")
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(1),
+  ]);
+  const times = [campRows?.[0]?.created_at, logRows?.[0]?.created_at].filter(Boolean) as string[];
+  return times.length ? times.sort().pop()! : null;
+}
+
+// Отправка отложена (наложение или вне окна отправки) — не шлём сейчас,
+// переставляем попытку на fireAt через ту же очередь automation_jobs, что и
+// обычная задержка. Не жёсткий пропуск: если условие к тому моменту снова не
+// выполнится (контакт опять «свежий», окно опять закрыто), сработает ещё
+// один перенос.
+async function rescheduleWelcome(
+  admin: ReturnType<typeof createAdminClient>,
+  projectId: string,
+  automationId: string,
+  recipient: { subscriberId?: string; identityId?: string },
+  channel: "push" | "sms" | "email",
+  fireAt: Date
+): Promise<void> {
+  await admin
+    .from("automation_jobs")
+    .insert({
+      project_id: projectId,
+      automation_id: automationId,
+      subscriber_id: channel === "push" ? recipient.subscriberId : null,
+      identity_id: channel !== "push" ? recipient.identityId : null,
+      fire_at: fireAt.toISOString(),
+    })
+    .then(
+      () => {},
+      () => {}
+    );
+}
+
+// Общая для немедленной отправки (delay=0) и для крон-обработчика очереди
+// (delay>0, см. app/api/cron/run-automations) — единая точка резолва
+// шаблона+провайдера+отправки+лога, чтобы оба пути welcome вели себя
+// идентично.
+export async function sendWelcomeNow(
+  admin: ReturnType<typeof createAdminClient>,
+  projectId: string,
+  automationId: string,
+  channel: "push" | "sms" | "email",
+  templateId: string,
+  recipient: { subscriberId?: string; identityId?: string },
+  providerHint: string | null = null,
+  automationName: string | null = null,
+  spacingMinutes: number | null = null,
+  sendWindow: SendWindow | null = null,
+  projectTimezone = "Europe/Moscow",
+  source: "welcome" | "event" | "webhook" = "welcome",
+  eventPayload: Record<string, unknown> | null = null,
+  platforms: string[] | null = null
+): Promise<"sent" | "failed" | "skipped"> {
+  let status: "sent" | "failed" | "skipped" = "skipped";
+  let deferred = false;
+  // Данные события (сырой payload + резолвленные товар/категория/коллекция
+  // из кеша фида, см. lib/productFeed.ts) — слой персонализации МЕЖДУ
+  // контактом и устройством/каналом: специфичнее профиля контакта (это
+  // конкретное срабатывание), но контакт всё равно может переопределить
+  // одноимённые поля своими самыми свежими атрибутами (см. merge ниже).
+  // Только для событийных — у welcome eventPayload всегда null, лишний
+  // запрос не идёт.
+  const eventContext = eventPayload
+    ? {
+        ...eventPayload,
+        ...(await resolveProductContext(projectId, eventPayload)),
+        ...(await resolveCategoryContext(projectId, eventPayload)),
+        ...(await resolveCollectionContext(projectId, eventPayload)),
+      }
+    : {};
+  // Тот же payload, но БЕЗ резолвленного товара и НЕ подмешанный в плоский
+  // namespace — доступен явно через {{ automation.* }}, см. ContextDocs.tsx.
+  const automationCtx = eventPayload || {};
+  // Название автоматизации (задаётся мерчантом, обязательно при создании) —
+  // приоритетнее названия шаблона в Журнале/Рассылках: один шаблон может
+  // переиспользоваться в нескольких сообщениях цепочки.
+  let title: string | null = automationName;
+  // Контакт в формате campaign_recipients.contact — пишем в лог, чтобы
+  // последующие проверки защиты от наложения видели эту отправку тоже.
+  let contactKey: string | null = channel === "push" ? recipient.subscriberId || null : null;
+  // Кампания на одного получателя (см. sendOneOff/insertCampaign ниже) —
+  // без неё клик-трекинг и атрибуция заказов (order_attributions матчит
+  // строго по campaign_id) для welcome-отправок физически невозможны.
+  let campaignId: string | null = null;
+
+  if (channel === "push" && recipient.subscriberId) {
+    const { data: sub } = await admin
+      .from("subscribers")
+      .select("id, endpoint, p256dh, auth, is_active, paused, attributes, timezone, platform")
+      .eq("id", recipient.subscriberId)
+      .maybeSingle();
+    // Фильтр по платформе (та же семантика, что у campaigns.platforms —
+    // пусто = без фильтра, все платформы): устройство не того типа просто
+    // пропускается, это не ошибка отправки.
+    const platformAllowed = !platforms?.length || (!!sub?.platform && platforms.includes(sub.platform));
+    if (sub?.is_active && !sub.paused && sub.endpoint && platformAllowed) {
+      if (sendWindow?.enabled) {
+        const tz = (sendWindow.useSubscriberTz && sub.timezone) || projectTimezone;
+        if (!isWithinSendWindow(sendWindow, tz, new Date())) {
+          const fireAt = nextWindowStart(sendWindow, tz, new Date());
+          await rescheduleWelcome(admin, projectId, automationId, recipient, channel, fireAt);
+          deferred = true;
+        }
+      }
+      if (!deferred && spacingMinutes) {
+        const lastSentAt = await findRecentSendAt(admin, projectId, channel, sub.id, spacingMinutes);
+        if (lastSentAt) {
+          const fireAt = new Date(new Date(lastSentAt).getTime() + spacingMinutes * 60_000);
+          await rescheduleWelcome(admin, projectId, automationId, recipient, channel, fireAt);
+          deferred = true;
+        }
+      }
+      if (!deferred) {
+        const tpl = await resolvePushTemplate(admin, projectId, templateId);
+        title = title || tpl.name || null;
+        if (tpl.title && tpl.body) {
+          // Персонализация: контекст шаблона (дефолты) < контакт (если
+          // устройство уже привязано к identity) < атрибуты САМОГО устройства
+          // (самые специфичные — переопределяют одноимённые поля контакта).
+          const { data: link } = await admin
+            .from("identity_devices")
+            .select("identity_id")
+            .eq("subscriber_id", sub.id)
+            .limit(1)
+            .maybeSingle();
+          let identityAttrs: Record<string, unknown> = {};
+          if (link?.identity_id) {
+            const { data: identity } = await admin
+              .from("identities")
+              .select("name, phone, email, tags, attributes")
+              .eq("id", link.identity_id)
+              .maybeSingle();
+            if (identity) {
+              identityAttrs = { name: identity.name, phone: identity.phone, email: identity.email, tags: identity.tags, ...((identity.attributes as object) || {}) };
+            }
+          }
+          const templateCtx = await expandRefs(projectId, tpl.context || {});
+          const attrs = { ...identityAttrs, ...eventContext, ...((sub as { attributes?: Record<string, unknown> }).attributes || {}), template: templateCtx, context: {}, automation: automationCtx };
+          const result = await sendOneOff(projectId, sub, tpl, attrs);
+          status = result.ok ? "sent" : "failed";
+          campaignId = result.campaignId;
+        }
+      }
+    }
+  } else if ((channel === "sms" || channel === "email") && recipient.identityId) {
+    const { data: identity } = await admin
+      .from("identities")
+      .select("id, name, phone, email, tags, attributes, sms_marketing_active_at, email_marketing_active_at, timezone")
+      .eq("id", recipient.identityId)
+      .maybeSingle();
+    const contact = channel === "sms" ? identity?.phone : identity?.email;
+    const stillActive = channel === "sms" ? !!identity?.sms_marketing_active_at : !!identity?.email_marketing_active_at;
+    if (contact && stillActive) {
+      contactKey = contact;
+      if (sendWindow?.enabled) {
+        const tz = (sendWindow.useSubscriberTz && identity?.timezone) || projectTimezone;
+        if (!isWithinSendWindow(sendWindow, tz, new Date())) {
+          const fireAt = nextWindowStart(sendWindow, tz, new Date());
+          await rescheduleWelcome(admin, projectId, automationId, recipient, channel, fireAt);
+          deferred = true;
+        }
+      }
+      if (!deferred && spacingMinutes) {
+        const lastSentAt = await findRecentSendAt(admin, projectId, channel, contact, spacingMinutes);
+        if (lastSentAt) {
+          const fireAt = new Date(new Date(lastSentAt).getTime() + spacingMinutes * 60_000);
+          await rescheduleWelcome(admin, projectId, automationId, recipient, channel, fireAt);
+          deferred = true;
+        }
+      }
+      if (!deferred) {
+        const tpl = await resolveChannelTemplate(admin, projectId, channel, templateId, {});
+        title = title || tpl.name || null;
+        // Email без {{ unsubscribe_url }} в шаблоне не отправляем — та же
+        // проверка, что и у обычных маркетинговых рассылок (createAndDispatchChannel).
+        const unsubscribeOk = channel !== "email" || hasUnsubscribeTag(tpl.html || "");
+        const provider = unsubscribeOk ? await resolveChannelProvider(admin, projectId, channel, providerHint, "marketing") : null;
+        const hasContent = (channel === "sms" && !!tpl.body?.trim()) || (channel === "email" && !!tpl.html);
+
+        if (hasContent) {
+          // Кампания на одного получателя — тот же приём, что и push (см.
+          // sendOneOff) и createAndDispatchChannel: без неё
+          // injectClickTracking/injectOpenPixel нечего помечать, а
+          // order_attributions нечего атрибуировать. Форма строки — та же,
+          // что у createAndDispatchChannel (html_body/subject/provider), не
+          // push-ориентированный insertCampaign.
+          const { data: campaign } = await admin
+            .from("campaigns")
+            .insert({
+              project_id: projectId,
+              channel,
+              title: title || tpl.name || "",
+              body: channel === "sms" ? tpl.body || "" : "",
+              subject: channel === "email" ? tpl.subject : null,
+              html_body: channel === "email" ? tpl.html : null,
+              provider,
+              segment_tags: [],
+              status: "sending",
+              type: "marketing",
+              initiator: "automation",
+            })
+            .select("id")
+            .single();
+          campaignId = campaign?.id || null;
+
+          if (!provider) {
+            if (campaignId) {
+              const error = !unsubscribeOk ? "unsubscribe link required" : "provider not configured";
+              await admin.from("campaigns").update({ status: "failed", error }).eq("id", campaignId);
+            }
+          } else {
+            const { data: secrets } = await admin
+              .from("project_secrets")
+              .select("bytehand_service_key, smsc_login, smsc_password, haskimail_server_token, haskimail_marketing_stream")
+              .eq("project_id", projectId)
+              .maybeSingle();
+            const { data: oidc } = await admin.from("oidc_clients").select("config").eq("project_id", projectId).maybeSingle();
+            if (secrets) {
+              const contactAttrs = { name: identity?.name, phone: identity?.phone, email: identity?.email, tags: identity?.tags, ...((identity?.attributes as object) || {}) };
+              const token = genRecipientToken();
+              const templateCtx = await expandRefs(projectId, tpl.context || {});
+              if (channel === "sms") {
+                const smsSender = (oidc?.config as { sms_sender?: string } | null)?.sms_sender || undefined;
+                const attrs = { ...contactAttrs, ...eventContext, template: templateCtx, context: {}, automation: automationCtx };
+                const rendered = applyTemplate(tpl.body!, attrs);
+                const text = campaignId ? await injectClickTrackingSms(rendered, campaignId, token) : rendered;
+                const result =
+                  provider === "smsc"
+                    ? await sendSmsSmsc(secrets.smsc_login!, secrets.smsc_password!, contact, text, smsSender)
+                    : await sendSms(secrets.bytehand_service_key!, contact, text, smsSender);
+                status = result.ok ? "sent" : "failed";
+              } else {
+                const emailFrom = (oidc?.config as { email_from?: string } | null)?.email_from || "";
+                const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
+                const attrs = { ...contactAttrs, ...eventContext, template: templateCtx, context: {}, automation: automationCtx, unsubscribe_url: unsubscribeUrl(appUrl, projectId, contact) };
+                const subject = applyTemplate(tpl.subject || "", attrs);
+                const renderedHtml = applyTemplate(tpl.html || "", attrs);
+                const html = campaignId ? injectOpenPixel(injectClickTracking(renderedHtml, campaignId, token), appUrl, campaignId, token) : renderedHtml;
+                const ok =
+                  provider === "smsc"
+                    ? (await sendEmailSmsc(secrets.smsc_login!, secrets.smsc_password!, contact, subject, html, emailFrom)).ok
+                    : await sendEmail(secrets.haskimail_server_token!, contact, { subject, html }, emailFrom || undefined, secrets.haskimail_marketing_stream!);
+                status = ok ? "sent" : "failed";
+              }
+              if (campaignId) {
+                await admin
+                  .from("campaigns")
+                  .update({
+                    status: "sent",
+                    sent_at: new Date().toISOString(),
+                    sent_count: 1,
+                    delivered_count: status === "sent" ? 1 : 0,
+                    failed_count: status === "sent" ? 0 : 1,
+                  })
+                  .eq("id", campaignId);
+                await logRecipients(admin, campaignId, projectId, channel, [{ contact, status: status === "sent" ? "delivered" : "failed", token }]);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  await admin
+    .from("automation_log")
+    .insert({
+      project_id: projectId,
+      source,
+      automation_id: automationId,
+      subscriber_id: recipient.subscriberId || null,
+      contact: contactKey,
+      campaign_id: campaignId,
+      title,
+      status,
+      recipients: status === "sent" ? 1 : 0,
+      channel,
+      // Резолвленный контекст (payload события + товар из фида на МОМЕНТ
+      // отправки) сохраняем в лог — фид обновляется/чистится, а история
+      // отправок должна остаться проверяемой: что реально подставилось в
+      // это конкретное сообщение, а не что сейчас лежит в кеше.
+      detail: { channel, ...(deferred ? { deferred: true } : {}), ...(Object.keys(eventContext).length ? { context: eventContext } : {}) },
+    })
+    .then(
+      () => {},
+      () => {}
+    );
+  return status;
 }
 
 // ---------------------------------------------------------------------
@@ -572,7 +1534,7 @@ type SmsEmailCampaignRow = {
   contacts?: string[] | null;
 };
 
-type ChannelContact = { value: string; attrs: Record<string, unknown> };
+type ChannelContact = { value: string; attrs: Record<string, unknown>; timezone?: string | null };
 
 // Прямые контакты (адресная отправка) и сегмент — если заданы оба, это
 // ПЕРЕСЕЧЕНИЕ (AND): уходит только тем из указанных контактов, кто ТАКЖЕ
@@ -597,6 +1559,7 @@ export async function resolveSmsEmailAudience(
 ): Promise<ChannelContact[]> {
   const hasContacts = !!opts.contacts?.length;
   const hasSegment = !!opts.segmentTags?.length;
+  let contacts: ChannelContact[];
 
   if (hasContacts && hasSegment) {
     // Пересечение — та же логика, что и у кнопки «Проверить»
@@ -606,42 +1569,56 @@ export async function resolveSmsEmailAudience(
       bypassConsent: opts.bypassConsent,
       segmentTags: opts.segmentTags!,
     });
-    return consented.map((value) => ({ value, attrs: {} }));
-  }
-
-  const byContact = new Map<string, ChannelContact>();
-
-  if (hasContacts) {
-    const consented = await filterConsentedContacts(projectId, field, opts.contacts!, { bypassConsent: opts.bypassConsent });
-    for (const value of consented) byContact.set(value, { value, attrs: {} });
-  } else if (hasSegment) {
-    // Теги теперь живут на identities — сегментная SMS/Email-рассылка больше
-    // не завязана на наличие активного push-устройства у контакта (это было
-    // побочным следствием старой модели, где теги хранились на subscribers).
-    const activeCol = field === "phone" ? "sms_marketing_active_at" : "email_marketing_active_at";
-    let q = admin.from("identities").select(`${field}, ${activeCol}`).eq("project_id", projectId).overlaps("tags", opts.segmentTags!);
-    if (!opts.bypassConsent) q = q.not(activeCol, "is", null);
-    const { data } = await q;
-    for (const row of data || []) {
-      const value = (row as Record<string, string>)[field];
-      if (value && !byContact.has(value)) byContact.set(value, { value, attrs: {} });
-    }
+    contacts = consented.map((value) => ({ value, attrs: {} }));
   } else {
-    // Ни контактов, ни сегмента — «пусто = всем», тот же принцип, что и у
-    // push (dispatchCampaign). Маркетинговая рассылка уходит всем известным
-    // проекту identity с согласием на канал (activeCol); транзакционная —
-    // всем известным контактам вообще, независимо от согласия (bypassConsent).
-    const activeCol = field === "phone" ? "sms_marketing_active_at" : "email_marketing_active_at";
-    let q = admin.from("identities").select(`${field}, ${activeCol}`).eq("project_id", projectId);
-    if (!opts.bypassConsent) q = q.not(activeCol, "is", null);
-    const { data } = await q;
-    for (const row of data || []) {
-      const value = (row as Record<string, string>)[field];
-      if (value) byContact.set(value, { value, attrs: {} });
+    const byContact = new Map<string, ChannelContact>();
+
+    if (hasContacts) {
+      const consented = await filterConsentedContacts(projectId, field, opts.contacts!, { bypassConsent: opts.bypassConsent });
+      for (const value of consented) byContact.set(value, { value, attrs: {} });
+    } else if (hasSegment) {
+      // Теги теперь живут на identities — сегментная SMS/Email-рассылка больше
+      // не завязана на наличие активного push-устройства у контакта (это было
+      // побочным следствием старой модели, где теги хранились на subscribers).
+      const activeCol = field === "phone" ? "sms_marketing_active_at" : "email_marketing_active_at";
+      let q = admin.from("identities").select(`${field}, ${activeCol}`).eq("project_id", projectId).overlaps("tags", opts.segmentTags!);
+      if (!opts.bypassConsent) q = q.not(activeCol, "is", null);
+      const { data } = await q;
+      for (const row of data || []) {
+        const value = (row as Record<string, string>)[field];
+        if (value && !byContact.has(value)) byContact.set(value, { value, attrs: {} });
+      }
+    } else {
+      // Ни контактов, ни сегмента — «пусто = всем», тот же принцип, что и у
+      // push (dispatchCampaign). Маркетинговая рассылка уходит всем известным
+      // проекту identity с согласием на канал (activeCol); транзакционная —
+      // всем известным контактам вообще, независимо от согласия (bypassConsent).
+      const activeCol = field === "phone" ? "sms_marketing_active_at" : "email_marketing_active_at";
+      let q = admin.from("identities").select(`${field}, ${activeCol}`).eq("project_id", projectId);
+      if (!opts.bypassConsent) q = q.not(activeCol, "is", null);
+      const { data } = await q;
+      for (const row of data || []) {
+        const value = (row as Record<string, string>)[field];
+        if (value) byContact.set(value, { value, attrs: {} });
+      }
     }
+    contacts = [...byContact.values()];
   }
 
-  return [...byContact.values()];
+  // Часовые пояса — отдельным запросом по уже резолвленным значениям (проще,
+  // чем дублировать select в каждой из веток выше) — нужны только для окна
+  // отправки «по часовому поясу подписчика» (см. enqueueWindowedCampaign).
+  if (contacts.length) {
+    const { data: tzRows } = await admin
+      .from("identities")
+      .select(`${field}, timezone`)
+      .eq("project_id", projectId)
+      .in(field, contacts.map((c) => c.value));
+    const tzMap = new Map((tzRows || []).map((r) => [(r as Record<string, string>)[field], (r as Record<string, string | null>).timezone]));
+    for (const c of contacts) c.timezone = tzMap.get(c.value) || null;
+  }
+
+  return contacts;
 }
 
 // Точное число получателей ДО отправки — для диалога подтверждения
@@ -670,42 +1647,36 @@ export async function countAudience(
   }
 
   if (!hasContacts && !hasSegment) {
-    let q = admin.from("subscribers").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("is_active", true);
+    let q = admin.from("subscribers").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("is_active", true).not("endpoint", "is", null);
     if (platforms.length) q = q.in("platform", platforms);
     const { count } = await q;
     return count || 0;
   }
+  // ids/segmentIds могут включать identity_devices, привязанные к устройству
+  // БЕЗ push (см. migration 0071) — поэтому для push-канала всегда
+  // довопрашиваем subscribers с фильтром по endpoint, не возвращаем длину
+  // списка id напрямую (иначе точный подсчёт получился бы завышенным).
   const ids = hasContacts ? await resolvePushContactIds(projectId, contacts, opts.bypassConsent) : [];
   if (hasContacts && hasSegment) {
     if (!ids.length) return 0;
     const segmentIds = await resolvePushSegmentIds(projectId, segmentTags);
     const intersected = ids.filter((id) => segmentIds.includes(id));
     if (!intersected.length) return 0;
-    if (!platforms.length) return intersected.length;
-    const { count } = await admin
-      .from("subscribers")
-      .select("id", { count: "exact", head: true })
-      .eq("project_id", projectId)
-      .eq("is_active", true)
-      .in("id", intersected)
-      .in("platform", platforms);
+    let q = admin.from("subscribers").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("is_active", true).not("endpoint", "is", null).in("id", intersected);
+    if (platforms.length) q = q.in("platform", platforms);
+    const { count } = await q;
     return count || 0;
   }
   if (hasContacts) {
-    if (!platforms.length) return ids.length;
     if (!ids.length) return 0;
-    const { count } = await admin
-      .from("subscribers")
-      .select("id", { count: "exact", head: true })
-      .eq("project_id", projectId)
-      .eq("is_active", true)
-      .in("id", ids)
-      .in("platform", platforms);
+    let q = admin.from("subscribers").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("is_active", true).not("endpoint", "is", null).in("id", ids);
+    if (platforms.length) q = q.in("platform", platforms);
+    const { count } = await q;
     return count || 0;
   }
   const segmentIds = await resolvePushSegmentIds(projectId, segmentTags);
   if (!segmentIds.length) return 0;
-  let q = admin.from("subscribers").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("is_active", true).in("id", segmentIds);
+  let q = admin.from("subscribers").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("is_active", true).not("endpoint", "is", null).in("id", segmentIds);
   if (platforms.length) q = q.in("platform", platforms);
   const { count } = await q;
   return count || 0;
@@ -779,12 +1750,13 @@ export async function dispatchSmsCampaign(campaign: SmsEmailCampaignRow, contact
   let delivered = 0;
   let failed = 0;
   const recipients: { contact: string; status: "delivered" | "failed"; token: string }[] = [];
+  const { template: templateCtx, context: sendCtx } = await resolveTemplateData(campaign.project_id, campaign.template_data);
   const CONCURRENCY = 10;
   for (let i = 0; i < audience.length; i += CONCURRENCY) {
     const chunk = audience.slice(i, i + CONCURRENCY);
     await Promise.all(
       chunk.map(async (c) => {
-        const attrs = { ...c.attrs, ...(campaign.template_data || {}) };
+        const attrs = { ...c.attrs, ...sendCtx, template: templateCtx, context: sendCtx, automation: {} };
         const token = genRecipientToken();
         const text = await injectClickTrackingSms(applyTemplate(campaign.body, attrs), campaign.id, token);
         const result =
@@ -840,14 +1812,15 @@ export async function dispatchEmailCampaign(campaign: SmsEmailCampaignRow, conta
   let delivered = 0;
   let failed = 0;
   const recipients: { contact: string; status: "delivered" | "failed"; token: string }[] = [];
+  const { template: templateCtx, context: sendCtx } = await resolveTemplateData(campaign.project_id, campaign.template_data);
   const CONCURRENCY = 10;
   for (let i = 0; i < audience.length; i += CONCURRENCY) {
     const chunk = audience.slice(i, i + CONCURRENCY);
     await Promise.all(
       chunk.map(async (c) => {
-        // unsubscribe_url — ПОСЛЕ template_data, чтобы разовые данные вызова
-        // не могли подменить ссылку отписки на чужую/поддельную.
-        const attrs = { ...c.attrs, ...(campaign.template_data || {}), unsubscribe_url: unsubscribeUrl(appUrl, campaign.project_id, c.value) };
+        // unsubscribe_url — ПОСЛЕ sendCtx, чтобы разовые данные вызова не
+        // могли подменить ссылку отписки на чужую/поддельную.
+        const attrs = { ...c.attrs, ...sendCtx, template: templateCtx, context: sendCtx, automation: {}, unsubscribe_url: unsubscribeUrl(appUrl, campaign.project_id, c.value) };
         const token = genRecipientToken();
         const subject = applyTemplate(subjectRaw, attrs);
         const html = injectOpenPixel(injectClickTracking(applyTemplate(htmlRaw, attrs), campaign.id, token), appUrl, campaign.id, token);
@@ -884,14 +1857,16 @@ export async function resolveChannelTemplate(
   channel: "sms" | "email",
   templateId: string | undefined,
   explicit: { subject?: string | null; html?: string | null; body?: string | null }
-): Promise<{ subject: string | null; html: string | null; body: string | null }> {
+): Promise<{ subject: string | null; html: string | null; body: string | null; name?: string; context?: Record<string, unknown> | null }> {
   let html = explicit.html || null;
   let subject = explicit.subject || null;
   let body = explicit.body || null;
+  let name: string | undefined;
+  let context: Record<string, unknown> | null | undefined;
   if (templateId) {
     const { data: tpl } = await admin
       .from("templates")
-      .select("subject, html, body")
+      .select("name, subject, html, body, context")
       .eq("id", templateId)
       .eq("project_id", projectId)
       .eq("channel", channel)
@@ -903,9 +1878,11 @@ export async function resolveChannelTemplate(
       } else {
         body = body || tpl.body;
       }
+      name = tpl.name;
+      context = tpl.context as Record<string, unknown> | null;
     }
   }
-  return { subject, html, body };
+  return { subject, html, body, name, context };
 }
 
 export async function createAndDispatchChannel(
@@ -923,6 +1900,8 @@ export async function createAndDispatchChannel(
     type?: "transactional" | "marketing";
     initiator?: "manual" | "api";
     internalTitle?: string;
+    sendWindow?: { enabled: boolean; days: number[] | null; timeFrom: string | null; timeTo: string | null; subscriberTz: boolean };
+    spacing?: { enabled: boolean; minutes: number | null };
   },
   contacts?: string[]
 ): Promise<DispatchResult> {
@@ -964,7 +1943,7 @@ export async function createAndDispatchChannel(
       body: smsBody || "",
       subject,
       html_body: html,
-      template_data: content.data || null,
+      template_data: mergeTemplateContext(resolved.context, content.data),
       template_id: content.templateId || null,
       provider,
       segment_tags: content.segmentTags || [],
@@ -973,10 +1952,36 @@ export async function createAndDispatchChannel(
       initiator: content.initiator || "api",
       internal_title: content.internalTitle || null,
       contacts: contacts || [],
+      send_window_enabled: content.sendWindow?.enabled || false,
+      send_days: content.sendWindow?.enabled && content.sendWindow.days?.length ? content.sendWindow.days : null,
+      send_time_from: content.sendWindow?.enabled ? content.sendWindow.timeFrom : null,
+      send_time_to: content.sendWindow?.enabled ? content.sendWindow.timeTo : null,
+      send_window_subscriber_tz: content.sendWindow?.subscriberTz || false,
+      spacing_enabled: content.spacing?.enabled || false,
+      spacing_minutes: content.spacing?.enabled ? content.spacing.minutes : null,
     })
     .select("id, project_id, title, body, subject, html_body, segment_tags, channel, provider, type, template_data, contacts")
     .single();
   if (error || !campaign) return { ok: false, delivered: 0, failed: 0, total: 0, error: "campaign create failed" };
+
+  if (content.sendWindow?.enabled || content.spacing?.enabled) {
+    const r = await enqueueWindowedCampaign(
+      {
+        ...campaign,
+        channel,
+        contacts,
+        send_window_enabled: content.sendWindow?.enabled,
+        send_days: content.sendWindow?.days,
+        send_time_from: content.sendWindow?.timeFrom,
+        send_time_to: content.sendWindow?.timeTo,
+        send_window_subscriber_tz: content.sendWindow?.subscriberTz,
+        spacing_enabled: content.spacing?.enabled,
+        spacing_minutes: content.spacing?.minutes,
+      },
+      undefined
+    );
+    return { ok: r.ok, delivered: 0, failed: 0, total: r.enqueued };
+  }
 
   return channel === "sms" ? dispatchSmsCampaign(campaign, contacts) : dispatchEmailCampaign(campaign, contacts);
 }
@@ -1006,7 +2011,7 @@ export async function sendTestMessage(
     subject?: string;
     html?: string;
     provider?: string | null;
-    data?: Record<string, unknown>;
+    data?: Record<string, unknown> | null;
   }
 ): Promise<{ ok: boolean; error?: string }> {
   const admin = createAdminClient();
@@ -1022,6 +2027,7 @@ export async function sendTestMessage(
       .eq("project_id", projectId)
       .in("id", subscriberIds)
       .eq("is_active", true)
+      .not("endpoint", "is", null)
       .limit(1)
       .maybeSingle();
     if (!sub) return { ok: false, error: "У этого контакта нет активной push-подписки" };
@@ -1032,10 +2038,10 @@ export async function sendTestMessage(
 
     // Прогоняем через тот же Liquid-рендер, что и реальная отправка (см.
     // dispatchCampaign) — иначе тестовое сообщение показало бы {{ }}/{% %}
-    // буквально, а не то, что реально уйдёт получателю. content.data — ручной
-    // JSON-контекст из формы рассылки, побеждает атрибуты подписчика при
-    // совпадении ключа (та же логика, что и у campaign.template_data).
-    const attrs = { ...((sub as { attributes?: Record<string, unknown> }).attributes || {}), ...(content.data || {}) };
+    // буквально, а не то, что реально уйдёт получателю. content.data — та же
+    // структура, что и campaign.template_data (см. splitTemplateData).
+    const { template: testTemplateCtx, context: testSendCtx } = await resolveTemplateData(projectId, content.data);
+    const attrs = { ...((sub as { attributes?: Record<string, unknown> }).attributes || {}), ...testSendCtx, template: testTemplateCtx, context: testSendCtx, automation: {} };
     try {
       await sendPush(
         { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
@@ -1075,7 +2081,8 @@ export async function sendTestMessage(
     const { data: oidc } = await admin.from("oidc_clients").select("config").eq("project_id", projectId).maybeSingle();
     const smsSender = (oidc?.config as { sms_sender?: string } | null)?.sms_sender || undefined;
 
-    const text = applyTemplate(content.text, content.data || {});
+    const { template: smsTemplateCtx, context: smsSendCtx } = await resolveTemplateData(projectId, content.data);
+    const text = applyTemplate(content.text, { ...smsSendCtx, template: smsTemplateCtx, context: smsSendCtx, automation: {} });
     const result =
       provider === "smsc"
         ? await sendSmsSmsc(secrets.smsc_login!, secrets.smsc_password!, phone, text, smsSender)
@@ -1099,7 +2106,8 @@ export async function sendTestMessage(
 
   const { data: oidc } = await admin.from("oidc_clients").select("config").eq("project_id", projectId).maybeSingle();
   const emailFrom = (oidc?.config as { email_from?: string } | null)?.email_from || "";
-  const testAttrs = { ...(content.data || {}), unsubscribe_url: unsubscribeUrl(process.env.NEXT_PUBLIC_APP_URL || "", projectId, email) };
+  const { template: emailTemplateCtx, context: emailSendCtx } = await resolveTemplateData(projectId, content.data);
+  const testAttrs = { ...emailSendCtx, template: emailTemplateCtx, context: emailSendCtx, automation: {}, unsubscribe_url: unsubscribeUrl(process.env.NEXT_PUBLIC_APP_URL || "", projectId, email) };
   const subject = applyTemplate(content.subject || content.title || "", testAttrs);
   const html = applyTemplate(content.html, testAttrs);
 
