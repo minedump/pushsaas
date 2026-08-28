@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { IconDeviceFloppy, IconTrash, IconRefresh } from "@tabler/icons-react";
+import { IconRefresh } from "@tabler/icons-react";
 import { createClient } from "@/lib/supabase/client";
-import { Button, Card, Input, Select, useDialogs } from "@/app/ui";
+import { Button, Card, Input, useDialogs } from "@/app/ui";
+import { friendlyError } from "@/lib/errors";
+import { CustomSelect } from "@/app/ui/CustomSelect";
 import { FeedStructureDocs } from "./FeedStructureDocs";
 
 // Часовые пояса РФ/СНГ — базовый список для проектов на русскоязычном рынке
@@ -30,6 +32,7 @@ const TIMEZONE_OPTIONS = [
 export default function ProjectSettings({
   projectId,
   initialName,
+  domain,
   initialYmCounterId,
   initialTimezone,
   initialFeedUrl,
@@ -39,6 +42,7 @@ export default function ProjectSettings({
 }: {
   projectId: string;
   initialName: string;
+  domain: string | null;
   initialYmCounterId: string | null;
   initialTimezone: string;
   initialFeedUrl: string | null;
@@ -55,12 +59,10 @@ export default function ProjectSettings({
   const [feedUrl, setFeedUrl] = useState(initialFeedUrl || "");
   const [feedBusy, setFeedBusy] = useState(false);
   const [busy, setBusy] = useState(false);
-  const feedDirty = feedUrl.trim() !== (initialFeedUrl || "");
-
-  const dirty = name.trim() !== initialName || ymCounterId.trim() !== (initialYmCounterId || "") || timezone !== initialTimezone;
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
+    if (busy) return;
     const cleanName = name.trim();
     if (!cleanName) return toast("Название не может быть пустым", "bad");
     setBusy(true);
@@ -69,21 +71,24 @@ export default function ProjectSettings({
       .update({ name: cleanName, ym_counter_id: ymCounterId.trim() || null, timezone })
       .eq("id", projectId);
     setBusy(false);
-    if (error) return toast(error.message, "bad");
+    if (error) return toast(friendlyError(error), "bad");
     toast("Сохранено", "good");
     router.refresh();
   }
 
   async function saveFeed() {
+    if (feedBusy) return;
     setFeedBusy(true);
     const { error } = await supabase.from("projects").update({ product_feed_url: feedUrl.trim() || null }).eq("id", projectId);
     setFeedBusy(false);
-    if (error) return toast(error.message, "bad");
+    if (error) return toast(friendlyError(error), "bad");
     toast("Сохранено", "good");
     router.refresh();
   }
 
   async function refreshFeed() {
+    if (feedBusy) return;
+    if (!initialFeedUrl) return toast("Сначала укажите и сохраните ссылку на фид", "bad");
     setFeedBusy(true);
     const res = await fetch(`/api/admin/projects/${projectId}/product-feed/refresh`, {
       method: "POST",
@@ -98,6 +103,8 @@ export default function ProjectSettings({
   }
 
   async function deleteFeed() {
+    if (feedBusy) return;
+    if (!initialFeedUrl) return toast("Фид ещё не подключен", "bad");
     const ok = await confirm({
       title: "Удалить товарный фид?",
       message: "Ссылка и весь кеш товаров будут удалены. Событийные рассылки, ссылающиеся на товары, потеряют доступ к их данным — уже отправленные рассылки сохранили нужный контекст в логе и не пострадают.",
@@ -120,6 +127,7 @@ export default function ProjectSettings({
   }
 
   async function remove() {
+    if (busy) return;
     const ok = await confirm({
       title: "Удалить проект?",
       message:
@@ -142,104 +150,103 @@ export default function ProjectSettings({
   }
 
   return (
-    <section className="mt-10">
-      <h2 className="text-lg font-semibold">Общие настройки</h2>
-      <Card className={`mt-3 ${busy ? "opacity-60" : ""}`}>
-        <form onSubmit={save} className="flex flex-col gap-3">
-          <div>
-            <label className="text-[13px] text-ink-muted block mb-1">Название</label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required />
-          </div>
-          <div>
-            <label className="text-[13px] text-ink-muted block mb-1">Номер счётчика Яндекс.Метрики</label>
-            <Input value={ymCounterId} onChange={(e) => setYmCounterId(e.target.value)} placeholder="Например, 12345678" />
-            <p className="text-[12px] text-ink-faint mt-1 mb-0">
-              Виджет будет передавать ClientID посетителя из Метрики вместе с push-подпиской — пригодится, чтобы
-              найти его сессию в самой Метрике. Требует, чтобы счётчик Метрики уже стоял на сайте.
-            </p>
-          </div>
-          <div>
-            <label className="text-[13px] text-ink-muted block mb-1">Часовой пояс проекта</label>
-            <Select value={timezone} onChange={(e) => setTimezone(e.target.value)} className="w-full">
-              {TIMEZONE_OPTIONS.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.label}
-                </option>
-              ))}
-            </Select>
-            <p className="text-[12px] text-ink-faint mt-1 mb-0">
-              Используется как база для окна отправки приветственных сообщений (раздел «Автоматизации»), когда оно
-              не привязано к часовому поясу самого подписчика.
-            </p>
-          </div>
-          <div>
-            <Button disabled={busy || !dirty}>
-              <IconDeviceFloppy size={16} stroke={1.8} />
-              Сохранить
-            </Button>
-          </div>
-        </form>
-      </Card>
+    <>
+      <section className="mt-10">
+        <h2 className="text-lg font-semibold mb-1">Общие настройки</h2>
+        <p className="text-[13px] text-ink-muted mt-0 mb-3">Название, аналитика и часовой пояс проекта.</p>
 
-      <Card className={`mt-3 ${feedBusy ? "opacity-60" : ""}`}>
-        <div className="text-[13.5px] font-semibold mb-1">Товарный фид</div>
-        <p className="text-[12.5px] text-ink-faint mt-0 mb-3">
-          Ссылка на YML-фид (Яндекс.Маркет — тот же формат, что штатный экспорт InSales). Загружается в кеш и
-          используется как источник названия/цены/картинки товара в событийных рассылках («Автоматизации» → «Событийные») —{" "}
-          <code className="font-mono text-[12px]">{"{{ product.name }}"}</code>, <code className="font-mono text-[12px]">{"{{ product.price }}"}</code>,
-          кастомные параметры фида — <code className="font-mono text-[12px]">{'{{ product.params["Цвет товара"] }}'}</code>. Товары с общим{" "}
-          <code className="font-mono text-[12px]">group_id</code> распознаются как варианты одной модели. Обновляется каждые 15 минут
-          автоматически, но полный пересчёт кеша пропускается, если дата фида не изменилась с прошлой проверки.
+        <Card className={busy ? "opacity-60" : ""}>
+          <div className="text-[13.5px] font-semibold mb-3">Данные проекта</div>
+          <form onSubmit={save} className="flex flex-col gap-3">
+            <div>
+              <label htmlFor="proj-name" className="text-[13px] text-ink-muted block mb-1">
+                Название
+              </label>
+              <Input id="proj-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required />
+            </div>
+            <div>
+              <label htmlFor="proj-domain" className="text-[13px] text-ink-muted block mb-1">
+                Домен сайта
+              </label>
+              <Input id="proj-domain" value={domain || "не задан"} disabled />
+            </div>
+            <div>
+              <label htmlFor="proj-ym-counter" className="text-[13px] text-ink-muted block mb-1">
+                Номер счётчика Яндекс.Метрики
+              </label>
+              <Input
+                id="proj-ym-counter"
+                value={ymCounterId}
+                onChange={(e) => setYmCounterId(e.target.value)}
+                placeholder="Например, 12345678"
+              />
+            </div>
+            <div>
+              <div className="text-[13px] text-ink-muted mb-1">Часовой пояс проекта</div>
+              <CustomSelect
+                value={timezone}
+                onChange={setTimezone}
+                options={TIMEZONE_OPTIONS.map((o) => ({ value: o.id, label: o.label }))}
+                ariaLabel="Часовой пояс проекта"
+                className="w-full"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <Button>Сохранить</Button>
+              <Button variant="danger" type="button" onClick={remove}>
+                Удалить проект
+              </Button>
+            </div>
+          </form>
+        </Card>
+      </section>
+
+      <section className="mt-10">
+        <h2 className="text-lg font-semibold mb-1">Товарный фид</h2>
+        <p className="text-[13px] text-ink-muted mt-0 mb-3">
+          Подключите товарный фид, чтобы подставлять название, цену и картинку товара прямо в текст рассылок.
         </p>
-        <FeedStructureDocs />
-        <div className="h-3" />
-        <div className="flex gap-2 items-start flex-wrap">
+
+        <Card className={feedBusy ? "opacity-60" : ""}>
+          <div className="text-[13.5px] font-semibold mb-3">Ссылка на фид</div>
+          <label htmlFor="feed-url" className="text-[13px] text-ink-muted block mb-1">
+            URL фида
+          </label>
           <Input
+            id="feed-url"
             value={feedUrl}
             onChange={(e) => setFeedUrl(e.target.value)}
             placeholder="https://ваш-сайт/exports/yandex-market.yml"
-            className="flex-1 min-w-[260px]"
+            className="w-full"
           />
-          <Button type="button" variant="secondary" disabled={feedBusy || !feedDirty} onClick={saveFeed}>
-            <IconDeviceFloppy size={16} stroke={1.8} />
-            Сохранить
-          </Button>
-          <Button type="button" variant="secondary" disabled={feedBusy || !initialFeedUrl} onClick={refreshFeed}>
-            <IconRefresh size={16} stroke={1.8} />
-            Обновить сейчас
-          </Button>
-          <Button type="button" variant="danger" disabled={feedBusy || !initialFeedUrl} onClick={deleteFeed}>
-            <IconTrash size={16} stroke={1.8} />
-            Удалить фид
-          </Button>
-        </div>
-        {initialFeedUrl && (
-          <p className="text-[12px] text-ink-faint mt-2 mb-0">
-            {feedError ? (
-              <span className="text-bad">Ошибка: {feedError}</span>
-            ) : feedUpdatedAt ? (
-              `Товаров в кеше: ${feedItemCount} · обновлено ${new Date(feedUpdatedAt).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}`
-            ) : (
-              "Ещё не обновлялся — нажмите «Обновить сейчас»."
-            )}
-          </p>
-        )}
-      </Card>
-
-      <Card className="mt-3 border-bad">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <div className="text-[13.5px] font-semibold">Удалить проект</div>
-            <div className="text-[12.5px] text-ink-faint">
-              Подписчики, кампании, статистика и настройки входа будут удалены безвозвратно.
-            </div>
+          <div className="h-3" />
+          <FeedStructureDocs />
+          <div className="h-3" />
+          <div className="flex gap-2 flex-wrap">
+            <Button type="button" onClick={saveFeed}>
+              Сохранить
+            </Button>
+            <Button type="button" variant="secondary" onClick={refreshFeed}>
+              <IconRefresh size={16} stroke={1.8} />
+              Обновить
+            </Button>
+            <Button type="button" variant="danger" onClick={deleteFeed}>
+              Удалить
+            </Button>
           </div>
-          <Button variant="danger" disabled={busy} onClick={remove} type="button">
-            <IconTrash size={16} stroke={1.8} />
-            Удалить
-          </Button>
-        </div>
-      </Card>
-    </section>
+          {initialFeedUrl && (
+            <p className="text-[12px] text-ink-faint mt-2 mb-0">
+              {feedError ? (
+                <span className="text-bad">Ошибка: {feedError}</span>
+              ) : feedUpdatedAt ? (
+                `Товаров в кеше: ${feedItemCount} · обновлено ${new Date(feedUpdatedAt).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}`
+              ) : (
+                "Ещё не обновлялся — нажмите «Обновить»."
+              )}
+            </p>
+          )}
+        </Card>
+      </section>
+    </>
   );
 }

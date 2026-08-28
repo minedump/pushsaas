@@ -12,6 +12,7 @@ export async function POST(req: Request) {
     channels,
     channelOrder,
     providers,
+    otpTemplates,
     hideNativeLoginButton,
     authButtonText,
     authButtonIcon,
@@ -107,6 +108,16 @@ export async function POST(req: Request) {
   }
   if (providers && typeof providers === "object") {
     config.providers = nextProviders;
+  }
+  // Шаблон кода входа на push/sms/email (см. lib/otp/index.ts loadOtpTemplate)
+  // — telegram сюда не входит (Gateway API не несёт произвольный контент).
+  // Пустая строка/null = сброс на встроенный текст по умолчанию.
+  if (otpTemplates && typeof otpTemplates === "object") {
+    const next: Record<string, string | null> = { ...(config.otp_templates || {}) };
+    for (const ch of ["push", "sms", "email"] as const) {
+      if (ch in otpTemplates) next[ch] = otpTemplates[ch] || null;
+    }
+    config.otp_templates = next;
   }
 
   // Вход нельзя включить без хотя бы одного реально работающего канала с

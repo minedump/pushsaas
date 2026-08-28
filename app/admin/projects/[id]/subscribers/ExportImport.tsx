@@ -3,7 +3,8 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconDownload, IconUpload } from "@tabler/icons-react";
-import { Button, Label, Modal, Select, useDialogs } from "@/app/ui";
+import { Button, Label, Modal, useDialogs } from "@/app/ui";
+import { CustomSelect } from "@/app/ui/CustomSelect";
 
 // Minimal CSV parser: handles quoted fields with commas/semicolons/newlines/escaped quotes.
 function parseCsv(rawText: string): { headers: string[]; rows: Record<string, string>[] } {
@@ -125,22 +126,21 @@ export default function ExportImport({ projectId }: { projectId: string }) {
           <div className="flex gap-3 mt-3">
             <div className="flex-1">
               <Label>Столбец-ключ в файле</Label>
-              <Select value={keyColumn} onChange={(e) => setKeyColumn(e.target.value)} className="w-full">
-                {headers.map((h) => (
-                  <option key={h} value={h}>
-                    {h}
-                  </option>
-                ))}
-              </Select>
+              <CustomSelect value={keyColumn} onChange={setKeyColumn} options={headers.map((h) => ({ value: h, label: h }))} className="w-full" />
             </div>
 
             <div className="flex-1">
               <Label>Сопоставлять с</Label>
-              <Select value={matchAgainst} onChange={(e) => setMatchAgainst(e.target.value as typeof matchAgainst)} className="w-full">
-                <option value="phone">Телефон подписчика</option>
-                <option value="email">Email подписчика</option>
-                <option value="insales_client_id">Внешний ID</option>
-              </Select>
+              <CustomSelect
+                value={matchAgainst}
+                onChange={(v) => setMatchAgainst(v as typeof matchAgainst)}
+                options={[
+                  { value: "phone", label: "Телефон подписчика" },
+                  { value: "email", label: "Email подписчика" },
+                  { value: "insales_client_id", label: "Внешний ID" },
+                ]}
+                className="w-full"
+              />
             </div>
           </div>
 

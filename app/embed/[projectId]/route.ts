@@ -1,15 +1,18 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { resolveButtonConfig, resolvePromptConfig, type ButtonConfig, type PromptConfig } from "@/lib/widget-config";
+import { buttonBlock, promptBlock } from "@/lib/widget-scripts";
 
 // Serves the per-project subscribe widget as JavaScript.
-// The client embeds:  <script src="https://APP/embed/PROJECT_ID.js" async></script>
+// The client embeds ONE script tag:  <script src="https://APP/embed/PROJECT_ID.js" async></script>
 // The public VAPID key is baked in; nothing secret is exposed.
 //
-// This is the CORE script — window.sendera.{subscribe,identify,event,
-// isSubscribed,isAuthenticated} plus automatic, non-optional plumbing
-// (отскок привязки устройства, атрибуция кликов). The floating subscribe
-// BUTTON, the slide-in PROMPT, and the native-login-button visibility
-// control are separate, optional scripts — see /embed/[projectId]/widgets.js
-// and /embed/[projectId]/auth-button.js.
+// window.sendera.{subscribe,identify,event,isSubscribed,isAuthenticated}
+// plus automatic, non-optional plumbing (отскок привязки устройства,
+// атрибуция кликов) — and the floating subscribe BUTTON + slide-in PROMPT
+// (см. lib/widget-scripts.ts), которые сервер добавляет к этому же ответу,
+// только если включены в «Виджеты» (иначе ни байта их кода в выдаче).
+// The native-login-button visibility control remains a separate, optional
+// script — see /embed/[projectId]/auth-button.js.
 export async function GET(_req: Request, ctx: { params: Promise<{ projectId: string }> }) {
   const { projectId: raw } = await ctx.params;
   const projectId = raw.replace(/\.js$/, "");
@@ -19,7 +22,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ projectId: str
   // сайтам вне зависимости от того, накатана ли миграция 0009 с атрибуцией.
   const { data: project } = await admin
     .from("projects")
-    .select("id, vapid_public_key")
+    .select("id, vapid_public_key, is_active")
     .eq("id", projectId)
     .maybeSingle();
 
@@ -53,7 +56,15 @@ export async function GET(_req: Request, ctx: { params: Promise<{ projectId: str
   const { data: ymRow, error: ymErr } = await admin.from("projects").select("ym_counter_id").eq("id", projectId).maybeSingle();
   if (!ymErr && ymRow?.ym_counter_id) ymCounterId = ymRow.ym_counter_id;
 
-  const js = widget(project.id, project.vapid_public_key, api, attribution, ymCounterId);
+  // best-effort: настройки кнопки/плашки подписки (см. «Виджеты») — тем же
+  // паттерном, что атрибуция/Метрика выше. Резолверы сами подставляют
+  // дефолты на кривые/отсутствующие данные.
+  const { data: widgetRow, error: widgetErr } = await admin.from("projects").select("widget_config").eq("id", projectId).maybeSingle();
+  const widgetConfig = (!widgetErr && (widgetRow?.widget_config as { button?: unknown; prompt?: unknown } | null)) || {};
+  const button = resolveButtonConfig(widgetConfig.button);
+  const prompt = resolvePromptConfig(widgetConfig.prompt);
+
+  const js = widget(project.id, project.vapid_public_key, api, attribution, ymCounterId, button, prompt, project.is_active !== false);
   return new Response(js, {
     headers: {
       "Content-Type": "application/javascript; charset=utf-8",
@@ -67,13 +78,21 @@ function widget(
   publicKey: string,
   api: string,
   attribution: { cookieName: string; windowDays: number } | null,
-  ymCounterId: string | null
+  ymCounterId: string | null,
+  button: ButtonConfig,
+  prompt: PromptConfig,
+  isActive: boolean
 ) {
   return `(function(){
   var PROJECT_ID = ${JSON.stringify(projectId)};
   var PUBLIC_KEY = ${JSON.stringify(publicKey)};
   var API = ${JSON.stringify(api)};
   var YM_COUNTER_ID = ${JSON.stringify(ymCounterId)};
+  // Заблокированный проект (не оплачен/превышен лимит подписчиков, см.
+  // «Биллинг») — точка входа виджета не должна работать так же, как и
+  // точка отправки: sendera.subscribe() отказывает молча, кнопка/плашка
+  // подписки вообще не добавляются в разметку (см. конец файла).
+  var BLOCKED = ${isActive ? "false" : "true"};
 
   // ClientID Яндекс.Метрики этого посетителя — читаем через официальный
   // ym(counterId,'getClientID',cb), а не куку _ym_uid напрямую: та не
@@ -123,6 +142,7 @@ function widget(
   // устройство. Ничего не знает о кнопке/разметке — визуальный отклик после
   // подписки (если он нужен) обязанность вызывающего кода, см. widgets.js.
   async function subscribe(){
+    if(BLOCKED){ console.error("[sendera] проект заблокирован (биллинг) — подписка недоступна"); return; }
     if(!supported()){ alert("Ваш браузер не поддерживает push. На iPhone: добавьте сайт на экран «Домой» и откройте оттуда."); return; }
     var reg = await navigator.serviceWorker.register("/service-worker.js");
     await navigator.serviceWorker.ready;
@@ -205,6 +225,7 @@ function widget(
   function ensureDeviceToken(){
     var dt = deviceToken();
     if(dt) return Promise.resolve(dt);
+    if(BLOCKED) return Promise.resolve(null);
     if(deviceTokenPromise) return deviceTokenPromise;
     var timezone = null;
     try { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch(e){}
@@ -222,9 +243,17 @@ function widget(
   // Текущая push-подписка ЭТОГО браузера, если она есть и браузер вообще
   // поддерживает push API — иначе null (никогда не бросает).
   function currentPushSub(){
-    if(!supported()) return Promise.resolve(null);
-    return navigator.serviceWorker.ready
-      .then(function(r){ return r.pushManager.getSubscription(); })
+    // getRegistration(), не .ready — та зависает НАВСЕГДА (никогда не
+    // резолвится и не реджектится), если сервис-воркер на этом источнике
+    // ни разу не регистрировался (subscribe() ещё не вызывали) — а именно
+    // так выглядит любое устройство, ещё не подписавшееся на push. .ready
+    // ждёт, пока КАКОЙ-ТО воркер станет активным, а не проверяет текущее
+    // состояние — из-за этого track()/event() молча не отправлялись вообще
+    // ни для одного анонимного (без push) устройства. getRegistration, как
+    // и в isSubscribed() ниже, резолвится сразу — undefined, если регистрации нет.
+    if(!supported() || !navigator.serviceWorker.getRegistration) return Promise.resolve(null);
+    return navigator.serviceWorker.getRegistration("/service-worker.js")
+      .then(function(reg){ return reg ? reg.pushManager.getSubscription() : null; })
       .catch(function(){ return null; });
   }
 
@@ -236,8 +265,16 @@ function widget(
     if(!name) return;
     function sendWith(body){
       var json = JSON.stringify(body);
-      try { navigator.sendBeacon(API + "/api/public/event", new Blob([json], { type: "application/json" })); }
-      catch(e){ fetch(API + "/api/public/event", { method:"POST", headers:{"Content-Type":"application/json"}, body: json, keepalive: true }); }
+      var url = API + "/api/public/event";
+      // fetch+keepalive — основной способ: sendBeacon с JSON-телом кросс-доменно
+      // не долетает (отдаёт true, но запрос не уходит) в некоторых окружениях,
+      // хотя переживает уход со страницы так же надёжно, как sendBeacon.
+      try {
+        fetch(url, { method:"POST", headers:{"Content-Type":"application/json"}, body: json, keepalive: true })
+          .catch(function(){ try { navigator.sendBeacon(url, new Blob([json], { type: "application/json" })); } catch(e){} });
+      } catch(e){
+        try { navigator.sendBeacon(url, new Blob([json], { type: "application/json" })); } catch(e2){}
+      }
     }
     currentPushSub().then(function(sub){
       if(sub){ sendWith({ projectId: PROJECT_ID, endpoint: sub.endpoint, name: name, payload: payload || {} }); return; }
@@ -310,7 +347,9 @@ function widget(
     subscribe: subscribe, event: track, identify: identify,
     isSubscribed: isSubscribed, isAuthenticated: isAuthenticated
   };
-})();`;
+})();
+${isActive && button.enabled ? buttonBlock(projectId, button) : ""}
+${isActive && prompt.enabled ? promptBlock(projectId, prompt) : ""}`;
 }
 
 function attributionSnippet(cfg: { cookieName: string; windowDays: number } | null) {

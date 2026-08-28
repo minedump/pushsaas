@@ -3,14 +3,13 @@ import { assertProjectAccess } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendTestMessage, resolvePushTemplate, resolveChannelTemplate, mergeTemplateContext } from "@/lib/sender";
 import { withShortenedLinks } from "@/lib/linkPreview";
-import { resolveProductsByRule, type ProductsRule } from "@/lib/productFeed";
 
 // Тестовая отправка одному контакту из формы создания/редактирования
 // рассылки — не создаёт кампанию и не расходует аудиторию, только проверяет,
 // как выглядит контент. См. sendTestMessage в lib/sender.ts.
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const { projectId, channel, contact, title, message, url, icon, image, badge, actions, text, subject, html, templateId, provider, data: dataInput, productsRule } = body as {
+  const { projectId, channel, contact, title, message, url, icon, image, badge, actions, text, subject, html, templateId, provider, data } = body as {
     projectId?: string;
     channel?: "push" | "sms" | "email";
     contact?: string;
@@ -27,7 +26,6 @@ export async function POST(req: Request) {
     templateId?: string;
     provider?: string;
     data?: Record<string, unknown>;
-    productsRule?: ProductsRule;
   };
 
   if (!projectId || !channel || !contact?.trim()) {
@@ -38,12 +36,6 @@ export async function POST(req: Request) {
   if (!access.ok) return NextResponse.json({ error: "Нет доступа" }, { status: access.status });
 
   const admin = createAdminClient();
-
-  let data = dataInput;
-  if (productsRule) {
-    const products = await resolveProductsByRule(projectId, productsRule);
-    if (products.length) data = { ...(data || {}), products, product: products[0] };
-  }
 
   if (channel === "push") {
     let pushTitle = title?.trim() || "";

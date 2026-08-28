@@ -12,8 +12,6 @@ import { PlatformFilter, PLATFORM_VALUES } from "../../PlatformFilter";
 import { SendWindowFields, SEND_WINDOW_DEFAULTS, sendWindowError, type SendWindowState } from "../../SendWindowFields";
 import { ContextField } from "../../ContextField";
 import { ContextDocs } from "../../templates/ContextDocs";
-import { ProductPicker } from "../../ProductPicker";
-import type { ProductsRule } from "@/lib/productFeed";
 import { smsSegments } from "@/lib/smsSegments";
 import { withShortenedLinks } from "@/lib/linkPreview";
 import { hasUnsubscribeTag } from "@/lib/unsubscribeTag";
@@ -44,7 +42,6 @@ export default function NewCampaignForm({
   initialChannel,
   initialTemplateId,
   projectTimezone,
-  hasFeed,
 }: {
   projectId: string;
   providerOptions: { sms: ComboOption[]; email: ComboOption[] };
@@ -53,7 +50,6 @@ export default function NewCampaignForm({
   initialChannel?: Channel;
   initialTemplateId?: string;
   projectTimezone: string;
-  hasFeed: boolean;
 }) {
   const { toast, confirm, prompt } = useDialogs();
   const router = useRouter();
@@ -88,7 +84,6 @@ export default function NewCampaignForm({
   const [internalTitle, setInternalTitle] = useState("");
   const [contextEnabled, setContextEnabled] = useState(false);
   const [contextJson, setContextJson] = useState("");
-  const [productsRule, setProductsRule] = useState<ProductsRule | null>(null);
   const [segment, setSegment] = useState<string[]>([]);
   // Предвыбраны все платформы — явно видно, куда уйдёт рассылка; снятие
   // галочки сужает аудиторию. Все 3 выбраны эквивалентно отсутствию фильтра
@@ -103,10 +98,9 @@ export default function NewCampaignForm({
   const [testBusy, setTestBusy] = useState(false);
   const [checkBusy, setCheckBusy] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   // Ручной JSON-контекст — доступен в шаблоне через Liquid ({{ ключ }},
-  // фильтры, {% if %}/{% for %}) точно так же, как templateData у /api/v1/send.
+  // фильтры, {% if %}/{% for %}) точно так же, как templateData у /api/v1/campaigns.
   // Невалидный JSON не роняет форму молча — считается ошибкой и блокирует
   // отправку/сохранение, чтобы не улетело с буквальными {{ }} в тексте.
   let contextData: Record<string, unknown> | undefined;
@@ -192,7 +186,6 @@ export default function NewCampaignForm({
       emails: emails.length ? emails : undefined,
       type: transactional ? "transactional" : "marketing",
       data: contextData,
-      productsRule: productsRule || undefined,
       scheduledAt: schedule && scheduleDate && scheduleTime ? new Date(`${scheduleDate}T${scheduleTime}`).toISOString() : null,
       sendWindowEnabled: sendWindow.sendWindowEnabled,
       sendDays: sendWindow.sendDays,
@@ -229,7 +222,7 @@ export default function NewCampaignForm({
   // создавала пустых записей, которые потом нельзя пересохранить при
   // редактировании (там та же проверка блокирует и обычное сохранение).
   function validate(): string | null {
-    if (!internalTitle.trim()) return "Укажите внутреннее название";
+    if (!internalTitle.trim()) return "Укажите название";
     if (contextError) return contextError;
     if (channel === "push" && platforms.length === 0) return "Выберите хотя бы одну платформу";
     if (sendWindowError(sendWindow)) return sendWindowError(sendWindow);
@@ -241,16 +234,17 @@ export default function NewCampaignForm({
     if (channel === "push" && withShortenedLinks(message).length > 200) return "Текст длиннее 200 символов";
     if (channel === "sms" && !smsText.trim()) return "Заполните текст SMS";
     if (channel === "email" && !html.trim()) return "Выберите шаблон или заполните HTML";
-    if (channel === "email" && !transactional && !hasUnsubscribeTag(html)) return "Добавьте {{ unsubscribe_url }} в письмо — обязательно для маркетинговой рассылки";
+    if (channel === "email" && !transactional && !hasUnsubscribeTag(html))
+      return 'Добавьте ссылку вида <a href="{{ unsubscribe_url }}">Отписаться</a> — обязательно для маркетинговой рассылки';
     return null;
   }
 
   async function send(e: React.FormEvent | null, forceNow = false) {
     e?.preventDefault();
     const err = validate();
-    if (err) return setError(err);
+    if (err) return toast(err, "bad");
     const willSchedule = schedule && !forceNow;
-    if (willSchedule && (!scheduleDate || !scheduleTime)) return setError("Укажите дату и время отправки");
+    if (willSchedule && (!scheduleDate || !scheduleTime)) return toast("Укажите дату и время отправки", "bad");
 
     const { body, contactList } = buildBody();
     if (forceNow) body.scheduledAt = null;
@@ -278,7 +272,6 @@ export default function NewCampaignForm({
     if (!ok) return;
 
     setBusy(true);
-    setError(null);
 
     const res = await fetch("/api/admin/campaigns/send", {
       method: "POST",
@@ -288,7 +281,7 @@ export default function NewCampaignForm({
     const json = await res.json();
     setBusy(false);
     if (!res.ok) {
-      setError(json.error || "Ошибка отправки");
+      toast(json.error || "Ошибка отправки", "bad");
       return;
     }
     if (json.scheduled) {
@@ -302,9 +295,8 @@ export default function NewCampaignForm({
 
   async function saveDraft() {
     const err = validate();
-    if (err) return setError(err);
+    if (err) return toast(err, "bad");
     setBusy(true);
-    setError(null);
     const { body } = buildBody();
     body.draft = true;
 
@@ -316,7 +308,7 @@ export default function NewCampaignForm({
     const json = await res.json();
     setBusy(false);
     if (!res.ok) {
-      setError(json.error || "Ошибка сохранения черновика");
+      toast(json.error || "Ошибка сохранения черновика", "bad");
       return;
     }
     toast("Черновик сохранён", "good");
@@ -382,7 +374,7 @@ export default function NewCampaignForm({
     if (!testContact?.trim()) return;
 
     setTestBusy(true);
-    const body: Record<string, unknown> = { projectId, channel, contact: testContact.trim(), data: contextData, productsRule: productsRule || undefined };
+    const body: Record<string, unknown> = { projectId, channel, contact: testContact.trim(), data: contextData };
     if (channel === "push") {
       body.title = title;
       body.message = message;
@@ -424,8 +416,10 @@ export default function NewCampaignForm({
       <div className="mt-4">
         <form onSubmit={(e) => send(e, true)} className="flex flex-col gap-3">
           <div>
-            <Label>Внутреннее название</Label>
-            <Input value={internalTitle} onChange={(e) => setInternalTitle(e.target.value)} placeholder="Для себя — получателям не видно" required />
+            <Label>
+              Название <span className="text-bad">*</span>
+            </Label>
+            <Input value={internalTitle} onChange={(e) => setInternalTitle(e.target.value)} placeholder="Не показывается получателю" required />
           </div>
 
           <div className="flex items-end gap-4">
@@ -574,13 +568,6 @@ export default function NewCampaignForm({
                       HTML письма <span className="text-bad">*</span>
                     </Label>
                     <Textarea value={html} onChange={(e) => setHtml(e.target.value)} required rows={10} className="font-mono text-xs" placeholder="<p>Привет!</p>" />
-                    {!transactional && (
-                      <p className={`text-[11px] text-right mt-1 mb-0 ${hasUnsubscribeTag(html) ? "text-ink-faint" : "text-bad"}`}>
-                        {hasUnsubscribeTag(html) ? "Ссылка отписки найдена" : "Добавьте ссылку вида "}
-                        {!hasUnsubscribeTag(html) && <code>{'<a href="{{ unsubscribe_url }}">Отписаться</a>'}</code>}
-                        {!hasUnsubscribeTag(html) && " — обязательно для маркетинговой рассылки"}
-                      </p>
-                    )}
                   </div>
                 </>
               )}
@@ -588,26 +575,9 @@ export default function NewCampaignForm({
           )}
 
           <div>
-            <Toggle checked={schedule} onChange={setSchedule} label="Запланировать на потом" />
-            {schedule && (
-              <div className="flex gap-2 mt-2.5">
-                <Input type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} required />
-                <Input type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} required />
-              </div>
-            )}
-            {schedule && contacts.trim() && (
-              <p className="text-[12px] text-ink-faint mt-1 mb-0">
-                Контакты резолвятся заново в момент отправки — актуальные на тот момент устройства/согласие, а не на момент планирования.
-              </p>
-            )}
-          </div>
-
-          <div>
             <Label>Сегмент по тегам</Label>
             <SegmentTagsInput value={segment} onChange={setSegment} options={segmentOptions} />
           </div>
-
-          <ProductPicker projectId={projectId} hasFeed={hasFeed} value={productsRule} onChange={setProductsRule} />
 
           {channel === "push" && (
             <div>
@@ -633,9 +603,22 @@ export default function NewCampaignForm({
             </div>
           </div>
 
-          <SendWindowFields value={sendWindow} onChange={setSendWindow} projectTimezone={projectTimezone} />
+          <div>
+            <Toggle checked={schedule} onChange={setSchedule} label="Запланировать на потом" />
+            {schedule && (
+              <div className="flex gap-2 mt-2.5">
+                <Input type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} required />
+                <Input type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} required />
+              </div>
+            )}
+            {schedule && contacts.trim() && (
+              <p className="text-[12px] text-ink-faint mt-1 mb-0">
+                Контакты резолвятся заново в момент отправки — актуальные на тот момент устройства/согласие, а не на момент планирования.
+              </p>
+            )}
+          </div>
 
-          {error && <p className="text-bad text-[13px] mt-0 mb-0">{error}</p>}
+          <SendWindowFields value={sendWindow} onChange={setSendWindow} projectTimezone={projectTimezone} />
 
           <div className="flex flex-wrap gap-2">
             <Button disabled={busy || (channel === "sms" && providerOptions.sms.length === 0) || (channel === "email" && providerOptions.email.length === 0)}>
@@ -663,7 +646,9 @@ export default function NewCampaignForm({
         </form>
       </div>
 
-      {previewOpen && <MessagePreviewModal label="Превью" content={previewContent} sampleData={contextData} onClose={() => setPreviewOpen(false)} />}
+      {previewOpen && (
+        <MessagePreviewModal label="Превью" content={previewContent} sampleData={contextData} projectId={projectId} onClose={() => setPreviewOpen(false)} />
+      )}
     </main>
   );
 }

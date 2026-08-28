@@ -22,6 +22,7 @@ type CustomAutomation = {
   send_time_from: string | null;
   send_time_to: string | null;
   send_window_subscriber_tz: boolean | null;
+  is_transactional: boolean | null;
 };
 
 // Личная (одному контакту) отправка триггерной автоматизации — через ту же
@@ -36,7 +37,8 @@ async function sendViaTemplate(
   projectId: string,
   automation: CustomAutomation,
   identityId: string,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
+  extraLogDetail: Record<string, unknown> = {}
 ): Promise<"sent" | "failed" | "skipped"> {
   let channel = automation.channel;
   let templateId = automation.template_id;
@@ -78,7 +80,9 @@ async function sendViaTemplate(
     project?.timezone || "Europe/Moscow",
     "webhook",
     payload,
-    automation.platforms
+    automation.platforms,
+    automation.is_transactional ? "transactional" : "marketing",
+    extraLogDetail
   );
 }
 
@@ -98,19 +102,36 @@ async function sendBroadcast(
   if (!automation.channel || !automation.template_id) {
     return { ok: false, total: 0, delivered: 0, failed: 0, error: "broadcast requires a fixed channel + template" };
   }
+  const msgType = automation.is_transactional ? "transactional" : "marketing";
+  // Окно отправки/защита от наложения — те же поля, что настраивает форма
+  // триггерной автоматизации (см. AutomationsManager.tsx), и что уже
+  // применяется для одиночного получателя/каскада через sendWelcomeNow
+  // (см. sendViaTemplate выше) — сегментный broadcast их раньше молча терял.
+  const sendWindow = automation.send_window_enabled
+    ? {
+        enabled: true,
+        days: automation.send_days,
+        timeFrom: automation.send_time_from,
+        timeTo: automation.send_time_to,
+        subscriberTz: !!automation.send_window_subscriber_tz,
+      }
+    : undefined;
+  const spacing = automation.spacing_enabled ? { enabled: true, minutes: automation.spacing_minutes } : undefined;
   if (automation.channel === "push") {
     return createAndDispatch(projectId, {
       templateId: automation.template_id,
       segmentTags,
       platforms: automation.platforms || undefined,
-      type: "marketing",
+      type: msgType,
       data: body,
+      sendWindow,
+      spacing,
     });
   }
   return createAndDispatchChannel(
     projectId,
     automation.channel,
-    { title: automation.name || "", templateId: automation.template_id, segmentTags, providerHint: automation.provider, type: "marketing", data: body },
+    { title: automation.name || "", templateId: automation.template_id, segmentTags, providerHint: automation.provider, type: msgType, data: body, sendWindow, spacing },
     undefined
   );
 }
@@ -125,6 +146,7 @@ async function sendCascadeBroadcast(
   admin: ReturnType<typeof createAdminClient>,
   projectId: string,
   automation: CustomAutomation,
+  automationKey: string,
   body: Record<string, unknown>,
   segmentTags: string[] | undefined
 ): Promise<{ ok: boolean; total: number; delivered: number; failed: number; error?: string }> {
@@ -139,7 +161,7 @@ async function sendCascadeBroadcast(
   let sent = 0;
   let failed = 0;
   for (const identityId of ids) {
-    const status = await sendViaTemplate(admin, projectId, automation, identityId, body);
+    const status = await sendViaTemplate(admin, projectId, automation, identityId, body, { key: automationKey });
     if (status === "sent") sent++;
     else if (status === "failed") failed++;
   }
@@ -182,7 +204,7 @@ export async function POST(req: Request) {
   const { data: automation } = await admin
     .from("automations")
     .select(
-      "id, name, config, channel, template_id, cascade, channel_templates, provider, platforms, spacing_enabled, spacing_minutes, send_window_enabled, send_days, send_time_from, send_time_to, send_window_subscriber_tz"
+      "id, name, config, channel, template_id, cascade, channel_templates, provider, platforms, spacing_enabled, spacing_minutes, send_window_enabled, send_days, send_time_from, send_time_to, send_window_subscriber_tz, is_transactional"
     )
     .eq("project_id", projectId)
     .eq("is_enabled", true)
@@ -333,7 +355,7 @@ export async function POST(req: Request) {
     let sent = 0;
     let failed = 0;
     for (const identityId of identityIds) {
-      const status = await sendViaTemplate(admin, projectId, automation, identityId, fanoutPayload);
+      const status = await sendViaTemplate(admin, projectId, automation, identityId, fanoutPayload, { key: automationKey, list_fanout: true, product_id: productId });
       if (status === "sent") sent++;
       else if (status === "failed") failed++;
     }
@@ -389,16 +411,11 @@ export async function POST(req: Request) {
         email: validEmail || undefined,
         insales_client_id: externalId || undefined,
       });
-      const status = await sendViaTemplate(admin, projectId, automation, identityId, body);
-      await admin.from("automation_log").insert({
-        project_id: projectId,
-        source: "webhook",
-        automation_id: automation.id,
-        title: automation.name,
-        status,
-        recipients: status === "sent" ? 1 : 0,
-        detail: { key: automationKey, ...(dedupeVal ? { dedupe: dedupeVal } : {}) },
-      });
+      // sendViaTemplate -> sendWelcomeNow сам пишет строку в automation_log
+      // (с резолвленным контекстом отправки) — тут только докидываем
+      // key/dedupe для идемпотентности, отдельной строки не пишем: раньше
+      // на один реальный send уходило 2 записи в лог, вторая без контекста.
+      const status = await sendViaTemplate(admin, projectId, automation, identityId, body, { key: automationKey, ...(dedupeVal ? { dedupe: dedupeVal } : {}) });
       return NextResponse.json({ ok: status !== "failed", total: 1, delivered: status === "sent" ? 1 : 0, failed: status === "failed" ? 1 : 0 });
     }
     // транзакционный режим (одному контакту) требует найденного контакта —
@@ -422,7 +439,7 @@ export async function POST(req: Request) {
           : undefined;
 
   const result = automation.cascade
-    ? await sendCascadeBroadcast(admin, projectId, automation, body, segmentTags)
+    ? await sendCascadeBroadcast(admin, projectId, automation, automationKey, body, segmentTags)
     : await sendBroadcast(projectId, automation, body, segmentTags);
 
   await admin.from("automation_log").insert({

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { friendlyError } from "@/lib/errors";
 
 // Пути к полям заказа (number/total_price/items_price/financial_status) —
 // захардкожены в /api/v1/attribute, подтверждены реальным заказом InSales
@@ -25,6 +26,6 @@ export async function POST(req: Request) {
     })
     .eq("id", projectId);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: friendlyError(error) }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

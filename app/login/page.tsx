@@ -19,6 +19,7 @@ function LoginForm() {
   const supabase = createClient();
 
   const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -26,12 +27,16 @@ function LoginForm() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (mode === "signup" && !name.trim()) {
+      setError("Укажите имя");
+      return;
+    }
     setBusy(true);
     setError(null);
     const fn =
       mode === "signin"
         ? supabase.auth.signInWithPassword({ email, password })
-        : supabase.auth.signUp({ email, password });
+        : supabase.auth.signUp({ email, password, options: { data: { full_name: name.trim() } } });
     const { error } = await fn;
     setBusy(false);
     if (error) {
@@ -51,6 +56,13 @@ function LoginForm() {
 
       <Card>
         <form onSubmit={submit}>
+          {mode === "signup" && (
+            <>
+              <Label>Имя</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} required autoComplete="name" />
+              <div className="h-3.5" />
+            </>
+          )}
           <Label>Email</Label>
           <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
           <div className="h-3.5" />

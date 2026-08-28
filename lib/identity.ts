@@ -270,7 +270,7 @@ export type UpsertContactInput = {
 export type UpsertContactResult = { ok: true; id: string; created: boolean } | { ok: false; error: string };
 
 // Полноценное создание/редактирование контакта — единственный публичный
-// способ (см. /api/v1/contacts) пометить телефон/email АКТИВНЫМ для
+// способ (см. /api/v1/subscribers) пометить телефон/email АКТИВНЫМ для
 // маркетинговых рассылок: sms_marketing_active_at/email_marketing_active_at
 // не выставляются нигде больше — ни входом по коду (*_verified_at — это
 // доказательство владения номером, не согласие на рассылку), ни
@@ -350,20 +350,30 @@ function logChannelEvents(
   contactEmail: string | null,
   before: { sms: boolean; email: boolean }
 ) {
+  // Логируем строку и в истории карточки, и в identity_channel_events
+  // только при РЕАЛЬНОЙ смене состояния (before.sms/before.email) — форма
+  // редактирования подписчика присылает smsActive/emailActive отражением
+  // текущих чекбоксов при КАЖДОМ сохранении, даже если их не трогали, иначе
+  // "включён"/"выключен" задваивалось бы при каждой правке любого другого поля.
   const rows: { project_id: string; identity_id: string; channel: "sms" | "email"; active: boolean; contact: string }[] = [];
-  if (input.smsActive !== undefined && contactPhone) {
+  if (input.smsActive !== undefined && input.smsActive !== before.sms && contactPhone) {
     rows.push({ project_id: projectId, identity_id: identityId, channel: "sms", active: input.smsActive, contact: contactPhone });
-    if (input.smsActive && !before.sms) fireWelcomeAutomations(projectId, "sms", { identityId }).catch(() => {});
+    if (input.smsActive) fireWelcomeAutomations(projectId, "sms", { identityId }).catch(() => {});
   }
-  if (input.emailActive !== undefined && contactEmail) {
+  if (input.emailActive !== undefined && input.emailActive !== before.email && contactEmail) {
     rows.push({ project_id: projectId, identity_id: identityId, channel: "email", active: input.emailActive, contact: contactEmail });
-    if (input.emailActive && !before.email) fireWelcomeAutomations(projectId, "email", { identityId }).catch(() => {});
+    if (input.emailActive) fireWelcomeAutomations(projectId, "email", { identityId }).catch(() => {});
   }
   if (rows.length) admin.from("identity_channel_events").insert(rows).then(() => {}, () => {});
 }
 
+// "" считается тем же "нет значения", что и null/undefined — иначе доп.
+// поле, которого у контакта никогда не было (форма присылает его пустой
+// строкой для КАЖДОГО известного проекту ключа, см. EditSubscriberForm),
+// логировалось бы как изменение "— → —" при каждом сохранении формы, хотя
+// ничего реально не поменялось.
 function normalizeForDiff(v: unknown): string | null {
-  if (v === null || v === undefined) return null;
+  if (v === null || v === undefined || v === "") return null;
   if (Array.isArray(v)) return v.length ? [...v].map(String).sort().join(", ") : null;
   return String(v);
 }

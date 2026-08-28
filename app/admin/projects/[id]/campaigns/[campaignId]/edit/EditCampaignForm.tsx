@@ -6,6 +6,7 @@ import { IconX, IconPlus, IconEye } from "@tabler/icons-react";
 import { Badge, Button, Input, Textarea, Label, Toggle, useDialogs } from "@/app/ui";
 import { CustomSelect, type ComboOption } from "@/app/ui/CustomSelect";
 import { SearchSelect } from "@/app/ui/SearchSelect";
+import { friendlyError } from "@/lib/errors";
 import { createClient } from "@/lib/supabase/client";
 import { MessagePreviewModal, type PreviewContent } from "../../../MessagePreviewModal";
 import { SegmentTagsInput } from "../../../SegmentTagsInput";
@@ -13,8 +14,6 @@ import { PlatformFilter, PLATFORM_VALUES } from "../../../PlatformFilter";
 import { SendWindowFields, sendWindowError, type SendWindowState } from "../../../SendWindowFields";
 import { ContextField } from "../../../ContextField";
 import { ContextDocs } from "../../../templates/ContextDocs";
-import { ProductPicker } from "../../../ProductPicker";
-import type { ProductsRule, ProductFeedItem } from "@/lib/productFeed";
 import { smsSegments } from "@/lib/smsSegments";
 import { withShortenedLinks } from "@/lib/linkPreview";
 import { hasUnsubscribeTag } from "@/lib/unsubscribeTag";
@@ -101,7 +100,6 @@ export default function EditCampaignForm({
   segmentOptions = [],
   providerOptions = { sms: [], email: [] },
   projectTimezone,
-  hasFeed,
 }: {
   projectId: string;
   campaign: Campaign;
@@ -109,7 +107,6 @@ export default function EditCampaignForm({
   segmentOptions?: string[];
   providerOptions?: { sms: ComboOption[]; email: ComboOption[] };
   projectTimezone: string;
-  hasFeed: boolean;
 }) {
   const { toast, confirm, prompt } = useDialogs();
   const router = useRouter();
@@ -173,15 +170,6 @@ export default function EditCampaignForm({
   const editableTemplateData = stripTemplateContext(campaign.template_data);
   const [contextEnabled, setContextEnabled] = useState(!!editableTemplateData);
   const [contextJson, setContextJson] = useState(editableTemplateData ? JSON.stringify(editableTemplateData, null, 2) : "");
-  // Уже подобранные товары (если были) показываем как список для ручного
-  // выбора — какой РЕЖИМ их дал (конкретный список или «N новых») к моменту
-  // редактирования уже не восстановить, template_data хранит только
-  // результат резолва, не исходное правило; для черновика это не проблема —
-  // список можно поправить вручную, как и остальной уже введённый текст.
-  const initialProducts = (campaign.template_data?.products as ProductFeedItem[] | undefined) || [];
-  const [productsRule, setProductsRule] = useState<ProductsRule | null>(
-    initialProducts.length ? { mode: "manual", external_ids: initialProducts.map((p) => p.external_id) } : null
-  );
   const [segment, setSegment] = useState<string[]>(campaign.segment_tags || []);
   // Предвыбраны все платформы, когда фильтра ещё нет (см. NewCampaignForm.tsx)
   // — явно видно, куда уйдёт рассылка, а не молчаливое "пусто = всем".
@@ -206,7 +194,6 @@ export default function EditCampaignForm({
   const [testBusy, setTestBusy] = useState(false);
   const [checkBusy, setCheckBusy] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   // Ручной JSON-контекст — доступен в шаблоне через Liquid, та же логика,
   // что и в форме создания (см. NewCampaignForm.tsx).
@@ -229,10 +216,7 @@ export default function EditCampaignForm({
       ? { channel, body: smsText }
       : { channel, subject, html };
 
-  // resolvedProducts — уже резолвленные товары (см. resolveProducts перед
-  // save()/sendNow()), мержатся в template_data поверх ручного JSON-контекста
-  // тем же способом, что и в /api/admin/campaigns/send для создания.
-  function buildRow(resolvedProducts?: ProductFeedItem[]): Record<string, unknown> {
+  function buildRow(): Record<string, unknown> {
     const segmentTags = segment.map((s) => s.trim().toLowerCase()).filter(Boolean);
     const contactList = contacts
       .split(",")
@@ -244,10 +228,7 @@ export default function EditCampaignForm({
     // смешивается с ручным контекстом рассылки, чтобы не перекрывать его при
     // совпадении ключа (см. ContextDocs.tsx, п.1).
     const selectedTemplate = templateId !== CUSTOM_HTML ? channelTemplates.find((t) => t.id === templateId) : undefined;
-    const templateData: Record<string, unknown> = {
-      ...(contextData || {}),
-      ...(resolvedProducts?.length ? { products: resolvedProducts, product: resolvedProducts[0] } : {}),
-    };
+    const templateData: Record<string, unknown> = { ...(contextData || {}) };
     if (selectedTemplate?.context && Object.keys(selectedTemplate.context).length) {
       templateData.__template = selectedTemplate.context;
     }
@@ -291,7 +272,7 @@ export default function EditCampaignForm({
   }
 
   function validate(): string | null {
-    if (!internalTitle.trim()) return "Укажите внутреннее название";
+    if (!internalTitle.trim()) return "Укажите название";
     if (contextError) return contextError;
     if (schedule && (!scheduleDate || !scheduleTime)) return "Укажите дату и время отправки";
     if (channel === "push" && platforms.length === 0) return "Выберите хотя бы одну платформу";
@@ -303,7 +284,8 @@ export default function EditCampaignForm({
     if (channel === "push" && withShortenedLinks(message).length > 200) return "Текст длиннее 200 символов";
     if (channel === "sms" && !smsText.trim()) return "Заполните текст SMS";
     if (channel === "email" && !html.trim()) return "Выберите шаблон или заполните HTML";
-    if (channel === "email" && !transactional && !hasUnsubscribeTag(html)) return "Добавьте {{ unsubscribe_url }} в письмо — обязательно для маркетинговой рассылки";
+    if (channel === "email" && !transactional && !hasUnsubscribeTag(html))
+      return 'Добавьте ссылку вида <a href="{{ unsubscribe_url }}">Отписаться</a> — обязательно для маркетинговой рассылки';
     return null;
   }
 
@@ -336,30 +318,13 @@ export default function EditCampaignForm({
     }
   }
 
-  // Резолвит текущее правило товаров (ProductPicker) в конкретные товары —
-  // нужен отдельный запрос, потому что save()/sendNow() пишут в campaigns
-  // напрямую через Supabase-клиент, минуя /api/admin/campaigns/send, где для
-  // создания это же делается на сервере (см. комментарий там).
-  async function resolveProducts(): Promise<ProductFeedItem[] | undefined> {
-    if (!productsRule) return undefined;
-    const res = await fetch(`/api/admin/projects/${projectId}/product-feed/resolve`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rule: productsRule }),
-    }).catch(() => null);
-    const json = res && res.ok ? await res.json() : null;
-    return json?.items;
-  }
-
   async function save() {
     const err = validate();
-    if (err) return setError(err);
-    setError(null);
+    if (err) return toast(err, "bad");
     setBusy(true);
-    const resolvedProducts = await resolveProducts();
-    const { error: dbErr } = await supabase.from("campaigns").update(buildRow(resolvedProducts)).eq("id", campaign.id);
+    const { error: dbErr } = await supabase.from("campaigns").update(buildRow()).eq("id", campaign.id);
     setBusy(false);
-    if (dbErr) return setError(dbErr.message);
+    if (dbErr) return toast(friendlyError(dbErr), "bad");
     toast("Сохранено", "good");
     router.push(`/admin/projects/${projectId}/campaigns`);
     router.refresh();
@@ -367,7 +332,7 @@ export default function EditCampaignForm({
 
   async function sendNow() {
     const err = validate();
-    if (err) return setError(err);
+    if (err) return toast(err, "bad");
 
     // См. NewCampaignForm.tsx — тот же принцип: точное число получателей
     // прямо перед подтверждением, best-effort.
@@ -397,13 +362,11 @@ export default function EditCampaignForm({
     });
     if (!ok) return;
 
-    setError(null);
     setBusy(true);
-    const resolvedProducts = await resolveProducts();
-    const { error: dbErr } = await supabase.from("campaigns").update(buildRow(resolvedProducts)).eq("id", campaign.id);
+    const { error: dbErr } = await supabase.from("campaigns").update(buildRow()).eq("id", campaign.id);
     if (dbErr) {
       setBusy(false);
-      return setError(dbErr.message);
+      return toast(friendlyError(dbErr), "bad");
     }
     const res = await fetch(`/api/admin/campaigns/${campaign.id}/send-draft`, {
       method: "POST",
@@ -412,7 +375,7 @@ export default function EditCampaignForm({
     });
     const json = await res.json();
     setBusy(false);
-    if (!res.ok) return setError(json.error || "Ошибка отправки");
+    if (!res.ok) return toast(json.error || "Ошибка отправки", "bad");
     toast(`Отправлено ${json.delivered} из ${json.total}, ошибок ${json.failed}`, "good");
     router.push(`/admin/projects/${projectId}/campaigns`);
     router.refresh();
@@ -431,7 +394,7 @@ export default function EditCampaignForm({
     if (!testContact?.trim()) return;
 
     setTestBusy(true);
-    const body: Record<string, unknown> = { projectId, channel, contact: testContact.trim(), data: contextData, productsRule: productsRule || undefined };
+    const body: Record<string, unknown> = { projectId, channel, contact: testContact.trim(), data: contextData };
     if (channel === "push") {
       body.title = title;
       body.message = message;
@@ -488,8 +451,10 @@ export default function EditCampaignForm({
 
       <div className="mt-4 flex flex-col gap-3">
         <div>
-          <Label>Внутреннее название</Label>
-          <Input value={internalTitle} onChange={(e) => setInternalTitle(e.target.value)} placeholder="Для себя — получателям не видно" required />
+          <Label>
+            Название <span className="text-bad">*</span>
+          </Label>
+          <Input value={internalTitle} onChange={(e) => setInternalTitle(e.target.value)} placeholder="Не показывается получателю" required />
         </div>
 
         <div className="flex items-center justify-between gap-2">
@@ -633,38 +598,14 @@ export default function EditCampaignForm({
                 HTML письма <span className="text-bad">*</span>
               </Label>
               <Textarea value={html} onChange={(e) => setHtml(e.target.value)} required rows={10} className="font-mono text-xs" placeholder="<p>Привет!</p>" />
-              {!transactional && (
-                <p className={`text-[11px] text-right mt-1 mb-0 ${hasUnsubscribeTag(html) ? "text-ink-faint" : "text-bad"}`}>
-                  {hasUnsubscribeTag(html) ? "Ссылка отписки найдена" : "Добавьте ссылку вида "}
-                  {!hasUnsubscribeTag(html) && <code>{'<a href="{{ unsubscribe_url }}">Отписаться</a>'}</code>}
-                  {!hasUnsubscribeTag(html) && " — обязательно для маркетинговой рассылки"}
-                </p>
-              )}
             </div>
           </>
         )}
 
         <div>
-          <Toggle checked={schedule} onChange={setSchedule} label="Запланировать на потом" />
-          {schedule && (
-            <div className="flex gap-2 mt-2.5">
-              <Input type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} required />
-              <Input type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} required />
-            </div>
-          )}
-          {schedule && contacts.trim() && (
-            <p className="text-[12px] text-ink-faint mt-1 mb-0">
-              Контакты резолвятся заново в момент отправки — актуальные на тот момент устройства/согласие, а не на момент планирования.
-            </p>
-          )}
-        </div>
-
-        <div>
           <Label>Сегмент по тегам</Label>
           <SegmentTagsInput value={segment} onChange={setSegment} options={segmentOptions} />
         </div>
-
-        <ProductPicker projectId={projectId} hasFeed={hasFeed} value={productsRule} onChange={setProductsRule} />
 
         {channel === "push" && (
           <div>
@@ -690,9 +631,22 @@ export default function EditCampaignForm({
           </div>
         </div>
 
-        <SendWindowFields value={sendWindow} onChange={setSendWindow} projectTimezone={projectTimezone} />
+        <div>
+          <Toggle checked={schedule} onChange={setSchedule} label="Запланировать на потом" />
+          {schedule && (
+            <div className="flex gap-2 mt-2.5">
+              <Input type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} required />
+              <Input type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} required />
+            </div>
+          )}
+          {schedule && contacts.trim() && (
+            <p className="text-[12px] text-ink-faint mt-1 mb-0">
+              Контакты резолвятся заново в момент отправки — актуальные на тот момент устройства/согласие, а не на момент планирования.
+            </p>
+          )}
+        </div>
 
-        {error && <p className="text-bad text-[13px] mt-0 mb-0">{error}</p>}
+        <SendWindowFields value={sendWindow} onChange={setSendWindow} projectTimezone={projectTimezone} />
 
         <div className="flex flex-wrap items-center gap-2">
           <Button disabled={busy || noProvider} onClick={sendNow} type="button">
@@ -711,13 +665,15 @@ export default function EditCampaignForm({
           <Button variant="secondary" onClick={() => router.push(`/admin/projects/${projectId}/campaigns`)} type="button">
             Отмена
           </Button>
-          <Button variant="danger" disabled={busy} onClick={remove} type="button" className="ml-auto">
+          <Button variant="danger" disabled={busy} onClick={remove} type="button">
             Удалить
           </Button>
         </div>
       </div>
 
-      {previewOpen && <MessagePreviewModal label="Превью" content={previewContent} sampleData={contextData} onClose={() => setPreviewOpen(false)} />}
+      {previewOpen && (
+        <MessagePreviewModal label="Превью" content={previewContent} sampleData={contextData} projectId={projectId} onClose={() => setPreviewOpen(false)} />
+      )}
     </main>
   );
 }

@@ -4,20 +4,15 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { generateVapidKeys } from "@/lib/webpush";
 import { generateAttributionToken } from "@/lib/attribution";
 
-// Creates a project for the current user + its own VAPID key pair.
-// Uses the service-role client so it can also write the private key into
-// project_secrets (which RLS hides from clients). Ownership is set explicitly.
+// Creates a project for the current user (client or superadmin — both may
+// own projects) + its own VAPID key pair. Uses the service-role client so it
+// can also write the private key into project_secrets (which RLS hides from
+// clients). Ownership is set explicitly.
 export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
 
   const admin = createAdminClient();
-
-  // superadmin must not own projects — they manage clients, not create for themselves
-  const { data: me } = await admin.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  if (me?.role === "admin") {
-    return NextResponse.json({ error: "Суперадмин не может создавать проекты на себя" }, { status: 403 });
-  }
 
   const { name, domain } = await req.json().catch(() => ({}));
   if (!name?.trim()) return NextResponse.json({ error: "Укажите название" }, { status: 400 });

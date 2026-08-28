@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { IconEye, IconX, IconPlus } from "@tabler/icons-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button, CustomSelect, Input, Label, Textarea, useDialogs } from "@/app/ui";
+import { friendlyError } from "@/lib/errors";
 import { MessagePreviewModal, type PreviewContent } from "../../MessagePreviewModal";
 import { ContextField } from "../../ContextField";
 import { ContextDocs } from "../ContextDocs";
@@ -101,7 +102,7 @@ export default function NewTemplateForm({
     };
     const { error } = await supabase.from("templates").insert(row);
     setBusy(false);
-    if (error) return toast(error.message, "bad");
+    if (error) return toast(friendlyError(error), "bad");
     toast("Шаблон создан", "good");
     router.push(`/admin/projects/${projectId}/templates`);
     router.refresh();
@@ -260,7 +261,15 @@ export default function NewTemplateForm({
       </div>
 
       {previewOpen && (
-        <MessagePreviewModal label={name || "Превью"} content={previewContent} sampleData={contextData} onClose={() => setPreviewOpen(false)} />
+        // См. EditTemplateForm.tsx — контекст шаблона подставляется только
+        // под префиксом template.*, той же семантикой, что и на отправке.
+        <MessagePreviewModal
+          label={name || "Превью"}
+          content={previewContent}
+          sampleData={{ template: contextData || {} }}
+          projectId={projectId}
+          onClose={() => setPreviewOpen(false)}
+        />
       )}
     </main>
   );

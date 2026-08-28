@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { IconEye, IconX, IconPlus } from "@tabler/icons-react";
 import { createClient } from "@/lib/supabase/client";
 import { Badge, Button, CustomSelect, Input, Label, Textarea, useDialogs } from "@/app/ui";
+import { friendlyError } from "@/lib/errors";
+import { formatAuthor, formatShortDate } from "../../../formatAuthor";
+import { IdCopy } from "../../../IdCopy";
 import { MessagePreviewModal, type PreviewContent } from "../../../MessagePreviewModal";
 import { ContextField } from "../../../ContextField";
 import { ContextDocs } from "../../ContextDocs";
@@ -31,7 +34,21 @@ type Template = {
 
 const CHANNEL_LABEL: Record<Channel, string> = { push: "Push", sms: "SMS", email: "Email" };
 
-export default function EditTemplateForm({ projectId, template, folders }: { projectId: string; template: Template; folders: Folder[] }) {
+export default function EditTemplateForm({
+  projectId,
+  template,
+  folders,
+  createdAt,
+  createdByName,
+  createdByEmail,
+}: {
+  projectId: string;
+  template: Template;
+  folders: Folder[];
+  createdAt: string;
+  createdByName: string | null;
+  createdByEmail: string | null;
+}) {
   const supabase = createClient();
   const router = useRouter();
   const { toast, confirm } = useDialogs();
@@ -99,7 +116,7 @@ export default function EditTemplateForm({ projectId, template, folders }: { pro
     };
     const { error } = await supabase.from("templates").update(row).eq("id", template.id);
     setBusy(false);
-    if (error) return toast(error.message, "bad");
+    if (error) return toast(friendlyError(error), "bad");
     toast("Сохранено", "good");
     router.push(`/admin/projects/${projectId}/templates`);
     router.refresh();
@@ -136,9 +153,12 @@ export default function EditTemplateForm({ projectId, template, folders }: { pro
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Например, «Скидка недели»" required />
           </div>
 
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <Badge tone="accent">{CHANNEL_LABEL[channel]}</Badge>
-            <span className="text-[12px] text-ink-faint">канал нельзя изменить после создания</span>
+            <span className="text-[12px] text-ink-faint">
+              {formatAuthor(createdByName, createdByEmail)} · {formatShortDate(createdAt)}
+            </span>
+            <IdCopy id={template.id} />
           </div>
 
           <div>
@@ -269,7 +289,7 @@ export default function EditTemplateForm({ projectId, template, folders }: { pro
             <Button type="button" variant="secondary" onClick={() => router.push(`/admin/projects/${projectId}/templates`)}>
               Отмена
             </Button>
-            <Button type="button" variant="danger" disabled={busy} onClick={remove} className="ml-auto">
+            <Button type="button" variant="danger" disabled={busy} onClick={remove}>
               Удалить
             </Button>
           </div>
@@ -277,7 +297,19 @@ export default function EditTemplateForm({ projectId, template, folders }: { pro
       </div>
 
       {previewOpen && (
-        <MessagePreviewModal label={name || "Превью"} content={previewContent} sampleData={contextData} onClose={() => setPreviewOpen(false)} />
+        // Контекст шаблона подставляется только под префиксом template.* (см.
+        // ContextDocs.tsx, п.1 — "контекст ШАБЛОНА без префикса не
+        // подставляется никогда"), той же семантикой, что и на реальной
+        // отправке (mergeTemplateContext/splitTemplateData в lib/sender.ts) —
+        // превью обязано её повторять, иначе {{ template.x }} в тексте
+        // шаблона окажется пустым здесь, хотя реально отправится верно.
+        <MessagePreviewModal
+          label={name || "Превью"}
+          content={previewContent}
+          sampleData={{ template: contextData || {} }}
+          projectId={projectId}
+          onClose={() => setPreviewOpen(false)}
+        />
       )}
     </main>
   );

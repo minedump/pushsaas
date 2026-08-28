@@ -4,14 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconKey } from "@tabler/icons-react";
 import { createClient } from "@/lib/supabase/client";
-import { Badge, Button, Card, Input, Label, useDialogs } from "@/app/ui";
+import { Button, Card, Input, Label, useDialogs } from "@/app/ui";
 import { CustomSelect } from "@/app/ui/CustomSelect";
 
 type Key = {
   id: string;
   name: string;
-  key_prefix: string;
-  is_active: boolean;
   last_used_at: string | null;
   created_at: string;
   sms_provider?: string | null;
@@ -62,16 +60,16 @@ export default function ApiKeys({
     router.refresh();
   }
 
-  async function revoke(id: string) {
+  async function remove(id: string) {
     const ok = await confirm({
-      title: "Отозвать ключ?",
-      message: "Запросы с ним перестанут работать.",
-      confirmText: "Отозвать",
+      title: "Удалить ключ?",
+      message: "Запросы с ним перестанут работать. Действие необратимо.",
+      confirmText: "Удалить",
       danger: true,
     });
     if (!ok) return;
     setBusy(true);
-    await supabase.from("api_keys").update({ is_active: false }).eq("id", id);
+    await supabase.from("api_keys").delete().eq("id", id);
     setBusy(false);
     router.refresh();
   }
@@ -134,9 +132,7 @@ export default function ApiKeys({
             <thead>
               <tr className="bg-surface-2 text-left">
                 <Th>Название</Th>
-                <Th>Префикс</Th>
                 <Th>Каналы</Th>
-                <Th>Статус</Th>
                 <Th> </Th>
               </tr>
             </thead>
@@ -144,23 +140,15 @@ export default function ApiKeys({
               {initial.map((k) => (
                 <tr key={k.id} className="border-t border-border">
                   <Td>{k.name}</Td>
-                  <Td className="font-mono text-xs">{k.key_prefix}…</Td>
                   <Td className="text-ink-muted text-[12.5px]">
                     {[k.sms_provider && `SMS: ${PROVIDER_LABEL[k.sms_provider] || k.sms_provider}`, k.email_provider && `Email: ${PROVIDER_LABEL[k.email_provider] || k.email_provider}`]
                       .filter(Boolean)
-                      .join(" · ") || "—"}
-                  </Td>
-                  <Td>
-                    <Badge tone={k.is_active ? "good" : "bad"} dot>
-                      {k.is_active ? "активен" : "отозван"}
-                    </Badge>
+                      .join(" · ") || "Каналы не выбраны"}
                   </Td>
                   <Td className="text-right">
-                    {k.is_active && (
-                      <Button variant="secondary" size="sm" onClick={() => revoke(k.id)}>
-                        Отозвать
-                      </Button>
-                    )}
+                    <Button variant="secondary" size="sm" onClick={() => remove(k.id)}>
+                      Удалить
+                    </Button>
                   </Td>
                 </tr>
               ))}
@@ -173,7 +161,7 @@ export default function ApiKeys({
 }
 
 const Th = ({ children }: { children: React.ReactNode }) => (
-  <th className="px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-ink-faint font-normal">{children}</th>
+  <th className="px-3.5 py-2.5 text-[11px] text-ink-faint font-normal">{children}</th>
 );
 const Td = ({ children, className = "" }: { children: React.ReactNode; className?: string }) => (
   <td className={`px-3.5 py-3 align-middle ${className}`}>{children}</td>

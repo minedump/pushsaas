@@ -3,7 +3,6 @@ import { assertProjectAccess } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { dispatchCampaign, insertCampaign, createAndDispatchChannel, resolvePushTemplate, resolveChannelTemplate, mergeTemplateContext, enqueueWindowedCampaign } from "@/lib/sender";
 import { phonesToSubscriberIds, emailsToSubscriberIds } from "@/lib/identity";
-import { resolveProductsByRule, type ProductsRule } from "@/lib/productFeed";
 import { withShortenedLinks } from "@/lib/linkPreview";
 import { hasUnsubscribeTag } from "@/lib/unsubscribe";
 
@@ -45,7 +44,6 @@ export async function POST(req: Request) {
     draft,
     internalTitle,
     data: dataInput,
-    productsRule,
     sendWindowEnabled,
     sendDays,
     sendTimeFrom,
@@ -77,7 +75,6 @@ export async function POST(req: Request) {
     draft?: boolean;
     internalTitle?: string;
     data?: Record<string, unknown>;
-    productsRule?: ProductsRule;
     sendWindowEnabled?: boolean;
     sendDays?: number[];
     sendTimeFrom?: string;
@@ -98,24 +95,13 @@ export async function POST(req: Request) {
   const msgType: "transactional" | "marketing" = type === "transactional" ? "transactional" : "marketing";
 
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  if (!String(internalTitle ?? "").trim()) return NextResponse.json({ error: "Укажите название" }, { status: 400 });
 
   const access = await assertProjectAccess(projectId);
   if (!access.ok) return NextResponse.json({ error: "Нет доступа" }, { status: access.status });
 
   const admin = createAdminClient();
-
-  // Товары по правилу (ProductPicker в форме рассылки) — резолвится один раз
-  // здесь и замораживается в template_data вместе с ручным контекстом, тем
-  // же путём, что и весь остальной data (см. комментарий у insertCampaign
-  // ниже) — кампания разовая/на конкретное время, а не повторяющаяся
-  // автоматизация, поэтому «заморозка на момент отправки/планирования» здесь
-  // корректна (в отличие от sendWelcomeNow, который резолвит правило заново
-  // при каждой отправке).
-  let data = dataInput;
-  if (productsRule) {
-    const products = await resolveProductsByRule(projectId, productsRule);
-    if (products.length) data = { ...(data || {}), products, product: products[0] };
-  }
+  const data = dataInput;
 
   // blocked (unpaid) projects can't send — superadmin bypasses
   const { data: proj } = await admin.from("projects").select("is_active").eq("id", projectId).single();

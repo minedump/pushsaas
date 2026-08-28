@@ -2,34 +2,89 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ensureProjectAccessible } from "@/lib/guards";
 import { Badge, Card } from "@/app/ui";
+import AnalyticsPeriodSwitcher from "./AnalyticsPeriodSwitcher";
 
 const channelLabel: Record<string, string> = { push: "Push", sms: "SMS", email: "Email" };
-const DAYS = 30;
 const MIN_SAMPLE = 3;
 const DAY_LABEL: Record<number, string> = { 1: "Пн", 2: "Вт", 3: "Ср", 4: "Чт", 5: "Пт", 6: "Сб", 0: "Вс" };
 
-export default async function AnalyticsPage({ params }: { params: Promise<{ id: string }> }) {
+type Period = "day" | "week" | "month" | "custom";
+
+function toISODate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+// Подпись даты для подсказок при наведении на графики — короткий формат
+// вроде "28 авг", вместо сырого ISO.
+function formatDayLabel(iso: string): string {
+  const d = new Date(iso.length <= 10 ? `${iso}T00:00:00` : iso);
+  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+}
+
+// Единый диапазон дат на всю страницу — раньше «за последние 30 дней» было
+// правдой только для роста подписчиков/активности автоматизаций, а плитки
+// сверху и «лучшие рассылки» считались вообще за всё время без исключения.
+// Теперь один переключатель (см. AnalyticsPeriodSwitcher) двигает границы
+// для всех период-зависимых отчётов сразу.
+function resolveRange(period: Period, fromParam?: string, toParam?: string): { since: Date; until: Date } {
+  const now = new Date();
+  if (period === "custom" && fromParam && toParam) {
+    const since = new Date(`${fromParam}T00:00:00.000Z`);
+    const until = new Date(`${toParam}T23:59:59.999Z`);
+    if (!isNaN(since.getTime()) && !isNaN(until.getTime()) && since <= until) return { since, until };
+  }
+  if (period === "day") {
+    const since = new Date(now);
+    since.setUTCHours(0, 0, 0, 0);
+    return { since, until: now };
+  }
+  if (period === "week") return { since: new Date(now.getTime() - 7 * 86_400_000), until: now };
+  return { since: new Date(now.getTime() - 30 * 86_400_000), until: now };
+}
+
+export default async function AnalyticsPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ period?: string; from?: string; to?: string }>;
+}) {
   const { id } = await params;
+  const sp = await searchParams;
+  const period: Period = sp.period === "day" || sp.period === "week" || sp.period === "custom" ? sp.period : "month";
   const supabase = await createClient();
 
   const { data: project } = await supabase.from("projects").select("id, name, is_active, timezone").eq("id", id).maybeSingle();
   if (!project) notFound();
   await ensureProjectAccessible(project.id, project.is_active);
 
-  const since = new Date(Date.now() - DAYS * 86_400_000).toISOString();
+  const { since, until } = resolveRange(period, sp.from, sp.to);
+  const sinceIso = since.toISOString();
+  const untilIso = until.toISOString();
 
-  const [{ data: subs }, { data: campaigns }, { data: log }, { data: attribution }, { data: channelGrowth }] = await Promise.all([
-    supabase.from("subscribers").select("platform, is_active, created_at").eq("project_id", id),
+  const [{ data: subs }, { data: campaigns }, { data: attribution }, { data: channelGrowth }, { data: widgetEvents }] = await Promise.all([
+    supabase
+      .from("subscribers")
+      .select("platform, is_active, created_at")
+      .eq("project_id", id)
+      .gte("created_at", sinceIso)
+      .lte("created_at", untilIso),
     supabase
       .from("campaigns")
       .select("id, channel, status, sent_count, delivered_count, failed_count, clicked_count, title, sent_at")
       .eq("project_id", id)
-      .eq("status", "sent"),
-    supabase.from("automation_log").select("source, status").eq("project_id", id).gte("created_at", since),
+      .eq("status", "sent")
+      .gte("sent_at", sinceIso)
+      .lte("sent_at", untilIso),
     // выручка показывается всегда (0, если атрибуция не подключена);
     // best-effort: до миграции 0009 таблицы нет — data будет null. is_paid/
     // paid_amount — миграция 0075, тоже best-effort на случай отставания.
-    supabase.from("order_attributions").select("revenue, is_paid, paid_amount").eq("project_id", id),
+    supabase
+      .from("order_attributions")
+      .select("revenue, is_paid, paid_amount")
+      .eq("project_id", id)
+      .gte("created_at", sinceIso)
+      .lte("created_at", untilIso),
     // Рост SMS/Email — по событиям включения согласия (identity_channel_events,
     // миграция 0029), т.к. у identities нет своей даты "стал подписчиком".
     // Реальное включение согласия считается тут же, что и повторное
@@ -40,34 +95,47 @@ export default async function AnalyticsPage({ params }: { params: Promise<{ id: 
       .eq("project_id", id)
       .eq("active", true)
       .in("channel", ["sms", "email"])
-      .gte("created_at", since),
+      .gte("created_at", sinceIso)
+      .lte("created_at", untilIso),
+    // Показы/клики/закрытия плавающей кнопки и плашки (см. lib/widget-scripts.ts,
+    // window.sendera.event) — сырые события, агрегируем ниже сами: денормализованных
+    // счётчиков для них нет, это первая метрика такого рода на странице.
+    supabase
+      .from("events")
+      .select("name, created_at")
+      .eq("project_id", id)
+      .like("name", "widget_%")
+      .gte("created_at", sinceIso)
+      .lte("created_at", untilIso)
+      .limit(20000),
   ]);
 
   // Лучшее время/день для отправки — по факту вовлечённости (клик, для
   // email ещё и открытие) уже состоявшихся доставок, а не догадка. best-
-  // effort: только 'delivered' — неудачные попытки не в счёт; последние
-  // 5000 записей на канал достаточно даже для активного проекта, не
-  // раздувает страницу до бесконечности.
+  // effort: только 'delivered' — неудачные попытки не в счёт; лимит на
+  // случай, если в выбранный диапазон попадёт очень много доставок.
   const { data: recipientRows } = await supabase
     .from("campaign_recipients")
     .select("channel, created_at, clicked_at, opened_at")
     .eq("project_id", id)
     .eq("status", "delivered")
+    .gte("created_at", sinceIso)
+    .lte("created_at", untilIso)
     .order("created_at", { ascending: false })
     .limit(5000);
   const projectTimezone = project.timezone || "Europe/Moscow";
   const bestTimes = computeBestSendTimes(recipientRows ?? [], projectTimezone);
 
   const subRows = subs ?? [];
-  const active = subRows.filter((r) => r.is_active);
 
   // Рост подписчиков по всем каналам за день — push по дате создания
   // устройства (subscribers.created_at), sms/email по дате включения
-  // согласия (identity_channel_events).
+  // согласия (identity_channel_events). Число дневных бакетов — по факту
+  // длины выбранного периода, а не жёстко 30.
+  const dayCount = Math.max(1, Math.round((until.getTime() - since.getTime()) / 86_400_000) + 1);
   const days: { date: string; push: number; sms: number; email: number }[] = [];
-  for (let i = DAYS - 1; i >= 0; i--) {
-    const d = new Date(Date.now() - i * 86_400_000);
-    days.push({ date: d.toISOString().slice(0, 10), push: 0, sms: 0, email: 0 });
+  for (let i = dayCount - 1; i >= 0; i--) {
+    days.push({ date: toISODate(new Date(until.getTime() - i * 86_400_000)), push: 0, sms: 0, email: 0 });
   }
   const byDay = new Map(days.map((d) => [d.date, d]));
   for (const r of subRows) {
@@ -100,30 +168,23 @@ export default async function AnalyticsPage({ params }: { params: Promise<{ id: 
     .reverse();
   const maxChartVal = Math.max(1, ...chart.map((c) => c.delivered_count || 0));
 
-  const logRows = log ?? [];
-  const bySource = logRows.reduce<Record<string, { sent: number; failed: number; skipped: number }>>((acc, r) => {
-    acc[r.source] ??= { sent: 0, failed: 0, skipped: 0 };
-    acc[r.source][r.status as "sent" | "failed" | "skipped"]++;
-    return acc;
-  }, {});
-  const sourceLabel: Record<string, string> = { event: "Событийные", api: "API", webhook: "Вебхуки", welcome: "Welcome" };
-
   const revenue = (attribution ?? []).reduce((s, a) => s + Number(a.revenue || 0), 0);
-  const orders = (attribution ?? []).length;
-  const paidRows = (attribution ?? []).filter((a) => a.is_paid);
-  const paidOrders = paidRows.length;
-  const paidSum = paidRows.reduce((s, a) => s + Number(a.paid_amount || 0), 0);
+  const paidSum = (attribution ?? []).filter((a) => a.is_paid).reduce((s, a) => s + Number(a.paid_amount || 0), 0);
+
+  const widgetStats = computeWidgetStats(widgetEvents ?? []);
 
   return (
     <main className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-semibold">Аналитика</h1>
-      <p className="text-ink-muted mt-0 text-[13px]">Сводка за последние {DAYS} дней и по всем рассылкам.</p>
+
+      <AnalyticsPeriodSwitcher period={period} defaultFrom={toISODate(since)} defaultTo={toISODate(until)} />
 
       {/* top tiles */}
       <div className="flex gap-3 mt-5 flex-wrap">
-        <Tile label="Отправлено (всего)" value={totalSent} />
+        <Tile label="Отправлено" value={totalSent} />
         <Tile label="CTR по рассылкам" value={`${ctr}%`} />
         <Tile label="Выручка" value={`${revenue.toLocaleString("ru-RU")} ₽`} />
+        <Tile label="Оплачено" value={`${paidSum.toLocaleString("ru-RU")} ₽`} />
       </div>
 
       {/* delivered/clicked per recent campaign */}
@@ -136,7 +197,7 @@ export default async function AnalyticsPage({ params }: { params: Promise<{ id: 
 
       {/* growth chart */}
       <Card className="mt-5">
-        <div className="text-[13px] text-ink-muted mb-3">Рост подписчиков по каналам — новые за день, последние {DAYS} дней</div>
+        <div className="text-[13px] text-ink-muted mb-3">Рост подписчиков по каналам — новые за день</div>
         <GrowthChart data={days} max={maxDay} />
       </Card>
 
@@ -196,72 +257,93 @@ export default async function AnalyticsPage({ params }: { params: Promise<{ id: 
         )}
       </Card>
 
-      {/* automation activity */}
+      {/* widget funnel */}
       <Card className="mt-4">
-        <div className="text-[13px] text-ink-muted mb-3">Активность автоматизаций за {DAYS} дней</div>
-        {Object.keys(bySource).length === 0 ? (
-          <div className="text-ink-faint text-sm">Пока не было сработок</div>
+        <div className="text-[13px] text-ink-muted mb-3">Виджеты подписки</div>
+        {widgetStats.button.shown === 0 && widgetStats.prompt.shown === 0 ? (
+          <div className="text-ink-faint text-sm">Пока пусто — появится после первых показов кнопки/плашки.</div>
         ) : (
-          <div className="flex flex-col gap-2">
-            {Object.entries(bySource).map(([src, s]) => (
-              <div key={src} className="flex items-center justify-between text-[13.5px]">
-                <span>{sourceLabel[src] || src}</span>
-                <div className="flex gap-2">
-                  <Badge tone="good">{s.sent} отправлено</Badge>
-                  {s.failed > 0 && <Badge tone="bad">{s.failed} ошибок</Badge>}
-                  {s.skipped > 0 && <Badge tone="neutral">{s.skipped} пропущено</Badge>}
-                </div>
-              </div>
-            ))}
+          <div className="overflow-x-auto pretty-scroll">
+            <table className="w-full border-collapse text-[13.5px] min-w-[480px]">
+              <thead>
+                <tr className="text-left">
+                  <th className="pb-2 text-[11px] text-ink-faint font-normal">Виджет</th>
+                  <th className="pb-2 text-[11px] text-ink-faint font-normal text-right">Показано</th>
+                  <th className="pb-2 text-[11px] text-ink-faint font-normal text-right">Клики</th>
+                  <th className="pb-2 text-[11px] text-ink-faint font-normal text-right">CTR</th>
+                  <th className="pb-2 text-[11px] text-ink-faint font-normal text-right">Закрыто</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(
+                  [
+                    { key: "button" as const, label: "Плавающая кнопка" },
+                    { key: "prompt" as const, label: "Плашка" },
+                  ] as const
+                ).map((w) => {
+                  const s = widgetStats[w.key];
+                  const ctr = s.shown ? Math.round((s.clicked / s.shown) * 100) : 0;
+                  return (
+                    <tr key={w.key} className="border-t border-border">
+                      <td className="py-2">{w.label}</td>
+                      <td className="py-2 text-right tabular-nums">{s.shown}</td>
+                      <td className="py-2 text-right tabular-nums">{s.clicked}</td>
+                      <td className="py-2 text-right tabular-nums">{s.shown ? `${ctr}%` : "—"}</td>
+                      <td className="py-2 text-right tabular-nums">{s.dismissed}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
-      </Card>
-
-      <Card className="mt-4">
-        <div className="text-[13px] text-ink-muted mb-1">Выручка (атрибуция заказов)</div>
-        <div className="text-[26px] font-bold">{revenue.toLocaleString("ru-RU")} ₽</div>
-        <div className="text-[12px] text-ink-faint">{orders} заказов с участием рассылок (модель — последний клик)</div>
-        {orders === 0 && (
-          <p className="text-[12.5px] text-ink-faint mt-2 mb-0">
-            Заказов пока не поступало — проверьте вебхук атрибуции в разделе{" "}
-            <a href={`/admin/projects/${id}/settings`} className="text-accent">
-              Настройки
-            </a>
-            .
-          </p>
-        )}
-
-        <div className="border-t border-border mt-3 pt-3">
-          <div className="text-[13px] text-ink-muted mb-1">Оплачено (без доставки, со скидками)</div>
-          <div className="text-[26px] font-bold">{paidSum.toLocaleString("ru-RU")} ₽</div>
-          <div className="text-[12px] text-ink-faint">{paidOrders} оплаченных заказов</div>
-          {paidOrders === 0 && (
-            <p className="text-[12.5px] text-ink-faint mt-2 mb-0">
-              Впишите путь к статусу оплаты в разделе{" "}
-              <a href={`/admin/projects/${id}/settings`} className="text-accent">
-                Настройки
-              </a>{" "}
-              — без него заказы никогда не считаются оплаченными.
-            </p>
-          )}
-        </div>
       </Card>
     </main>
   );
 }
 
-function BarChart({ data, max }: { data: { id: string; delivered_count: number; clicked_count: number }[]; max: number }) {
+type WidgetStat = { shown: number; clicked: number; dismissed: number };
+// Агрегация "показано/кликнули/закрыли" по сырым events (widget_button_*/
+// widget_prompt_*, см. lib/widget-scripts.ts) — денормализованных счётчиков
+// для виджетов нет, считаем на лету, как и остальные период-зависимые
+// метрики на этой странице.
+function computeWidgetStats(rows: { name: string }[]): { button: WidgetStat; prompt: WidgetStat } {
+  const button: WidgetStat = { shown: 0, clicked: 0, dismissed: 0 };
+  const prompt: WidgetStat = { shown: 0, clicked: 0, dismissed: 0 };
+  for (const r of rows) {
+    const target = r.name.startsWith("widget_button_") ? button : r.name.startsWith("widget_prompt_") ? prompt : null;
+    if (!target) continue;
+    if (r.name.endsWith("_shown")) target.shown++;
+    else if (r.name.endsWith("_clicked")) target.clicked++;
+    else if (r.name.endsWith("_dismissed")) target.dismissed++;
+  }
+  return { button, prompt };
+}
+
+function BarChart({
+  data,
+  max,
+}: {
+  data: { id: string; title: string; sent_at: string | null; delivered_count: number; clicked_count: number }[];
+  max: number;
+}) {
   const W = 620, H = 160, pad = 24, gap = 10;
   const bw = (W - pad * 2 - gap * (data.length - 1)) / data.length;
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto pretty-scroll">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[380px] block">
         {data.map((c, i) => {
           const x = pad + i * (bw + gap);
-          const dh = ((c.delivered_count || 0) / max) * (H - pad * 2);
-          const ch = ((c.clicked_count || 0) / max) * (H - pad * 2);
+          const delivered = c.delivered_count || 0;
+          const clicked = c.clicked_count || 0;
+          const dh = (delivered / max) * (H - pad * 2);
+          const ch = (clicked / max) * (H - pad * 2);
+          const ctr = delivered ? Math.round((clicked / delivered) * 100) : 0;
+          const dateLabel = c.sent_at ? formatDayLabel(c.sent_at) : "";
           return (
-            <g key={c.id}>
+            <g key={c.id} className="cursor-default">
+              <title>{`${c.title}${dateLabel ? ` — ${dateLabel}` : ""}\nДоставлено: ${delivered}\nКликов: ${clicked} (CTR ${ctr}%)`}</title>
+              <rect x={x} y={pad} width={bw} height={H - pad * 2} fill="transparent" />
               <rect x={x} y={H - pad - dh} width={bw} height={dh} rx={3} fill="var(--accent-line)" />
               <rect x={x} y={H - pad - ch} width={bw} height={ch} rx={3} fill="var(--accent)" />
             </g>
@@ -290,13 +372,17 @@ function GrowthChart({ data, max }: { data: { date: string; push: number; sms: n
   const bw = (W - pad * 2) / data.length;
   const scale = (H - pad * 2) / max;
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto pretty-scroll">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[420px] block">
         {data.map((d, i) => {
           const x = pad + i * bw;
           let y = H - pad;
+          const total = d.push + d.sms + d.email;
+          const tooltip = `${formatDayLabel(d.date)}\nВсего: ${total}\nPush: ${d.push}\nSMS: ${d.sms}\nEmail: ${d.email}`;
           return (
-            <g key={d.date}>
+            <g key={d.date} className="cursor-default">
+              <title>{tooltip}</title>
+              <rect x={x} y={pad} width={Math.max(1, bw - 1)} height={H - pad * 2} fill="transparent" />
               {(["push", "sms", "email"] as const).map((ch) => {
                 if (!d[ch]) return null;
                 const h = d[ch] * scale;

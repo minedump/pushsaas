@@ -16,7 +16,7 @@ export default async function SuperadminLayout({ children }: { children: React.R
 
   const { data: projects } = await supabase
     .from("projects")
-    .select("id, name")
+    .select("id, name, is_active")
     .order("created_at", { ascending: false });
 
   return (

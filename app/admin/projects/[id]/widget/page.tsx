@@ -15,19 +15,10 @@ export default async function WidgetPage({ params }: { params: Promise<{ id: str
   const config = (project.widget_config as { button?: unknown; prompt?: unknown } | null) || {};
 
   return (
-    <main className="max-w-4xl mx-auto">
+    <main className="max-w-6xl mx-auto">
       <h1 className="text-2xl font-semibold">Виджеты</h1>
-      <p className="text-ink-muted mt-0">
-        Два опциональных скрипта поверх основного виджета — плавающая кнопка подписки и мягкая плашка, предлагающая
-        подписаться до того, как браузер спросит разрешение сам.
-      </p>
 
-      <WidgetSettings
-        projectId={id}
-        appUrl={process.env.NEXT_PUBLIC_APP_URL || ""}
-        initialButton={resolveButtonConfig(config.button)}
-        initialPrompt={resolvePromptConfig(config.prompt)}
-      />
+      <WidgetSettings projectId={id} initialButton={resolveButtonConfig(config.button)} initialPrompt={resolvePromptConfig(config.prompt)} />
     </main>
   );
 }

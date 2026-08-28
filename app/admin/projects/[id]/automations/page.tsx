@@ -16,7 +16,7 @@ export default async function AutomationsPage({ params }: { params: Promise<{ id
     supabase
       .from("automations")
       .select(
-        "id, type, channel, is_enabled, delay_minutes, template_id, provider, segment_tags, name, title, body, click_url, platforms, config, spacing_enabled, spacing_minutes, send_window_enabled, send_days, send_time_from, send_time_to, send_window_subscriber_tz, cascade, channel_templates"
+        "id, type, channel, is_enabled, delay_minutes, template_id, provider, segment_tags, name, title, body, click_url, platforms, config, spacing_enabled, spacing_minutes, send_window_enabled, send_days, send_time_from, send_time_to, send_window_subscriber_tz, cascade, channel_templates, is_transactional, next_fire_at"
       )
       .eq("project_id", id)
       .order("created_at"),
@@ -36,6 +36,7 @@ export default async function AutomationsPage({ params }: { params: Promise<{ id
   const welcomes = list.filter((a) => a.type === "welcome");
   const events = list.filter((a) => a.type === "event");
   const custom = list.filter((a) => a.type === "custom");
+  const recurring = list.filter((a) => a.type === "recurring");
   const templates = templatesRaw ?? [];
   const segmentOptions = [...new Set((tagRows || []).flatMap((r) => r.tags || []))].filter(Boolean).sort((a, b) => a.localeCompare(b, "ru"));
   const welcomeChannelPriority = (!priorityErr && (priorityRow?.welcome_channel_priority as string[] | null)) || ["push", "sms", "email"];
@@ -58,16 +59,19 @@ export default async function AutomationsPage({ params }: { params: Promise<{ id
   const hasBytehand = !!secrets?.bytehand_service_key;
   const hasSmsc = !!secrets?.smsc_login && !!secrets?.smsc_password;
   const hasHaskimail = !!secrets?.haskimail_server_token;
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
 
   return (
     <main className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-semibold">Автоматизации</h1>
       <AutomationsManager
         projectId={id}
+        appUrl={appUrl}
         welcomes={welcomes}
         templates={templates}
         events={events}
         custom={custom}
+        recurring={recurring}
         priorityOrder={welcomeChannelPriority}
         channelEnabled={welcomeChannelEnabled}
         channelProvider={welcomeChannelProvider}

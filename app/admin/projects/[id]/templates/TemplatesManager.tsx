@@ -8,7 +8,6 @@ import {
   IconTrash,
   IconEye,
   IconCopy,
-  IconCheck,
   IconFolderPlus,
   IconPencil,
   IconX,
@@ -18,8 +17,10 @@ import {
   IconSend,
 } from "@tabler/icons-react";
 import { createClient } from "@/lib/supabase/client";
-import { Badge, BulkActionsMenu, Button, ButtonLink, Checkbox, CustomSelect, Input, Label, Modal, SortableTh, useDialogs, type SortDir } from "@/app/ui";
+import { BulkActionsMenu, Button, ButtonLink, Checkbox, CustomSelect, Input, Label, Modal, SortableTh, useDialogs, type SortDir } from "@/app/ui";
+import { friendlyError } from "@/lib/errors";
 import { MessagePreviewModal } from "../MessagePreviewModal";
+import { IdCopy } from "../IdCopy";
 
 const PAGE_SIZE = 25;
 
@@ -39,14 +40,16 @@ type Template = {
   image_url: string | null;
   badge_url: string | null;
   actions: { title: string; url: string }[] | null;
+  context: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
   created_by: string | null;
   created_by_email: string | null;
+  created_by_name: string | null;
 };
 
 const CHANNEL_LABEL: Record<Channel, string> = { push: "Push", sms: "SMS", email: "Email" };
-type SortKey = "name" | "channel" | "folder" | "created_at" | "created_by";
+type SortKey = "name" | "channel" | "folder" | "id" | "created_at" | "created_by";
 const CHANNEL_OPTIONS = [
   { value: "email", label: "Email" },
   { value: "push", label: "Push" },
@@ -156,7 +159,34 @@ export default function TemplatesManager({
     });
   }
 
+  // campaigns.template_id и automations.template_id (обычные welcome/
+  // событийные) — настоящие FK с ON DELETE SET NULL, удаление шаблона им
+  // ничем не грозит. А вот channel_templates каскадных автоматизаций —
+  // просто jsonb {channel: templateId}, без FK и БЕЗ проверки при удалении:
+  // потерять шаблон, на который ссылается канал каскада, значит молча
+  // сломать этот канал (шлёт "пусто"/пропускает, без ошибки в интерфейсе).
+  // Поэтому перед удалением явно проверяем это и блокируем с указанием, в
+  // какой автоматизации шаблон используется — чинить порядок обратный:
+  // сначала поменять шаблон в автоматизации, потом удалять сам шаблон.
+  async function blockingCascadeAutomations(ids: string[]): Promise<{ automationName: string; templateName: string }[]> {
+    const { data } = await supabase.from("automations").select("name, channel_templates").eq("project_id", projectId).eq("cascade", true);
+    const idSet = new Set(ids);
+    const nameById = new Map(initialTemplates.map((t) => [t.id, t.name]));
+    const hits: { automationName: string; templateName: string }[] = [];
+    for (const a of data ?? []) {
+      const map = (a.channel_templates || {}) as Record<string, string>;
+      for (const templateId of Object.values(map)) {
+        if (idSet.has(templateId)) hits.push({ automationName: a.name || "Без названия", templateName: nameById.get(templateId) || templateId });
+      }
+    }
+    return hits;
+  }
+
   async function remove(id: string) {
+    const blocking = await blockingCascadeAutomations([id]);
+    if (blocking.length) {
+      return toast(`Шаблон используется в каскадной автоматизации «${blocking[0].automationName}» — сначала замените его там`, "bad");
+    }
     const ok = await confirm({
       title: "Удалить шаблон?",
       message: "Уже отправленные с ним рассылки не изменятся.",
@@ -194,13 +224,18 @@ export default function TemplatesManager({
     setBusy(true);
     const { error } = await supabase.from("templates").insert(rows);
     setBusy(false);
-    if (error) return toast(error.message, "bad");
+    if (error) return toast(friendlyError(error), "bad");
     toast(rows.length > 1 ? `Скопировано шаблонов: ${rows.length}` : "Шаблон скопирован", "good");
     setSelected(new Set());
     router.refresh();
   }
 
   async function bulkDelete() {
+    const blocking = await blockingCascadeAutomations([...selected]);
+    if (blocking.length) {
+      const names = [...new Set(blocking.map((b) => b.automationName))].join(", ");
+      return toast(`Часть шаблонов используется в каскадных автоматизациях (${names}) — сначала замените их там`, "bad");
+    }
     const ok = await confirm({
       title: `Удалить ${selected.size} шаблон${selected.size === 1 ? "" : "ов"}?`,
       message: "Уже отправленные с ними рассылки не изменятся.",
@@ -222,7 +257,7 @@ export default function TemplatesManager({
       .update({ folder_id: folderId || null })
       .in("id", [...selected]);
     setBusy(false);
-    if (error) return toast(error.message, "bad");
+    if (error) return toast(friendlyError(error), "bad");
     toast("Перемещено", "good");
     setSelected(new Set());
     setMoveOpen(false);
@@ -233,14 +268,14 @@ export default function TemplatesManager({
     const name = await prompt({ title: "Новая папка", placeholder: "Например, «Транзакционные»", confirmText: "Создать" });
     if (!name?.trim()) return;
     const { error } = await supabase.from("template_folders").insert({ project_id: projectId, name: name.trim() });
-    if (error) return toast(error.message, "bad");
+    if (error) return toast(friendlyError(error), "bad");
     router.refresh();
   }
 
   async function saveFolder(f: Folder, name: string) {
     if (name === f.name) return setEditFolder(null);
     const { error } = await supabase.from("template_folders").update({ name }).eq("id", f.id);
-    if (error) return toast(error.message, "bad");
+    if (error) return toast(friendlyError(error), "bad");
     setEditFolder(null);
     router.refresh();
   }
@@ -317,7 +352,7 @@ export default function TemplatesManager({
       {/* Канал + поиск */}
       <div className="flex items-center gap-2 flex-wrap mb-3">
         <CustomSelect value={channelFilter} onChange={selectChannel} options={[{ value: "all", label: "Все каналы" }, ...CHANNEL_OPTIONS]} className="w-40" />
-        <div className="relative flex-1 min-w-[200px] max-w-xs">
+        <div className="relative flex-1 min-w-[200px]">
           <IconSearch size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint pointer-events-none" />
           <Input value={search} onChange={(e) => updateSearch(e.target.value)} placeholder="Поиск: название, ID" className="pl-9 pr-9" />
           {search && (
@@ -344,8 +379,7 @@ export default function TemplatesManager({
                     { label: "Переместить", icon: <IconFolderPlus size={15} stroke={1.8} />, onClick: () => setMoveOpen(true) },
                   ]}
                 />
-                <Button variant="secondary" size="sm" onClick={bulkDelete}>
-                  <IconTrash size={14} stroke={1.8} />
+                <Button variant="danger" size="sm" onClick={bulkDelete}>
                   Удалить
                 </Button>
                 <Button variant="secondary" size="sm" onClick={() => setSelected(new Set())}>
@@ -365,7 +399,7 @@ export default function TemplatesManager({
                   <SortableTh label="Название" sortKey="name" active={sortKey === "name"} dir={sortDir} onClick={onSortClick} />
                   <SortableTh label="Канал" sortKey="channel" active={sortKey === "channel"} dir={sortDir} onClick={onSortClick} />
                   <SortableTh label="Папка" sortKey="folder" active={sortKey === "folder"} dir={sortDir} onClick={onSortClick} />
-                  <Th>ID</Th>
+                  <SortableTh label="ID" sortKey="id" active={sortKey === "id"} dir={sortDir} onClick={onSortClick} />
                   <SortableTh label="Создан" sortKey="created_at" active={sortKey === "created_at"} dir={sortDir} onClick={onSortClick} />
                   <SortableTh label="Автор" sortKey="created_by" active={sortKey === "created_by"} dir={sortDir} onClick={onSortClick} />
                   <Th> </Th>
@@ -377,23 +411,58 @@ export default function TemplatesManager({
                     <Td>
                       <Checkbox checked={selected.has(t.id)} onChange={() => toggleSelect(t.id)} />
                     </Td>
-                    <Td>
-                      <div className="font-medium truncate max-w-[220px]">{t.name}</div>
-                      {t.channel === "email" && t.subject && <div className="text-[12px] text-ink-muted truncate max-w-[220px]">{t.subject}</div>}
+                    <Td className="max-w-[220px]">
+                      <Link
+                        href={`/admin/projects/${projectId}/templates/${t.id}/edit`}
+                        className="inline-flex items-center gap-1 max-w-full text-ink hover:text-accent hover:underline"
+                      >
+                        <span className="min-w-0 truncate">{t.name}</span>
+                        <IconChevronRight size={13} stroke={2} className="text-ink-faint shrink-0" />
+                      </Link>
                     </Td>
-                    <Td>
-                      <Badge tone="accent">{CHANNEL_LABEL[t.channel]}</Badge>
+                    <Td className="text-ink-muted">
+                      <button
+                        type="button"
+                        onClick={() => selectChannel(t.channel)}
+                        className="cursor-pointer hover:text-accent hover:underline"
+                      >
+                        {CHANNEL_LABEL[t.channel]}
+                      </button>
                     </Td>
-                    <Td className="text-ink-muted">{folderName(t.folder_id) || "—"}</Td>
+                    <Td className="text-ink-muted">
+                      <button
+                        type="button"
+                        onClick={() => selectFolder(t.folder_id || "none")}
+                        className="cursor-pointer hover:text-accent hover:underline"
+                      >
+                        {folderName(t.folder_id) || "—"}
+                      </button>
+                    </Td>
                     <Td className="whitespace-nowrap">
                       <IdCopy id={t.id} />
                     </Td>
                     <Td className="text-ink-faint whitespace-nowrap">
-                      {new Date(t.created_at).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" })}
+                      {new Date(t.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}
                     </Td>
-                    <Td className="text-ink-muted truncate max-w-[160px]">{t.created_by_email || "—"}</Td>
+                    <Td className="max-w-[160px]" title={t.created_by_email || undefined}>
+                      {t.created_by_name ? (
+                        <div className="min-w-0">
+                          <div className="text-ink-muted truncate">{t.created_by_name}</div>
+                          <div className="text-[11px] text-ink-faint truncate">{t.created_by_email}</div>
+                        </div>
+                      ) : (
+                        <div className="text-ink-muted truncate">{t.created_by_email || "—"}</div>
+                      )}
+                    </Td>
                     <Td className="text-right">
                       <div className="flex justify-end gap-1">
+                        <Link
+                          href={`/admin/projects/${projectId}/templates/${t.id}/edit`}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2"
+                          title="Изменить"
+                        >
+                          <IconPencil size={15} stroke={1.8} />
+                        </Link>
                         <Link
                           href={`/admin/projects/${projectId}/campaigns/new?channel=${t.channel}&templateId=${t.id}`}
                           className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2"
@@ -409,13 +478,6 @@ export default function TemplatesManager({
                         >
                           <IconEye size={15} stroke={1.8} />
                         </button>
-                        <Link
-                          href={`/admin/projects/${projectId}/templates/${t.id}/edit`}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2"
-                          title="Изменить"
-                        >
-                          <IconPencil size={15} stroke={1.8} />
-                        </Link>
                         <button
                           type="button"
                           onClick={() => duplicateTemplates([t.id])}
@@ -482,6 +544,8 @@ export default function TemplatesManager({
             subject: previewTemplate.subject,
             html: previewTemplate.html,
           }}
+          sampleData={{ template: previewTemplate.context || {} }}
+          projectId={projectId}
           onClose={() => setPreviewId(null)}
         />
       )}
@@ -544,10 +608,12 @@ function MoveModal({
 }
 
 const Th = ({ children }: { children: React.ReactNode }) => (
-  <th className="px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-ink-faint font-normal whitespace-nowrap text-left">{children}</th>
+  <th className="px-3.5 py-2.5 text-[11px] text-ink-faint font-normal whitespace-nowrap text-left">{children}</th>
 );
-const Td = ({ children, className = "" }: { children: React.ReactNode; className?: string }) => (
-  <td className={`px-3.5 py-3 align-middle ${className}`}>{children}</td>
+const Td = ({ children, className = "", title }: { children: React.ReactNode; className?: string; title?: string }) => (
+  <td className={`px-3.5 py-3 align-middle ${className}`} title={title}>
+    {children}
+  </td>
 );
 
 function FilterChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -597,7 +663,6 @@ function FolderEditModal({
 
       <div className="flex items-center justify-between gap-2 mt-5">
         <Button variant="danger" size="sm" onClick={onDelete}>
-          <IconTrash size={14} stroke={1.8} />
           Удалить
         </Button>
         <div className="flex gap-2">
@@ -613,23 +678,3 @@ function FolderEditModal({
   );
 }
 
-// Компактный ID шаблона с копированием — тот же ID, что передаётся в
-// templateId при вызове /api/v1/send.
-function IdCopy({ id }: { id: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      onClick={async () => {
-        await navigator.clipboard.writeText(id);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-      }}
-      className="inline-flex items-center gap-1 text-[11.5px] font-mono text-ink-faint hover:text-accent cursor-pointer"
-      title="Скопировать ID для API"
-    >
-      {copied ? <IconCheck size={12} stroke={2} /> : <IconCopy size={12} stroke={1.8} />}
-      {id}
-    </button>
-  );
-}

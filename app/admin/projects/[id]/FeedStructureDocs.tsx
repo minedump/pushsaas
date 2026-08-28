@@ -42,8 +42,8 @@ function FeedStructureDocsModal({ onClose }: { onClose: () => void }) {
         <section>
           <div className="font-semibold text-ink mb-1">1. Формат — обычный YML (Яндекс.Маркет / ЯМL)</div>
           <p className="m-0">
-            Тот же формат, что мерчант уже готовит для Яндекс.Директ/Маркет (штатный экспорт большинства CMS, включая InSales,
-            называется «выгрузка для Яндекс.Маркета» или «YML») — отдельный файл под Sendera заводить не нужно, подойдёт готовый.
+            Тот же формат, что мерчант уже готовит для Яндекс.Директ/Маркет (штатный экспорт InSales называется «выгрузка для
+            Яндекс.Маркета» или «YML») — отдельный файл под Sendera заводить не нужно, подойдёт готовый.
           </p>
           <pre className="mt-1.5 mb-0 text-[12px] bg-surface-2 border border-border rounded-lg p-2.5 overflow-x-auto">
 {`<?xml version="1.0" encoding="UTF-8"?>

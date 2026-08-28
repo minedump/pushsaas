@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { IconX, IconBellRinging } from "@tabler/icons-react";
 import { Badge, Modal } from "@/app/ui";
 import { applyTemplate } from "@/lib/template";
@@ -35,14 +36,43 @@ export function MessagePreviewModal({
   label,
   content,
   sampleData,
+  projectId,
   onClose,
 }: {
   label: string;
   content: PreviewContent;
   sampleData?: Record<string, unknown>;
+  // Если задан — products/product/categories/category/collections/collection
+  // внутри sampleData (и sampleData.template) резолвятся против кеша фида
+  // (см. app/api/admin/preview-context) — так превью показывает реальные
+  // название/цену/картинку, а не голый {"id": "..."}, как при отправке.
+  projectId?: string;
   onClose: () => void;
 }) {
-  const data = sampleData || {};
+  const [resolvedSampleData, setResolvedSampleData] = useState(sampleData);
+  useEffect(() => {
+    if (!projectId || !sampleData) {
+      setResolvedSampleData(sampleData);
+      return;
+    }
+    let cancelled = false;
+    fetch("/api/admin/preview-context", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, data: sampleData }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (!cancelled && json?.data) setResolvedSampleData(json.data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, JSON.stringify(sampleData)]);
+
+  const data = resolvedSampleData || {};
   const rendered: PreviewContent = {
     ...content,
     title: applyTemplate(content.title, data),

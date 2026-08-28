@@ -17,8 +17,10 @@ type Row = {
   internal_title: string | null;
   status: string;
   channel: string;
+  templateId: string | null;
+  templateName: string | null;
   type: "transactional" | "marketing";
-  initiator: "manual" | "api" | "automation" | "auth";
+  initiator: "manual" | "api" | "welcome" | "event" | "trigger" | "recurring" | "automation" | "auth";
   sent_count: number;
   delivered_count: number;
   clicked_count: number;
@@ -29,7 +31,20 @@ type Row = {
   paidOrders: number;
 };
 
-type SortKey = "title" | "channel" | "type" | "status" | "delivered_count" | "clicked_count" | "ctr" | "orders" | "revenue" | "paid" | "created_at";
+type SortKey =
+  | "title"
+  | "channel"
+  | "template"
+  | "type"
+  | "initiator"
+  | "status"
+  | "delivered_count"
+  | "clicked_count"
+  | "ctr"
+  | "orders"
+  | "revenue"
+  | "paid"
+  | "created_at";
 
 const statusTone = (s: string) => (s === "sent" ? "good" : s === "failed" ? "bad" : s === "skipped" ? "neutral" : "warn");
 const CHANNEL_LABEL: Record<string, string> = { push: "Push", sms: "SMS", email: "Email" };
@@ -43,7 +58,22 @@ const STATUS_LABEL: Record<string, string> = {
   skipped: "пропущена",
 };
 const TYPE_LABEL: Record<string, string> = { transactional: "Транзакционное", marketing: "Маркетинговое" };
-const INITIATOR_LABEL: Record<string, string> = { manual: "Ручная", api: "Вебхук/API", automation: "Автоматизация", auth: "Авторизация" };
+// welcome/event/trigger — рассылки, произведённые автоматизацией
+// соответствующего типа (см. app/admin/projects/[id]/campaigns/page.tsx,
+// классификация через join на automation_log). "automation" — редкий
+// фолбэк на случай сбоя того join'а (initiator=automation в БД, но
+// подтверждающей строки automation_log не нашлось); "api" — только прямой
+// вызов POST /api/v1/campaigns, без вебхука.
+const INITIATOR_LABEL: Record<string, string> = {
+  manual: "Ручная",
+  api: "API",
+  welcome: "Приветственная",
+  event: "Событийная",
+  trigger: "Триггерная",
+  recurring: "Повторяющаяся",
+  automation: "Автоматизация",
+  auth: "Авторизация",
+};
 
 const TYPE_OPTIONS: ComboOption[] = [
   { value: "all", label: "Все типы" },
@@ -53,8 +83,11 @@ const TYPE_OPTIONS: ComboOption[] = [
 const INITIATOR_OPTIONS: ComboOption[] = [
   { value: "all", label: "Все инициаторы" },
   { value: "manual", label: "Ручная" },
-  { value: "api", label: "Вебхук/API" },
-  { value: "automation", label: "Автоматизация" },
+  { value: "api", label: "API" },
+  { value: "welcome", label: "Приветственная" },
+  { value: "event", label: "Событийная" },
+  { value: "trigger", label: "Триггерная" },
+  { value: "recurring", label: "Повторяющаяся" },
   { value: "auth", label: "Авторизация" },
 ];
 
@@ -175,6 +208,8 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
             return (a[sortKey] - b[sortKey]) * dir;
           case "ctr":
             return (ctrOf(a) - ctrOf(b)) * dir;
+          case "template":
+            return (a.templateName || "").localeCompare(b.templateName || "", "ru") * dir;
           case "created_at":
             return (new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) * dir;
           default:
@@ -210,9 +245,9 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
           options={INITIATOR_OPTIONS}
           className="w-[180px]"
         />
-        <div className="relative flex-1 min-w-[200px] max-w-xs">
+        <div className="relative flex-1 min-w-[200px]">
           <IconSearch size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint pointer-events-none" />
-          <Input value={search} onChange={(e) => updateSearch(e.target.value)} placeholder="Поиск: заголовок" className="pl-9 pr-9" />
+          <Input value={search} onChange={(e) => updateSearch(e.target.value)} placeholder="Поиск: название" className="pl-9 pr-9" />
           {search && (
             <button
               type="button"
@@ -230,10 +265,11 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
         <table className="w-full border-collapse text-[13.5px]">
           <thead>
             <tr className="bg-surface-2 text-left">
-              <SortableTh label="Заголовок" sortKey="title" active={sortKey === "title"} dir={sortDir} onClick={onSortClick} />
+              <SortableTh label="Название" sortKey="title" active={sortKey === "title"} dir={sortDir} onClick={onSortClick} />
               <SortableTh label="Канал" sortKey="channel" active={sortKey === "channel"} dir={sortDir} onClick={onSortClick} />
+              <SortableTh label="Шаблон" sortKey="template" active={sortKey === "template"} dir={sortDir} onClick={onSortClick} />
               <SortableTh label="Тип" sortKey="type" active={sortKey === "type"} dir={sortDir} onClick={onSortClick} />
-              <Th>Инициатор</Th>
+              <SortableTh label="Инициатор" sortKey="initiator" active={sortKey === "initiator"} dir={sortDir} onClick={onSortClick} />
               <SortableTh label="Статус" sortKey="status" active={sortKey === "status"} dir={sortDir} onClick={onSortClick} />
               <SortableTh label="Отправлено" sortKey="delivered_count" active={sortKey === "delivered_count"} dir={sortDir} onClick={onSortClick} right />
               <SortableTh label="Клики" sortKey="clicked_count" active={sortKey === "clicked_count"} dir={sortDir} onClick={onSortClick} right />
@@ -248,6 +284,11 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
           <tbody>
             {paged.map((c) => {
               const cctr = c.delivered_count ? Math.round((c.clicked_count / c.delivered_count) * 100) : 0;
+              // Черновик/запланированная ещё не уходили — статистике неоткуда
+              // взяться, прочерк вместо 0 по всем показателям (не только CTR,
+              // как было раньше).
+              const notYetSent = c.status === "draft" || c.status === "scheduled";
+              const hasStats = !!c.campaignId && !notYetSent;
               const titleOverride = c.campaignId ? titleOverrides[c.campaignId] : undefined;
               const displayTitle = titleOverride !== undefined ? titleOverride || c.title : c.internal_title || c.title;
               return (
@@ -263,21 +304,54 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
                     <Badge tone="accent">{CHANNEL_LABEL[c.channel] || c.channel}</Badge>
                   </Td>
                   <Td>
-                    <Badge tone={c.type === "transactional" ? "warn" : "neutral"}>{TYPE_LABEL[c.type]}</Badge>
+                    {c.templateId ? (
+                      <Link
+                        href={`/admin/projects/${projectId}/templates/${c.templateId}/edit`}
+                        className="inline-flex items-center gap-1 max-w-[160px] text-ink hover:text-accent hover:underline"
+                      >
+                        <span className="min-w-0 truncate">{c.templateName || "Шаблон"}</span>
+                        <IconChevronRight size={13} stroke={2} className="text-ink-faint shrink-0" />
+                      </Link>
+                    ) : (
+                      <span className="text-ink-faint">—</span>
+                    )}
                   </Td>
-                  <Td className="text-ink-muted whitespace-nowrap">{INITIATOR_LABEL[c.initiator]}</Td>
+                  <Td className="text-ink-muted whitespace-nowrap">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTypeFilter(c.type);
+                        setPage(1);
+                      }}
+                      className="cursor-pointer hover:text-accent hover:underline"
+                    >
+                      {TYPE_LABEL[c.type]}
+                    </button>
+                  </Td>
+                  <Td className="text-ink-muted whitespace-nowrap">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInitiatorFilter(c.initiator);
+                        setPage(1);
+                      }}
+                      className="cursor-pointer hover:text-accent hover:underline"
+                    >
+                      {INITIATOR_LABEL[c.initiator] || c.initiator}
+                    </button>
+                  </Td>
                   <Td>
                     <Badge tone={statusTone(c.status)} dot>
                       {STATUS_LABEL[c.status] || c.status}
                     </Badge>
                   </Td>
-                  <Td right>{c.delivered_count}</Td>
-                  <Td right>{c.campaignId ? c.clicked_count : "—"}</Td>
-                  <Td right>{c.campaignId && c.status === "sent" ? `${cctr}%` : "—"}</Td>
-                  <Td right>{c.campaignId ? c.orders : "—"}</Td>
-                  <Td right>{c.campaignId ? `${c.revenue.toLocaleString("ru-RU")} ₽` : "—"}</Td>
-                  <Td right>{c.campaignId && c.paidOrders ? `${c.paid.toLocaleString("ru-RU")} ₽` : "—"}</Td>
-                  <Td className="text-ink-faint">{new Date(c.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}</Td>
+                  <Td right>{hasStats ? c.delivered_count : "—"}</Td>
+                  <Td right>{hasStats ? c.clicked_count : "—"}</Td>
+                  <Td right>{hasStats && c.status === "sent" ? `${cctr}%` : "—"}</Td>
+                  <Td right>{hasStats ? c.orders : "—"}</Td>
+                  <Td right>{hasStats ? `${c.revenue.toLocaleString("ru-RU")} ₽` : "—"}</Td>
+                  <Td right>{hasStats ? `${c.paid.toLocaleString("ru-RU")} ₽` : "—"}</Td>
+                  <Td className="text-ink-faint whitespace-nowrap">{new Date(c.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}</Td>
                   <Td className="text-right">
                     <div className="flex justify-end gap-1">
                       {c.campaignId && (
@@ -336,7 +410,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={13} className="px-3.5 py-6 text-center text-ink-muted">
+                <td colSpan={14} className="px-3.5 py-6 text-center text-ink-muted">
                   Ничего не найдено
                 </td>
               </tr>
@@ -423,7 +497,7 @@ function InlineTitle({ value, editable, onSave }: { value: string; editable: boo
 }
 
 const Th = ({ children, right }: { children: React.ReactNode; right?: boolean }) => (
-  <th className={`px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-ink-faint font-normal whitespace-nowrap ${right ? "text-right" : "text-left"}`}>
+  <th className={`px-3.5 py-2.5 text-[11px] text-ink-faint font-normal whitespace-nowrap ${right ? "text-right" : "text-left"}`}>
     {children}
   </th>
 );

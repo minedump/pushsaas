@@ -41,8 +41,12 @@ export async function POST(req: Request) {
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400, headers: CORS });
 
   const admin = createAdminClient();
-  const { data: project } = await admin.from("projects").select("id").eq("id", projectId).maybeSingle();
+  const { data: project } = await admin.from("projects").select("id, is_active").eq("id", projectId).maybeSingle();
   if (!project) return NextResponse.json({ error: "unknown project" }, { status: 404, headers: CORS });
+  // Эта запись тоже растит число подписчиков (см. count_project_subscribers,
+  // 0088) — заблокированный проект не должен продолжать копить их через
+  // анонимный трекинг, та же логика, что и в /api/public/subscribe.
+  if (!project.is_active) return NextResponse.json({ error: "project blocked" }, { status: 403, headers: CORS });
 
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   const allowed = await checkRateLimit(`device:${projectId}:${ip}`, 60_000, 20);

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { upsertContact } from "@/lib/identity";
+import { friendlyError } from "@/lib/errors";
 
 // Управление подписчиком из раздела «Подписчики»: теги, приостановка push и
 // активация SMS/Email-канала для рассылок (клик по бейджу в «Каналы»).
@@ -9,7 +10,7 @@ import { upsertContact } from "@/lib/identity";
 // живой ли сам endpoint устройства; paused — просьба владельца отключить
 // показ рассылок этому подписчику, не трогая при этом факт валидности устройства).
 // smsActive/emailActive живут на identities (см. lib/identity.upsertContact) —
-// это то же согласие на рассылку, что включается через /api/v1/contacts.
+// это то же согласие на рассылку, что включается через /api/v1/subscribers.
 // tags живут на identities (см. миграцию 0037) — контакт, а не конкретное
 // устройство; identityId, а не subscriberId, идентифицирует, чей тег меняем.
 export async function POST(req: Request) {
@@ -50,7 +51,7 @@ export async function POST(req: Request) {
       .update({ tags: Array.isArray(tags) ? tags : [] })
       .eq("id", identityId)
       .eq("project_id", projectId);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: friendlyError(error) }, { status: 500 });
     return NextResponse.json({ ok: true });
   }
 
@@ -62,7 +63,7 @@ export async function POST(req: Request) {
     .eq("id", subscriberId)
     .eq("project_id", projectId);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: friendlyError(error) }, { status: 500 });
 
   await admin
     .from("push_events")

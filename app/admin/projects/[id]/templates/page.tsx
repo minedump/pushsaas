@@ -15,24 +15,25 @@ export default async function TemplatesPage({ params }: { params: Promise<{ id: 
   const [{ data: templatesRaw }, { data: folders }] = await Promise.all([
     supabase
       .from("templates")
-      .select("id, name, channel, folder_id, subject, html, title, body, url, icon_url, image_url, badge_url, actions, created_at, updated_at, created_by")
+      .select("id, name, channel, folder_id, subject, html, title, body, url, icon_url, image_url, badge_url, actions, context, created_at, updated_at, created_by")
       .eq("project_id", id)
       .order("updated_at", { ascending: false }),
     supabase.from("template_folders").select("id, name").eq("project_id", id).order("name"),
   ]);
 
-  // Email автора через admin-клиент (обход RLS profiles) — автором мог быть
-  // суперадмин, чей профиль владельцу проекта обычным select недоступен.
+  // Имя+email автора через admin-клиент (обход RLS profiles) — автором мог
+  // быть суперадмин, чей профиль владельцу проекта обычным select недоступен.
   const creatorIds = [...new Set((templatesRaw ?? []).map((t) => t.created_by).filter(Boolean))] as string[];
   const admin = createAdminClient();
   const { data: creators } = creatorIds.length
-    ? await admin.from("profiles").select("id, email").in("id", creatorIds)
-    : { data: [] as { id: string; email: string }[] };
-  const emailById = new Map((creators ?? []).map((c) => [c.id, c.email]));
+    ? await admin.from("profiles").select("id, email, full_name").in("id", creatorIds)
+    : { data: [] as { id: string; email: string; full_name: string | null }[] };
+  const creatorById = new Map((creators ?? []).map((c) => [c.id, c]));
 
   const templates = (templatesRaw ?? []).map((t) => ({
     ...t,
-    created_by_email: t.created_by ? (emailById.get(t.created_by) ?? null) : null,
+    created_by_email: t.created_by ? (creatorById.get(t.created_by)?.email ?? null) : null,
+    created_by_name: t.created_by ? (creatorById.get(t.created_by)?.full_name ?? null) : null,
   }));
 
   return (

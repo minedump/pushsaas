@@ -15,12 +15,13 @@ export default async function ClientsPage() {
     .select("id, name, price_rub, monthly_push_limit")
     .order("sort");
 
-  // resolve owner emails
+  // resolve owner emails/имена
   const ownerIds = [...new Set((projects ?? []).map((p) => p.owner_id).filter(Boolean))] as string[];
   const { data: owners } = ownerIds.length
-    ? await supabase.from("profiles").select("id, email").in("id", ownerIds)
-    : { data: [] as { id: string; email: string }[] };
+    ? await supabase.from("profiles").select("id, email, full_name").in("id", ownerIds)
+    : { data: [] as { id: string; email: string; full_name: string | null }[] };
   const emailById = new Map((owners ?? []).map((o) => [o.id, o.email]));
+  const nameById = new Map((owners ?? []).map((o) => [o.id, o.full_name]));
 
   // active subscriber counts per project
   const { data: subs } = await supabase.from("subscribers").select("project_id").eq("is_active", true).limit(10000);
@@ -30,6 +31,7 @@ export default async function ClientsPage() {
   const rows = (projects ?? []).map((p) => ({
     ...p,
     owner_email: p.owner_id ? emailById.get(p.owner_id) ?? "—" : "—",
+    owner_name: p.owner_id ? nameById.get(p.owner_id) || null : null,
     subscribers: subCount.get(p.id) || 0,
     tariff_name: tariffs?.find((t) => t.id === p.tariff_id)?.name ?? "—",
   }));
@@ -37,7 +39,6 @@ export default async function ClientsPage() {
   return (
     <main className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-semibold">Клиенты</h1>
-      <p className="text-ink-muted mt-0">Все проекты платформы — {rows.length}</p>
       <ClientsTable rows={rows} tariffs={tariffs ?? []} />
     </main>
   );

@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconPhone, IconRefresh, IconGripVertical } from "@tabler/icons-react";
-import { Button, Card, Input, Label, Select, Textarea, Toggle, useDialogs } from "@/app/ui";
+import { Button, Card, ColorField, CustomSelect, Input, Label, Textarea, Toggle, useDialogs } from "@/app/ui";
 import CopyBox from "../CopyBox";
 import IntegrationCard from "../IntegrationCard";
 import { SMS_PROVIDERS, TELEGRAM_PROVIDERS, EMAIL_PROVIDERS } from "@/lib/otp/providers";
@@ -23,6 +23,8 @@ const PROVIDER_OPTIONS: Partial<Record<ChannelKey, { id: string; label: string }
 };
 
 type Providers = Partial<Record<ChannelKey, string>>;
+type OtpTemplates = Partial<Record<"push" | "sms" | "email", string | null>>;
+type Template = { id: string; name: string; channel: "push" | "sms" | "email" };
 
 type Initial = {
   clientId: string;
@@ -30,6 +32,7 @@ type Initial = {
   channels: Record<ChannelKey, boolean | undefined>;
   channelOrder: ChannelKey[];
   providers: Providers;
+  otpTemplates: OtpTemplates;
   hideNativeLoginButton: boolean;
   authButtonText: string;
   authButtonIcon: string;
@@ -47,17 +50,20 @@ export default function AuthSettings({
   projectId,
   projectDomain,
   issuer,
+  templates,
   initial,
 }: {
   projectId: string;
   projectDomain: string | null;
   issuer: string;
+  templates: Template[];
   initial: Initial | null;
 }) {
   const router = useRouter();
   const { confirm, toast } = useDialogs();
   const [busy, setBusy] = useState(false);
   const [freshSecret, setFreshSecret] = useState<string | null>(null);
+  const [otpTemplates, setOtpTemplates] = useState<OtpTemplates>(initial?.otpTemplates || {});
   const [isEnabled, setIsEnabled] = useState(initial?.isEnabled ?? false);
   const [channels, setChannels] = useState(initial?.channels || { push: true, email: true, telegram: true, sms: true });
   const [order, setOrder] = useState<ChannelKey[]>(() => {
@@ -125,7 +131,7 @@ export default function AuthSettings({
   // Каждый вызывающий сам решает, что из channels/order/providers у него
   // уже новое, остальное берёт текущим — сервер всё равно принимает только
   // то, что реально изменилось (см. /api/admin/oidc/settings).
-  async function persistCascade(next: { channels?: typeof channels; order?: ChannelKey[]; providers?: Providers }) {
+  async function persistCascade(next: { channels?: typeof channels; order?: ChannelKey[]; providers?: Providers; otpTemplates?: OtpTemplates }) {
     setBusy(true);
     const res = await fetch("/api/admin/oidc/settings", {
       method: "POST",
@@ -135,6 +141,7 @@ export default function AuthSettings({
         channels: next.channels ?? channels,
         channelOrder: next.order ?? order,
         providers: next.providers ?? providers,
+        otpTemplates: next.otpTemplates,
       }),
     });
     const json = await res.json().catch(() => ({}));
@@ -176,6 +183,20 @@ export default function AuthSettings({
       return;
     }
     toast("Провайдер обновлён", "good");
+  }
+
+  // Шаблон кода входа на канал (push/sms/email — telegram без выбора, см.
+  // lib/otp/index.ts) — пусто значит «простой текст по умолчанию».
+  async function handleOtpTemplateChange(key: "push" | "sms" | "email", templateId: string) {
+    const prev = otpTemplates;
+    const next = { ...otpTemplates, [key]: templateId || null };
+    setOtpTemplates(next);
+    const ok = await persistCascade({ otpTemplates: next });
+    if (!ok) {
+      setOtpTemplates(prev);
+      return;
+    }
+    toast(templateId ? "Шаблон назначен" : "Сброшено на простой текст", "good");
   }
 
   // Push сам по себе никого не онбордит — работает только на уже узнанных
@@ -427,6 +448,32 @@ export default function AuthSettings({
         </Button>
       </IntegrationCard>
 
+      <IntegrationCard title="Шаблоны кода входа" configured={Object.values(otpTemplates).some(Boolean)}>
+        <p className="text-sm text-ink-muted mt-0">
+          Необязательно, из общего списка «Шаблоны» — только по каналам с кодом. В тексте доступна переменная{" "}
+          <code className="font-mono">{"{{ code }}"}</code> (сам одноразовый код). Если для канала ничего не выбрано,
+          уходит короткий встроенный текст («Код подтверждения: {"{{ code }}"}» и т.п.). Telegram без выбора — Gateway
+          API не может нести произвольный текст, только код.
+        </p>
+        <div className="flex flex-col gap-2 mt-3">
+          {(["push", "sms", "email"] as const).map((key) => (
+            <div key={key} className="flex items-center justify-between gap-3">
+              <div className="text-sm">{CHANNEL_TITLE[key]}</div>
+              <CustomSelect
+                value={otpTemplates[key] || ""}
+                onChange={(v) => handleOtpTemplateChange(key, v)}
+                options={[
+                  { value: "", label: "— простой текст —" },
+                  ...templates.filter((t) => t.channel === key).map((t) => ({ value: t.id, label: t.name })),
+                ]}
+                className="w-56"
+                ariaLabel={`Шаблон кода входа — ${CHANNEL_TITLE[key]}`}
+              />
+            </div>
+          ))}
+        </div>
+      </IntegrationCard>
+
       <IntegrationCard
         title="Кнопка входа InSales"
         configured={hideLoginButton || !!authButtonText || !!authButtonColor || !!authButtonIcon || authButtonRounded}
@@ -462,26 +509,16 @@ export default function AuthSettings({
             <div className="flex gap-3 mt-3">
               <div className="flex-1">
                 <Label>Цвет кнопки</Label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={/^#[0-9a-fA-F]{6}$/.test(authButtonColor) ? authButtonColor : "#2c4a66"}
-                    onChange={(e) => setAuthButtonColor(e.target.value)}
-                    className="w-9 h-9 shrink-0 rounded-lg border border-border cursor-pointer bg-transparent p-0.5"
-                  />
-                  <Input value={authButtonColor} onChange={(e) => setAuthButtonColor(e.target.value)} placeholder="родной цвет темы" />
-                </div>
+                <ColorField value={authButtonColor} onChange={setAuthButtonColor} />
               </div>
               <div className="w-32 shrink-0">
                 <Label>Размер</Label>
-                <Select value={authButtonSize} onChange={(e) => setAuthButtonSize(e.target.value)} className="w-full">
-                  <option value="">Родной (m)</option>
-                  {BUTTON_SIZES.map((s) => (
-                    <option key={s} value={s}>
-                      {s.toUpperCase()}
-                    </option>
-                  ))}
-                </Select>
+                <CustomSelect
+                  value={authButtonSize}
+                  onChange={setAuthButtonSize}
+                  options={[{ value: "", label: "Родной (m)" }, ...BUTTON_SIZES.map((s) => ({ value: s, label: s.toUpperCase() }))]}
+                  className="w-full"
+                />
               </div>
             </div>
             <div className="flex justify-between items-center gap-3 mt-3">
@@ -573,13 +610,12 @@ function ChannelRow({
       </div>
       <div className="flex-1 text-[13.5px]">{label}</div>
       {providerOptions && providerOptions.length > 0 && (
-        <Select value={provider} onChange={(e) => onProviderChange?.(e.target.value)} className="w-40 shrink-0">
-          {providerOptions.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label}
-            </option>
-          ))}
-        </Select>
+        <CustomSelect
+          value={provider || ""}
+          onChange={(v) => onProviderChange?.(v)}
+          options={providerOptions.map((p) => ({ value: p.id, label: p.label }))}
+          className="w-40 shrink-0"
+        />
       )}
       <Toggle checked={on} onChange={onChange} disabled={locked} label={on ? "Вкл" : "Выкл"} />
     </div>

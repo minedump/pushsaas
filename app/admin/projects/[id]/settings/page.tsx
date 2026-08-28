@@ -120,9 +120,12 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
             → «В раздел &lt;body&gt;» → вставьте код и сохраните.
           </p>
           <p className="text-[13px] text-ink-faint mb-0">
-            Появится кнопка «🔔 Уведомления». Чтобы вызывать подписку своей кнопкой, добавьте элемент с{" "}
-            <code className="font-mono text-[13px] text-accent">data-sendera=&quot;manual&quot;</code> и вызывайте{" "}
-            <code className="font-mono text-[13px] text-accent">sendera.subscribe()</code>.
+            Появится кнопка «🔔 Уведомления» (настраивается в разделе{" "}
+            <a href={`/admin/projects/${project.id}/widget`} className="text-accent">
+              «Виджеты»
+            </a>
+            ). Чтобы вызывать подписку своей кнопкой — выключите её там и вызывайте{" "}
+            <code className="font-mono text-[13px] text-accent">sendera.subscribe()</code> сами (полный список методов — тоже в «Виджеты»).
           </p>
         </SetupStep>
 
@@ -145,6 +148,7 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
       <ProjectSettings
         projectId={project.id}
         initialName={project.name}
+        domain={project.domain}
         initialYmCounterId={project.ym_counter_id}
         initialTimezone={project.timezone || "Europe/Moscow"}
         initialFeedUrl={project.product_feed_url}

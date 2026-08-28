@@ -40,23 +40,3 @@ export async function sendEmail(
   }
   return true;
 }
-
-export async function sendEmailCode(
-  serverToken: string,
-  to: string,
-  code: string,
-  from?: string,
-  messageStream?: string | number
-): Promise<boolean> {
-  return sendEmail(
-    serverToken,
-    to,
-    {
-      subject: `Код входа: ${code}`,
-      html: `<p>Ваш код для входа: <b style="font-size:20px">${code}</b></p><p style="color:#888">Действует 5 минут.</p>`,
-      text: `Ваш код для входа: ${code} (действует 5 минут)`,
-    },
-    from,
-    messageStream
-  );
-}

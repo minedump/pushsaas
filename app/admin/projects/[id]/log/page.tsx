@@ -3,33 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import { ensureProjectAccessible } from "@/lib/guards";
 import LogTabs from "./LogTabs";
 
-// Журнал — диагностика срабатываний, а не список отправленных сообщений
-// (это уже есть в «Кампаниях»). Ключевое отличие: сюда попадают ПРОПУСКИ
-// вебхук-автоматизаций (дедуп, условие не совпало, нет телефона для
-// транзакционной) — они никогда не создают строку в campaigns, поэтому в
-// «Кампаниях» их принципиально не увидеть.
-function fmtDetail(d: Record<string, unknown> | null): string {
-  if (!d || typeof d !== "object") return "";
-  const parts: string[] = [];
-  if (d.orderNumber) parts.push(`заказ №${d.orderNumber}`);
-  if (d.key) parts.push(`ключ ${d.key}`);
-  if (Array.isArray(d.segmentTags) && d.segmentTags.length) parts.push(`сегмент ${d.segmentTags.join(", ")}`);
-  return parts.join(" · ");
-}
-
-// Причина, по которой рассылка не смогла стартовать (campaigns.error,
-// миграция 0035) — короткие английские коды из lib/sender.ts/крона/
-// send-draft, переводим для отображения в «Журнале».
-const CAMPAIGN_ERROR_LABEL: Record<string, string> = {
-  "no vapid keys": "не настроены VAPID-ключи",
-  "insufficient balance": "недостаточно баланса",
-  "provider not configured": "не настроен провайдер",
-  "unsubscribe link required": "нет обязательной ссылки отписки в письме",
-};
-function campaignErrorDetail(status: string, error: string | null, sentCount: number): string {
-  if (status === "sent") return `0 из ${sentCount} доставлено`;
-  return error ? CAMPAIGN_ERROR_LABEL[error] || error : "";
-}
+// Журнал — диагностика, а не список отправленных сообщений (это уже есть в
+// «Кампаниях»). «Ошибки отправки» — только реальные рассылки (campaigns),
+// провалившиеся или пропущенные (пустая аудитория), в том же формате
+// колонок, что таблица «Рассылки» (см. CampaignsTable).
 
 // см. lib/otp/index.ts MAX_ATTEMPTS — тот же порог, чтобы "исчерпаны
 // попытки" в журнале совпадало с реальным поведением верификации.
@@ -49,146 +26,111 @@ export default async function LogPage({ params }: { params: Promise<{ id: string
   if (!project) notFound();
   await ensureProjectAccessible(project.id, project.is_active);
 
-  const [{ data: autoLogAll }, { data: campaignsSentOrFailed }, { data: otpAll }, { data: apiCallsAll }, { data: subEventsAll }, { data: channelEventsAll }] = await Promise.all([
-    supabase
-      .from("automation_log")
-      .select("id, source, title, status, recipients, detail, created_at")
-      .eq("project_id", id)
-      .order("created_at", { ascending: false })
-      .limit(500),
+  const [{ data: campaignsSentOrFailed }, { data: otpAll }, { data: apiCallsAll }] = await Promise.all([
     // 'sent' тоже нужен: dispatch*Campaign всегда ставит status="sent" по
     // факту завершения попытки, даже если КАЖДЫЙ получатель провалился
-    // (delivered_count=0) — это тоже ошибка, просто не на уровне кампании
-    // целиком (тот "failed" — только когда отправка не смогла даже начаться,
-    // например провайдер не настроен). sent_count>0 отсекает пустую
-    // аудиторию (сегмент ни на кого не попал) — это не ошибка, слать было некому.
+    // (delivered_count=0, "ошибка") или если сегмент ни на кого не попал
+    // (sent_count=0, "пропущена") — тот "failed" на уровне статуса кампании
+    // только когда отправка не смогла даже начаться (например, провайдер не
+    // настроен).
     supabase
       .from("campaigns")
-      .select("id, title, channel, status, sent_count, delivered_count, error, created_at")
+      .select("id, title, channel, status, sent_count, delivered_count, created_at, type, initiator, template_id")
       .eq("project_id", id)
       .in("status", ["failed", "sent"])
       .order("created_at", { ascending: false })
       .limit(300),
     supabase
       .from("otp_requests")
-      .select("id, channel, provider, attempts, expires_at, consumed_at, created_at")
+      .select("id, channel, provider, phone, email, attempts, expires_at, consumed_at, created_at")
       .eq("project_id", id)
       .order("created_at", { ascending: false })
       .limit(300),
-    // /api/v1/trigger сюда не входит — уже в automation_log.
+    // /api/v1/trigger сюда не входит — уже виден по своим кампаниям. Только
+    // POST/PUT (см. logApiCall в lib/apiLog.ts) — GET/DELETE тут
+    // принципиально не появятся, вкладка «API» про "что нам прислали и что
+    // мы ответили".
     supabase
       .from("api_call_log")
-      .select("id, endpoint, ok, error, detail, created_at")
-      .eq("project_id", id)
-      .order("created_at", { ascending: false })
-      .limit(300),
-    // события жизненного цикла push-подписки (миграция 0027) — новая
-    // подписка / пауза / возобновление / устройство отвалилось.
-    supabase
-      .from("push_events")
-      .select("id, type, created_at, subscribers(platform)")
-      .eq("project_id", id)
-      .in("type", ["subscribed", "paused", "resumed", "dead"])
-      .order("created_at", { ascending: false })
-      .limit(300),
-    // включение/отключение SMS/Email-рассылки по identity (миграция 0029) —
-    // тот же "События подписчиков", но на уровне контакта, не устройства.
-    supabase
-      .from("identity_channel_events")
-      .select("id, channel, active, contact, created_at")
+      .select("id, endpoint, ok, status_code, error, request_body, response_body, created_at")
       .eq("project_id", id)
       .order("created_at", { ascending: false })
       .limit(300),
   ]);
-  const failedCampaigns = (campaignsSentOrFailed ?? []).filter((c) => c.status === "failed" || (c.sent_count > 0 && c.delivered_count === 0));
+
+  const failedCampaigns = (campaignsSentOrFailed ?? [])
+    .filter((c) => c.status === "failed" || c.sent_count === 0 || (c.sent_count > 0 && c.delivered_count === 0))
+    .map((c) => ({ ...c, errStatus: (c.status === "failed" ? "failed" : c.sent_count === 0 ? "skipped" : "failed") as "failed" | "skipped" }));
 
   const apiCallRows = (apiCallsAll ?? []).map((r) => ({
     id: String(r.id),
     endpoint: r.endpoint,
     ok: r.ok,
+    statusCode: r.status_code as number | null,
     error: r.error,
-    detail: r.detail as Record<string, unknown> | null,
+    requestBody: r.request_body as Record<string, unknown> | null,
+    responseBody: r.response_body as Record<string, unknown> | null,
     created_at: r.created_at,
   }));
-
-  const platformLabel: Record<string, string> = { ios: "iPhone", android: "Android", desktop: "Desktop", unknown: "—" };
-  const subEventRows = [
-    ...(subEventsAll ?? []).map((r) => {
-      const sub = r.subscribers as unknown as { platform: string } | null;
-      return {
-        id: `push-${r.id}`,
-        channel: "push" as const,
-        type: r.type,
-        detail: platformLabel[sub?.platform || "unknown"] || sub?.platform || "—",
-        created_at: r.created_at,
-      };
-    }),
-    ...(channelEventsAll ?? []).map((r) => ({
-      id: `chan-${r.id}`,
-      channel: r.channel as "sms" | "email",
-      type: `${r.channel}_${r.active ? "activated" : "deactivated"}`,
-      detail: r.contact || "—",
-      created_at: r.created_at,
-    })),
-  ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   const loginRows = (otpAll ?? []).map((r) => ({
     id: r.id,
     channel: r.channel,
     provider: r.provider,
+    contact: r.channel === "email" ? r.email : r.phone,
     status: loginStatus(r.consumed_at, r.attempts, r.expires_at),
     created_at: r.created_at,
   }));
 
-  const automationRows = (autoLogAll ?? []).map((r) => ({
-    id: r.id,
-    source: r.source,
-    title: r.title || "—",
-    status: r.status,
-    recipients: r.recipients,
-    detail: fmtDetail(r.detail as Record<string, unknown> | null),
-    created_at: r.created_at,
-  }));
+  // «Ошибки отправки» — формат колонок таблицы «Рассылки» (см.
+  // CampaignsTable) без статистики доставки (у провалившихся/пропущенных
+  // рассылок она всегда нулевая — не несёт ценности, см. LogTabs.tsx).
+  // Название шаблона и реальный инициатор (welcome/event/trigger/recurring)
+  // — тот же join, что в campaigns/page.tsx, только на подмножестве
+  // провалившихся/пропущенных id.
+  const failedCampaignIds = failedCampaigns.map((c) => c.id);
+  const [{ data: errTemplateRows }, { data: errSourceRows }] = await Promise.all([
+    (() => {
+      const templateIds = [...new Set(failedCampaigns.map((c) => c.template_id).filter((v): v is string => !!v))];
+      return templateIds.length ? supabase.from("templates").select("id, name").in("id", templateIds) : Promise.resolve({ data: [] as { id: string; name: string }[] });
+    })(),
+    failedCampaignIds.length
+      ? supabase.from("automation_log").select("campaign_id, source").eq("project_id", id).not("campaign_id", "is", null).in("campaign_id", failedCampaignIds)
+      : Promise.resolve({ data: [] as { campaign_id: string | null; source: string }[] }),
+  ]);
+  const errTemplateNameById = new Map((errTemplateRows ?? []).map((t) => [t.id, t.name]));
+  const errSourceByCampaignId = new Map((errSourceRows ?? []).map((r) => [r.campaign_id as string, r.source]));
+  function errInitiator(campaignId: string, initiator: string | null): "manual" | "api" | "welcome" | "event" | "trigger" | "recurring" | "automation" | "auth" {
+    const autoSource = errSourceByCampaignId.get(campaignId);
+    if (autoSource === "welcome") return "welcome";
+    if (autoSource === "event") return "event";
+    if (autoSource === "webhook") return "trigger";
+    if (autoSource === "recurring") return "recurring";
+    if (initiator === "api") return "api";
+    if (initiator === "automation") return "automation";
+    return "manual";
+  }
 
-  const errorRows = [
-    ...(failedCampaigns ?? []).map((c) => ({
-      id: `camp-${c.id}`,
-      source: "campaign" as const,
+  const errorRows = failedCampaigns
+    .map((c) => ({
+      id: c.id,
       title: c.title,
       channel: c.channel || "push",
-      // c.status === "sent" тут возможен (см. фильтр выше) — это случай "все
-      // адресаты провалились", а не сбой на уровне кампании; отображаем как
-      // ошибку в любом случае, иначе увидим вводящее в заблуждение зелёное
-      // "отправлено" в разделе, который весь про проблемы.
-      status: "failed" as const,
-      detail: campaignErrorDetail(c.status, c.error, c.sent_count),
+      templateId: c.template_id as string | null,
+      templateName: c.template_id ? errTemplateNameById.get(c.template_id) || null : null,
+      type: (c.type === "transactional" ? "transactional" : "marketing") as "transactional" | "marketing",
+      initiator: errInitiator(c.id, c.initiator),
+      status: c.errStatus,
       created_at: c.created_at,
-    })),
-    ...(autoLogAll ?? [])
-      .filter((r) => r.status === "failed" || r.status === "skipped")
-      .map((r) => ({
-        id: `auto-${r.id}`,
-        source: "automation" as const,
-        title: r.title || "—",
-        channel: "push",
-        status: r.status,
-        detail: fmtDetail(r.detail as Record<string, unknown> | null),
-        created_at: r.created_at,
-      })),
-  ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }))
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   return (
     <main className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-semibold">Журнал</h1>
 
       <div className="mt-6">
-        <LogTabs
-          automationRows={automationRows}
-          errorRows={errorRows}
-          loginRows={loginRows}
-          apiCallRows={apiCallRows}
-          subEventRows={subEventRows}
-        />
+        <LogTabs projectId={id} errorRows={errorRows} loginRows={loginRows} apiCallRows={apiCallRows} />
       </div>
     </main>
   );

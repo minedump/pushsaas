@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateApiKey } from "@/lib/apikey";
+import { friendlyError } from "@/lib/errors";
 
 export async function POST(req: Request) {
   const { projectId, name, smsProvider, emailProvider } = await req.json().catch(() => ({}));
@@ -43,7 +44,7 @@ export async function POST(req: Request) {
     sms_provider: smsOk ? smsProvider : null,
     email_provider: emailOk ? emailProvider : null,
   });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: friendlyError(error) }, { status: 500 });
 
   // full key returned ONCE — never stored in plaintext
   return NextResponse.json({ key: raw, prefix });

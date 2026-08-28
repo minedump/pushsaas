@@ -12,7 +12,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
   const { data: projects } = await supabase
     .from("projects")
-    .select("id, name")
+    .select("id, name, is_active")
     .order("created_at", { ascending: false });
 
   return (

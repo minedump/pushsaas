@@ -25,7 +25,7 @@ export function SortableTh<K extends string>({
   right?: boolean;
 }) {
   return (
-    <th className={cn("px-3.5 py-2.5 text-[11px] uppercase tracking-wider font-normal whitespace-nowrap", right ? "text-right" : "text-left")}>
+    <th className={cn("px-3.5 py-2.5 text-[11px] font-normal whitespace-nowrap", right ? "text-right" : "text-left")}>
       <button
         type="button"
         onClick={() => onClick(sortKey)}

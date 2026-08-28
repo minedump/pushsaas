@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { IconChevronLeft, IconPencil, IconTrash, IconEraser } from "@tabler/icons-react";
-import { Badge, Button, ButtonLink, Card, useDialogs } from "@/app/ui";
+import { IconChevronLeft, IconPencil, IconEraser, IconEye, IconBraces, IconX } from "@tabler/icons-react";
+import { Badge, Button, ButtonLink, Card, Modal, useDialogs } from "@/app/ui";
+import { MessagePreviewModal, type PreviewContent } from "../../MessagePreviewModal";
 
 type Identity = {
   id: string;
@@ -25,12 +27,14 @@ type ChannelEventRow = { id: number; channel: string; active: boolean; contact: 
 type FieldChangeRow = { id: number; field: string; old_value: string | null; new_value: string | null; created_at: string };
 type RecipientRow = {
   id: number;
-  channel: string;
+  channel: "push" | "sms" | "email";
   status: string;
   clicked_at: string | null;
   opened_at: string | null;
   created_at: string;
   campaigns: { title: string } | null;
+  raw_context: Record<string, unknown> | null;
+  rendered_content: Record<string, unknown> | null;
 };
 type OrderRow = {
   id: string;
@@ -85,6 +89,8 @@ export default function SubscriberProfile({
 }) {
   const router = useRouter();
   const { confirm, toast } = useDialogs();
+  const [previewRow, setPreviewRow] = useState<RecipientRow | null>(null);
+  const [contextRow, setContextRow] = useState<RecipientRow | null>(null);
 
   async function remove() {
     const ok = await confirm({
@@ -168,19 +174,20 @@ export default function SubscriberProfile({
             Вернуться ко всем подписчикам
           </Link>
           <h1 className="text-2xl font-semibold m-0 mt-2">{identity.name || "Без имени"}</h1>
-          {(identity.tags || []).length > 0 && (
-            <div className="flex items-center gap-1.5 flex-wrap mt-2 text-[13.5px] text-ink-muted">
-              <span>Теги:</span>
-              {(identity.tags || []).map((t) => (
-                <Badge key={t} tone="accent">
-                  {t}
-                </Badge>
-              ))}
-            </div>
-          )}
           <div className="flex flex-col gap-1 mt-2.5 text-[13.5px] text-ink-muted">
+            {(identity.tags || []).length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span>Теги:</span>
+                {(identity.tags || []).map((t) => (
+                  <Badge key={t} tone="accent">
+                    {t}
+                  </Badge>
+                ))}
+              </div>
+            )}
             {identity.phone && (
               <div className="flex items-center gap-1.5">
+                <span>Телефон:</span>
                 <span className="font-mono text-ink">+{identity.phone}</span>
                 {identity.phone_verified_at && (
                   <Badge tone="good" dot>
@@ -192,6 +199,7 @@ export default function SubscriberProfile({
             )}
             {identity.email && (
               <div className="flex items-center gap-1.5">
+                <span>Email:</span>
                 <span className="text-ink">{identity.email}</span>
                 {identity.email_verified_at && (
                   <Badge tone="good" dot>
@@ -223,7 +231,6 @@ export default function SubscriberProfile({
                 {k}: <span className="font-mono text-ink">{String(attrs[k])}</span>
               </div>
             ))}
-            <div>Контакт с {new Date(identity.created_at).toLocaleDateString("ru-RU")}</div>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -232,7 +239,6 @@ export default function SubscriberProfile({
             Изменить
           </ButtonLink>
           <Button variant="danger" onClick={remove}>
-            <IconTrash size={16} stroke={2} />
             Удалить
           </Button>
         </div>
@@ -253,19 +259,28 @@ export default function SubscriberProfile({
             <p className="text-[13px] text-ink-faint mt-2 mb-0">Пока нет отслеженных событий.</p>
           ) : (
             <>
-              <table className="w-full border-collapse text-[13px] mt-3">
-                <tbody>
-                  {siteEvents.map((e) => (
-                    <tr key={e.id} className="border-t border-border first:border-t-0">
-                      <Td>
-                        <Badge tone="accent">{e.label}</Badge>
-                      </Td>
-                      <Td className="text-ink-muted">{e.detail || "—"}</Td>
-                      <Td className="text-ink-faint whitespace-nowrap">{fmt(e.created_at)}</Td>
+              <div className="overflow-x-auto pretty-scroll">
+                <table className="w-full border-collapse text-[13px] mt-3">
+                  <thead>
+                    <tr>
+                      <Th>Событие</Th>
+                      <Th>Детали</Th>
+                      <Th>Когда</Th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {siteEvents.map((e) => (
+                      <tr key={e.id} className="border-t border-border first:border-t-0">
+                        <Td className="whitespace-nowrap">
+                          <Badge tone="accent">{e.label}</Badge>
+                        </Td>
+                        <Td className="text-ink-muted truncate max-w-[280px]">{e.detail || "—"}</Td>
+                        <Td className="text-ink-faint whitespace-nowrap">{fmt(e.created_at)}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
               {siteEvents.length >= historyLimit && <p className="text-[12px] text-ink-faint mt-2 mb-0">Показаны последние {historyLimit}.</p>}
             </>
           )}
@@ -277,16 +292,27 @@ export default function SubscriberProfile({
             <p className="text-[13px] text-ink-faint mt-2 mb-0">Ничего не приходило.</p>
           ) : (
             <>
-              <table className="w-full border-collapse text-[13px] mt-3">
-                <tbody>
+              <div className="overflow-x-auto pretty-scroll">
+                <table className="w-full border-collapse text-[13px] mt-3">
+                  <thead>
+                    <tr>
+                      <Th>Рассылка</Th>
+                      <Th>Канал</Th>
+                      <Th>Статус</Th>
+                      <Th>Реакция</Th>
+                      <Th>Когда</Th>
+                      <Th> </Th>
+                    </tr>
+                  </thead>
+                  <tbody>
                   {recipients.map((r) => (
                     <tr key={`${r.channel}-${r.id}`} className="border-t border-border first:border-t-0">
-                      <Td>{r.campaigns?.title || "—"}</Td>
-                      <Td>
+                      <Td className="truncate max-w-[220px]">{r.campaigns?.title || "—"}</Td>
+                      <Td className="whitespace-nowrap">
                         <Badge tone="accent">{channelLabel[r.channel] || r.channel}</Badge>
                       </Td>
-                      <Td className="text-ink-muted">{statusLabel[r.status] || r.status}</Td>
-                      <Td>
+                      <Td className="text-ink-muted whitespace-nowrap">{statusLabel[r.status] || r.status}</Td>
+                      <Td className="whitespace-nowrap">
                         {r.clicked_at && (
                           <Badge tone="good" dot>
                             клик
@@ -295,10 +321,33 @@ export default function SubscriberProfile({
                         {r.opened_at && !r.clicked_at && <Badge tone="neutral">открыто</Badge>}
                       </Td>
                       <Td className="text-ink-faint whitespace-nowrap">{fmt(r.created_at)}</Td>
+                      <Td className="text-right whitespace-nowrap">
+                        <div className="flex justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setPreviewRow(r)}
+                            disabled={!r.rendered_content}
+                            title={r.rendered_content ? "Превью сообщения" : "Нет снимка содержимого (отправлено до этой функции)"}
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted enabled:hover:text-ink enabled:hover:bg-surface-2 disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
+                          >
+                            <IconEye size={15} stroke={1.8} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setContextRow(r)}
+                            disabled={!r.raw_context}
+                            title={r.raw_context ? "Сырой контекст отправки" : "Нет снимка контекста (отправлено до этой функции)"}
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted enabled:hover:text-ink enabled:hover:bg-surface-2 disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
+                          >
+                            <IconBraces size={15} stroke={1.8} />
+                          </button>
+                        </div>
+                      </Td>
                     </tr>
                   ))}
-                </tbody>
-              </table>
+                  </tbody>
+                </table>
+              </div>
               {recipients.length >= historyLimit && <p className="text-[12px] text-ink-faint mt-2 mb-0">Показаны последние {historyLimit}.</p>}
             </>
           )}
@@ -309,19 +358,30 @@ export default function SubscriberProfile({
           {orders.length === 0 ? (
             <p className="text-[13px] text-ink-faint mt-2 mb-0">Атрибутированных заказов нет.</p>
           ) : (
-            <table className="w-full border-collapse text-[13px] mt-3">
-              <tbody>
+            <div className="overflow-x-auto pretty-scroll">
+              <table className="w-full border-collapse text-[13px] mt-3">
+                <thead>
+                  <tr>
+                    <Th>Номер</Th>
+                    <Th>Рассылка</Th>
+                    <Th>Оплата</Th>
+                    <Th right>Сумма</Th>
+                    <Th>Когда</Th>
+                  </tr>
+                </thead>
+                <tbody>
                 {orders.map((o) => (
                   <tr key={o.id} className="border-t border-border first:border-t-0">
-                    <Td>{o.order_number || "—"}</Td>
-                    <Td className="text-ink-muted">{o.campaigns?.title || "—"}</Td>
+                    <Td className="whitespace-nowrap">{o.order_number || "—"}</Td>
+                    <Td className="text-ink-muted truncate max-w-[220px]">{o.campaigns?.title || "—"}</Td>
                     <Td>{o.is_paid && <Badge tone="good">оплачен</Badge>}</Td>
                     <Td className="text-right tabular-nums">{Number(o.revenue).toLocaleString("ru-RU")} ₽</Td>
                     <Td className="text-ink-faint whitespace-nowrap">{fmt(o.created_at)}</Td>
                   </tr>
                 ))}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
           )}
         </Card>
 
@@ -339,35 +399,43 @@ export default function SubscriberProfile({
             <p className="text-[13px] text-ink-faint mt-2 mb-0">Пока пусто.</p>
           ) : (
             <>
-              <table className="w-full border-collapse text-[13px] mt-3">
-                <tbody>
+              <div className="overflow-x-auto pretty-scroll">
+                <table className="w-full border-collapse text-[13px] mt-3">
+                  <thead>
+                    <tr>
+                      <Th>Событие</Th>
+                      <Th>Детали</Th>
+                      <Th>Когда</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
                   {history.map((h) => (
                     <tr key={h.key} className="border-t border-border first:border-t-0">
                       {h.kind === "channel" ? (
                         <>
-                          <Td>
+                          <Td className="whitespace-nowrap">
                             <Badge tone="accent">{channelLabel[h.channel] || h.channel}</Badge>
                           </Td>
-                          <Td className="text-ink-muted">
+                          <Td className="text-ink-muted truncate max-w-[280px]">
                             <Badge tone={h.active ? "good" : "neutral"}>{h.active ? "включён" : "отключён"}</Badge>
                             {h.contact && <span className="ml-1.5">{h.contact}</span>}
                           </Td>
                         </>
                       ) : h.kind === "field" ? (
                         <>
-                          <Td>
+                          <Td className="whitespace-nowrap">
                             <Badge tone="accent">{displayField(h.field)}</Badge>
                           </Td>
-                          <Td className="text-ink-muted">
+                          <Td className="text-ink-muted truncate max-w-[280px]">
                             {h.old_value || "—"} → {h.new_value || "—"}
                           </Td>
                         </>
                       ) : (
                         <>
-                          <Td>
+                          <Td className="whitespace-nowrap">
                             <Badge tone="accent">Устройство: {platformLabel[h.platform] || h.platform}</Badge>
                           </Td>
-                          <Td className="text-ink-muted">
+                          <Td className="text-ink-muted truncate max-w-[280px]">
                             <Badge tone={!h.is_active ? "bad" : h.paused ? "warn" : "good"} dot>
                               {!h.is_active ? "отвалилось" : h.paused ? "на паузе" : "активно"}
                             </Badge>
@@ -382,17 +450,93 @@ export default function SubscriberProfile({
                       <Td className="text-ink-faint whitespace-nowrap">{fmt(h.created_at)}</Td>
                     </tr>
                   ))}
-                </tbody>
-              </table>
+                  </tbody>
+                </table>
+              </div>
               {history.length >= historyLimit && <p className="text-[12px] text-ink-faint mt-2 mb-0">Показаны последние {historyLimit}.</p>}
             </>
           )}
         </Card>
       </div>
+
+      {previewRow?.rendered_content && (
+        <MessagePreviewModal label={previewRow.campaigns?.title || "Превью"} content={recipientPreviewContent(previewRow)} onClose={() => setPreviewRow(null)} />
+      )}
+      {contextRow?.raw_context && (
+        <RawContextModal label={contextRow.campaigns?.title || "Контекст отправки"} snapshot={contextRow.raw_context} onClose={() => setContextRow(null)} />
+      )}
     </main>
   );
 }
 
+// rendered_content — снимок ИТОГОВОГО содержимого на момент отправки (см.
+// migration 0080/lib/sender.ts logRecipients), уже отрендеренный (Liquid
+// подставлен) — просто раскладываем по каналу в форму PreviewContent, без
+// повторного резолва сырых данных.
+function recipientPreviewContent(row: RecipientRow): PreviewContent {
+  const rc = (row.rendered_content || {}) as Record<string, unknown>;
+  if (row.channel === "email") return { channel: "email", subject: (rc.subject as string) || "", html: (rc.html as string) || "" };
+  if (row.channel === "sms") return { channel: "sms", body: (rc.body as string) || "" };
+  return {
+    channel: "push",
+    title: (rc.title as string) || "",
+    body: (rc.body as string) || "",
+    url: rc.url as string | undefined,
+    icon_url: rc.icon as string | undefined,
+    image_url: rc.image as string | undefined,
+    badge_url: rc.badge as string | undefined,
+    actions: rc.actions as { title: string; url: string }[] | undefined,
+  };
+}
+
+// Три Liquid-неймспейса ДО резолва по фиду — ровно то, что описывает
+// ContextDocs.tsx (template.*/context.*/automation.*), для проверяемости
+// «что реально участвовало в отправке» отдельно от того, что в итоге
+// отрендерилось (см. MessagePreviewModal выше — то другая кнопка).
+function RawContextModal({ label, snapshot, onClose }: { label: string; snapshot: Record<string, unknown>; onClose: () => void }) {
+  const sections: { key: string; title: string }[] = [
+    { key: "template", title: "Шаблон (template.*)" },
+    { key: "context", title: "Рассылка/автоматизация (context.*)" },
+    { key: "automation", title: "Получено по API / триггеру / событию (automation.*)" },
+  ];
+  return (
+    <Modal onClose={onClose} className="max-w-lg max-h-[85vh] flex flex-col">
+      <div className="flex items-center justify-between gap-3 pb-4 mb-4 border-b border-border shrink-0">
+        <h3 className="text-base font-semibold m-0 truncate">{label}</h3>
+        <button type="button" onClick={onClose} className="p-1 text-ink-faint hover:text-ink cursor-pointer shrink-0" title="Закрыть">
+          <IconX size={18} stroke={1.8} />
+        </button>
+      </div>
+      <div className="pretty-scroll flex-1 min-h-0 overflow-y-auto -mr-2 pr-2 flex flex-col gap-4">
+        {sections.map((s) => {
+          const val = snapshot[s.key] as Record<string, unknown> | undefined;
+          const empty = !val || Object.keys(val).length === 0;
+          return (
+            <div key={s.key}>
+              <div className="text-[12px] font-medium text-ink-muted mb-1.5">{s.title}</div>
+              {empty ? (
+                <p className="text-[12.5px] text-ink-faint m-0">Пусто</p>
+              ) : (
+                <pre className="text-[12px] font-mono bg-surface-2 rounded-lg p-3 overflow-x-auto pretty-scroll m-0 whitespace-pre-wrap break-words">
+                  {JSON.stringify(val, null, 2)}
+                </pre>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Modal>
+  );
+}
+
 const Td = ({ children, className = "" }: { children: React.ReactNode; className?: string }) => (
-  <td className={`px-0 py-2 align-middle ${className}`}>{children}</td>
+  <td className={`px-2 first:pl-0 last:pr-0 py-2 align-middle ${className}`}>{children}</td>
+);
+
+const Th = ({ children, right }: { children: React.ReactNode; right?: boolean }) => (
+  <th
+    className={`px-2 first:pl-0 last:pr-0 pb-1.5 text-[11px] text-ink-faint font-normal whitespace-nowrap ${right ? "text-right" : "text-left"}`}
+  >
+    {children}
+  </th>
 );

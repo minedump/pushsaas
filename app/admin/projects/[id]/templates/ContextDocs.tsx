@@ -107,8 +107,9 @@ function ContextDocsModal({ variant, onClose }: { variant: "template" | "campaig
           </p>
           <p className="m-0 mt-1.5">
             Появляется само в Событийных, когда в событии передан <code className="font-mono">product_id</code> (сайт вызвал{" "}
-            <code className="font-mono">sendera.event(&apos;product_viewed&apos;, {"{ product_id: ... }"})</code>), либо выберите товар
-            вручную/правилом «N новых» в «Товары в сообщении» (Приветственные/Событийные) или в конструкторе рассылки.
+            <code className="font-mono">sendera.event(&apos;product_viewed&apos;, {"{ product_id: ... }"})</code>), либо впишите товар
+            вручную в контекст (п.1) — <code className="font-mono">{'{ "product": { "id": "SKU-123" } }'}</code>, id из фида
+            подтянет остальные поля (п.4).
           </p>
         </section>
 
@@ -118,8 +119,8 @@ function ContextDocsModal({ variant, onClose }: { variant: "template" | "campaig
             Перебор циклом: <code className="font-mono">{"{% for product in products %}{{ product.name }} — {{ product.price }} ₽{% endfor %}"}</code>.
           </p>
           <p className="m-0 mt-1.5">
-            Собирается автоматически (несколько <code className="font-mono">product_id</code> в событии — брошенная корзина) или выбором «N
-            новых»/вручную — в этих случаях доступно без префикса, как в примере выше. Свой список можно объявить и вручную — но в поле
+            Собирается автоматически, когда событие передаёт несколько <code className="font-mono">product_id</code> (брошенная корзина) —
+            в этом случае доступно без префикса, как в примере выше. Свой список можно объявить и вручную — но в поле
             «Добавить контекст» {isCampaign ? "этой рассылки" : "этого шаблона"} (п.1) он попадёт в неймспейс{" "}
             <code className="font-mono">{ownNs}.*</code>, а не в бары <code className="font-mono">products</code>:
           </p>
@@ -161,16 +162,18 @@ function ContextDocsModal({ variant, onClose }: { variant: "template" | "campaig
           {isCampaign ? (
             <>
               <p className="m-0">
-                Пример: в «Товары в сообщении» выбраны конкретные товары — <code className="font-mono">{"{{ products }}"}</code>/
-                <code className="font-mono">{"{{ product }}"}</code> уже резолвлены (см. п.3–4). Хотите ДОПОЛНИТЕЛЬНО показать «Похожие
-                товары» — свой список, не связанный с этим выбором, впишите его в контекст этой рассылки (п.1):
+                Пример: в контексте этой рассылки (п.1) заданы и конкретный товар по id — <code className="font-mono">{"{{ product }}"}</code>{" "}
+                резолвится из фида (п.3), — и свой список «Похожие товары», не связанный с фидом:
               </p>
               <pre className="mt-1.5 mb-0 text-[12px] bg-surface-2 border border-border rounded-lg p-2.5 overflow-x-auto">
-{`{ "similar_products": [{ "name": "...", "price": 0 }] }`}
+{`{
+  "product": { "id": "SKU-123" },
+  "similar_products": [{ "name": "...", "price": 0 }]
+}`}
               </pre>
               <p className="m-0 mt-1.5">И используйте оба сразу в тексте письма — они из разных источников, друг другу не мешают:</p>
               <pre className="mt-1.5 mb-0 text-[12px] bg-surface-2 border border-border rounded-lg p-2.5 overflow-x-auto">
-{`{% for p in products %}{{ p.name }}{% endfor %}
+{`{{ product.name }} — {{ product.price }} ₽
 
 Похожее:
 {% for p in context.similar_products %}
@@ -178,8 +181,8 @@ function ContextDocsModal({ variant, onClose }: { variant: "template" | "campaig
 {% endfor %}`}
               </pre>
               <p className="m-0 mt-1.5">
-                <code className="font-mono">products</code> — из «Товары в сообщении» (бары, см. п.3–4), <code className="font-mono">context.similar_products</code>{" "}
-                — из контекста этой рассылки (п.1). Работает в любой ручной рассылке — с шаблоном или без.
+                <code className="font-mono">product</code> резолвится из фида по id (бары, см. п.3), <code className="font-mono">context.similar_products</code>{" "}
+                — чистый ручной ввод (п.1). Работает в любой ручной рассылке — с шаблоном или без.
               </p>
             </>
           ) : (
@@ -237,10 +240,6 @@ function ContextDocsModal({ variant, onClose }: { variant: "template" | "campaig
             без префикса и как <code className="font-mono">automation.*</code> (п.1): <code className="font-mono">{"{{ category_name }}"}</code>{" "}
             или <code className="font-mono">{"{{ automation.category_name }}"}</code>. Реальный payload уже пришедших событий видно в
             «Журнале» — подробнее про сами события см. кнопку «Какие данные передавать в событии» у событийной автоматизации.
-          </p>
-          <p className="m-0 mt-1.5">
-            В правиле «N новых» (Товары в сообщении) фильтр по категории ищет по названию — том же, что в{" "}
-            <code className="font-mono">product.categories</code>, не по id.
           </p>
         </section>
 

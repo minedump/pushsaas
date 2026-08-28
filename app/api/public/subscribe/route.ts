@@ -35,9 +35,16 @@ export async function POST(req: Request) {
 
   const admin = createAdminClient();
 
-  const { data: project } = await admin.from("projects").select("id").eq("id", projectId).maybeSingle();
+  const { data: project } = await admin.from("projects").select("id, is_active").eq("id", projectId).maybeSingle();
   if (!project) {
     return NextResponse.json({ error: "unknown project" }, { status: 404, headers: CORS });
+  }
+  // Авторитетная проверка блокировки — та же, что и на входе виджета
+  // (см. /embed/[projectId]/route.ts), но здесь нельзя доверять клиенту:
+  // без неё заблокированный проект мог бы копить подписчиков, вызвав этот
+  // эндпоинт напрямую, минуя отданный сервером (уже отказывающий) скрипт.
+  if (!project.is_active) {
+    return NextResponse.json({ error: "project blocked" }, { status: 403, headers: CORS });
   }
 
   // защита от спама подписками с одного адреса (не мешает обычным пользователям)

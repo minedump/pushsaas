@@ -63,7 +63,7 @@ export type ApiKeyContext = { projectId: string; smsProvider: string | null; ema
 
 // Same as authenticateApiKey, but also returns which sms/email provider is
 // pinned to this key (chosen at creation, see app/admin/projects/[id]/api) —
-// needed by /api/v1/send to pick the right provider for sms/email sends.
+// needed by /api/v1/campaigns to pick the right provider for sms/email sends.
 // best-effort: sms_provider/email_provider — колонки миграции 0019.
 export async function authenticateApiKeyFull(req: Request): Promise<ApiKeyContext | null> {
   const key = extractApiKey(req);

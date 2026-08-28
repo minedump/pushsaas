@@ -13,6 +13,12 @@ const EVENT_LABEL: Record<string, string> = {
   product_viewed: "Посмотрел товар",
   category_viewed: "Посмотрел категорию",
   checkout_started: "Начал оформление",
+  widget_button_shown: "Показ кнопки подписки",
+  widget_button_clicked: "Клик по кнопке подписки",
+  widget_button_dismissed: "Закрыл кнопку подписки",
+  widget_prompt_shown: "Показ плашки подписки",
+  widget_prompt_clicked: "Клик «Разрешить» на плашке",
+  widget_prompt_dismissed: "Закрыл плашку подписки",
 };
 function eventLabel(name: string): string {
   if (EVENT_LABEL[name]) return EVENT_LABEL[name];
@@ -83,11 +89,21 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
   // Рассылки, ушедшие этому контакту — push резолвится по id устройств
   // (campaign_recipients.contact = subscribers.id как текст для push),
   // sms/email — по самому телефону/email (contact = значение канала).
-  const recipientRows: { id: number; channel: string; status: string; clicked_at: string | null; opened_at: string | null; created_at: string; campaigns: { title: string } | null }[] = [];
+  const recipientRows: {
+    id: number;
+    channel: "push" | "sms" | "email";
+    status: string;
+    clicked_at: string | null;
+    opened_at: string | null;
+    created_at: string;
+    campaigns: { title: string } | null;
+    raw_context: Record<string, unknown> | null;
+    rendered_content: Record<string, unknown> | null;
+  }[] = [];
   if (deviceIds.length) {
     const { data } = await supabase
       .from("campaign_recipients")
-      .select("id, channel, status, clicked_at, opened_at, created_at, campaigns(title)")
+      .select("id, channel, status, clicked_at, opened_at, created_at, campaigns(title), raw_context, rendered_content")
       .eq("project_id", id)
       .eq("channel", "push")
       .in("contact", deviceIds)
@@ -99,7 +115,7 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
   if (contactValues.length) {
     const { data } = await supabase
       .from("campaign_recipients")
-      .select("id, channel, status, clicked_at, opened_at, created_at, campaigns(title)")
+      .select("id, channel, status, clicked_at, opened_at, created_at, campaigns(title), raw_context, rendered_content")
       .eq("project_id", id)
       .in("channel", ["sms", "email"])
       .in("contact", contactValues)

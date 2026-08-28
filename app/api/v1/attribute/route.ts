@@ -65,8 +65,9 @@ export async function POST(req: Request) {
   const campaignId = cookieVal.slice(0, dot);
   const clickedAt = Number(cookieVal.slice(dot + 1));
   if (!campaignId || !Number.isFinite(clickedAt)) {
-    await logApiCall(admin, projectId, "attribute", false, "malformed cookie", {});
-    return NextResponse.json({ ok: true, skipped: "malformed cookie" });
+    const responseBody = { ok: true, skipped: "malformed cookie" };
+    await logApiCall(admin, projectId, "attribute", 200, body, responseBody);
+    return NextResponse.json(responseBody);
   }
 
   const windowMs = (project.attribution_window_days || 7) * 86_400_000;
@@ -81,8 +82,9 @@ export async function POST(req: Request) {
     .eq("project_id", projectId)
     .maybeSingle();
   if (!campaign) {
-    await logApiCall(admin, projectId, "attribute", false, "campaign not found", { campaignId });
-    return NextResponse.json({ ok: true, skipped: "campaign not found" });
+    const responseBody = { ok: true, skipped: "campaign not found" };
+    await logApiCall(admin, projectId, "attribute", 200, body, responseBody);
+    return NextResponse.json(responseBody);
   }
 
   const orderNumber = String(resolvePath(body, "number") ?? "");
@@ -128,6 +130,7 @@ export async function POST(req: Request) {
     { onConflict: "project_id,order_number" }
   );
 
-  await logApiCall(admin, projectId, "attribute", true, null, { campaignId, orderNumber, revenue, isPaid });
-  return NextResponse.json({ ok: true, recorded: true, campaignId, revenue, isPaid });
+  const responseBody = { ok: true, recorded: true, campaignId, revenue, isPaid };
+  await logApiCall(admin, projectId, "attribute", 200, body, responseBody);
+  return NextResponse.json(responseBody);
 }

@@ -531,7 +531,7 @@ function ChannelBadge({ label, active, onClick }: { label: string; active: boole
 }
 
 const Th = ({ children }: { children: React.ReactNode }) => (
-  <th className="px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-ink-faint font-normal whitespace-nowrap">{children}</th>
+  <th className="px-3.5 py-2.5 text-[11px] text-ink-faint font-normal whitespace-nowrap">{children}</th>
 );
 const Td = ({ children, className = "" }: { children: React.ReactNode; className?: string }) => (
   <td className={`px-3.5 py-3 align-middle ${className}`}>{children}</td>

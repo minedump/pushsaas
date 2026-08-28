@@ -4,12 +4,6 @@ import { Badge, ButtonLink, Card } from "@/app/ui";
 
 export default async function AdminHome() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user!.id).maybeSingle();
-  const isAdmin = profile?.role === "admin";
 
   const { data: projects } = await supabase
     .from("projects")
@@ -26,21 +20,15 @@ export default async function AdminHome() {
     <main className="max-w-4xl mx-auto">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-semibold">Мои проекты</h1>
-        {!isAdmin && (
-          <ButtonLink href="/admin/projects/new" size="sm">
-            <IconPlus size={16} stroke={2} />
-            Создать проект
-          </ButtonLink>
-        )}
+        <ButtonLink href="/admin/projects/new">
+          <IconPlus size={18} stroke={2} />
+          Создать проект
+        </ButtonLink>
       </div>
 
       <div className="mt-7">
         {!projects?.length && (
-          <Card className="mt-3 text-ink-muted">
-            {isAdmin
-              ? "На платформе пока нет проектов."
-              : "Пока нет проектов. Нажмите «Создать проект», чтобы начать собирать подписчиков."}
-          </Card>
+          <Card className="mt-3 text-ink-muted">Пока нет проектов. Нажмите «Создать проект», чтобы начать собирать подписчиков.</Card>
         )}
 
         {projects?.map((p) => (

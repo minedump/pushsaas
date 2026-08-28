@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconDownload, IconPalette, IconPhoto } from "@tabler/icons-react";
-import { Button, Card, Input, useDialogs } from "@/app/ui";
+import { Button, Card, ColorField, Input, useDialogs } from "@/app/ui";
 import CodeBlock from "./CodeBlock";
 
 type ManifestResult = {
@@ -110,36 +110,7 @@ export default function ManifestSetup({
 
             <div>
               <label className="text-[13px] text-ink-muted block mb-1">Цвет темы</label>
-              <div className="flex gap-2.5 items-center flex-wrap">
-                <div
-                  className="relative w-10 h-10 rounded-lg border border-border shadow-inner shrink-0 overflow-hidden"
-                  style={{ backgroundColor: themeColor }}
-                  title="Выбрать цвет"
-                >
-                  <input
-                    type="color"
-                    value={/^#[0-9a-fA-F]{6}$/.test(themeColor) ? themeColor : "#2c4a66"}
-                    onChange={(e) => setThemeColor(e.target.value)}
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    aria-label="Выбрать цвет темы"
-                  />
-                </div>
-                <Input value={themeColor} onChange={(e) => setThemeColor(e.target.value)} className="font-mono max-w-28" />
-                <div className="flex gap-1.5 items-center">
-                  {COLOR_PRESETS.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => setThemeColor(c)}
-                      className={`w-6 h-6 rounded-full cursor-pointer transition-transform hover:scale-110 ${
-                        themeColor.toLowerCase() === c ? "ring-2 ring-accent ring-offset-2" : "border border-border"
-                      }`}
-                      style={{ backgroundColor: c }}
-                      aria-label={`Цвет ${c}`}
-                    />
-                  ))}
-                </div>
-              </div>
+              <ColorField value={themeColor} onChange={setThemeColor} presets={COLOR_PRESETS} />
             </div>
 
             <div>

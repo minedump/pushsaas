@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logFieldChanges } from "@/lib/identity";
+import { friendlyError } from "@/lib/errors";
 
 // Массовые действия над выбранными в таблице «Подписчики» контактами —
 // один запрос на весь выбор, а не N запросов на клиенте (масштаб — реальный
@@ -34,7 +35,7 @@ export async function POST(req: Request) {
     // только сама identity — привязанные push-устройства остаются, просто
     // без контактных данных.
     const { error } = await admin.from("identities").delete().in("id", ids);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: friendlyError(error) }, { status: 500 });
     return NextResponse.json({ ok: true, affected: ids.length });
   }
 
@@ -47,7 +48,7 @@ export async function POST(req: Request) {
       .from("identities")
       .update({ [col]: active ? now : null, updated_at: now })
       .in("id", ids);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) return NextResponse.json({ error: friendlyError(error) }, { status: 500 });
     // Тот же журнал событий, что и у одиночного переключения канала (см.
     // logChannelEvents в lib/identity.ts) — best-effort, не блокирует ответ.
     const events = (rows ?? [])

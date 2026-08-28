@@ -174,7 +174,7 @@ export default function EditSubscriberForm({
           <Button type="button" variant="secondary" onClick={() => router.push(`/admin/projects/${projectId}/subscribers`)}>
             Отмена
           </Button>
-          <Button type="button" variant="danger" disabled={busy} onClick={remove} className="ml-auto">
+          <Button type="button" variant="danger" disabled={busy} onClick={remove}>
             Удалить
           </Button>
         </div>

@@ -42,7 +42,7 @@ export default async function SubscribersPage({ params }: { params: Promise<{ id
   // "Активен" для SMS/Email = *_marketing_active_at, НЕ *_verified_at:
   // подтверждение кодом доказывает владение номером для входа, а не согласие
   // на маркетинговые рассылки — канал становится активным только явно, через
-  // /api/v1/contacts или чекбокс при импорте CSV (см. lib/identity.upsertContact).
+  // /api/v1/subscribers или чекбокс при импорте CSV (см. lib/identity.upsertContact).
   const phoneBySub = new Map<string, string>();
   const emailBySub = new Map<string, string>();
   const nameBySub = new Map<string, string>();
@@ -130,7 +130,7 @@ export default async function SubscribersPage({ params }: { params: Promise<{ id
   }
 
   // Контакты без НИ ОДНОГО push-устройства — добавленные вручную («Добавить
-  // подписчика») или пришедшие через /api/v1/contacts/CSV-импорт без своей
+  // подписчика») или пришедшие через /api/v1/subscribers/CSV-импорт без своей
   // подписки. Основная выборка выше идёт от subscribers и в принципе не
   // видит identities без устройства — досчитываем отдельно: все identities
   // проекта минус те, что уже встретились через identity_devices.

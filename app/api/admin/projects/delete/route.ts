@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { friendlyError } from "@/lib/errors";
 
 // Удаление проекта. RLS-политики delete на projects нет намеренно —
 // удаление идёт только через этот роут с проверкой владения.
@@ -23,7 +24,7 @@ export async function POST(req: Request) {
   } catch {}
 
   const { error } = await admin.from("projects").delete().eq("id", projectId);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return NextResponse.json({ error: friendlyError(error) }, { status: 500 });
 
   return NextResponse.json({ ok: true });
 }

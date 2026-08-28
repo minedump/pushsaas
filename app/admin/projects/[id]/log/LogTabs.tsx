@@ -1,29 +1,25 @@
 "use client";
 
 import { useState } from "react";
-import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
-import { Badge, Button } from "@/app/ui";
-import { cn } from "@/app/ui/cn";
+import Link from "next/link";
+import { IconChevronLeft, IconChevronRight, IconBraces, IconX } from "@tabler/icons-react";
+import { Badge, Button, Modal, SegmentedControl } from "@/app/ui";
 
 const PAGE_SIZE = 25;
 
-type AutomationRow = {
-  id: string;
-  source: string;
-  title: string;
-  status: string;
-  recipients: number;
-  detail: string;
-  created_at: string;
-};
-
+// Формат колонок таблицы «Рассылки» (см. CampaignsTable), но без статистики
+// доставки/CTR/заказов/выручки — у провалившихся/пропущенных рассылок она
+// принципиально всегда нулевая (см. фильтр в page.tsx), отдельной ценности
+// не несёт.
 type ErrorRow = {
   id: string;
-  source: "campaign" | "automation";
   title: string;
   channel: string;
-  status: string;
-  detail: string;
+  templateId: string | null;
+  templateName: string | null;
+  type: "transactional" | "marketing";
+  initiator: "manual" | "api" | "welcome" | "event" | "trigger" | "recurring" | "automation" | "auth";
+  status: "failed" | "skipped";
   created_at: string;
 };
 
@@ -31,6 +27,7 @@ type LoginRow = {
   id: string;
   channel: string;
   provider: string | null;
+  contact: string | null;
   status: "verified" | "locked" | "expired" | "pending";
   created_at: string;
 };
@@ -39,186 +36,112 @@ type ApiCallRow = {
   id: string;
   endpoint: string;
   ok: boolean;
+  statusCode: number | null;
   error: string | null;
-  detail: Record<string, unknown> | null;
+  requestBody: Record<string, unknown> | null;
+  responseBody: Record<string, unknown> | null;
   created_at: string;
 };
 
-type SubEventRow = {
-  id: string;
-  channel: "push" | "sms" | "email";
-  type: string;
-  detail: string;
-  created_at: string;
-};
-
-const SOURCE_LABEL: Record<string, string> = { event: "Событие", api: "API", webhook: "Вебхук", welcome: "Welcome", campaign: "Рассылка", automation: "Автоматизация" };
-const STATUS_LABEL: Record<string, string> = { sent: "отправлено", failed: "ошибка", skipped: "пропущено" };
 const CHANNEL_LABEL: Record<string, string> = { push: "Push", sms: "SMS", email: "Email", telegram: "Telegram" };
+const STATUS_LABEL: Record<string, string> = { failed: "ошибка", skipped: "пропущена" };
+const TYPE_LABEL: Record<string, string> = { transactional: "Транзакционное", marketing: "Маркетинговое" };
+const INITIATOR_LABEL: Record<string, string> = {
+  manual: "Ручная",
+  api: "API",
+  welcome: "Приветственная",
+  event: "Событийная",
+  trigger: "Триггерная",
+  recurring: "Повторяющаяся",
+  automation: "Автоматизация",
+  auth: "Авторизация",
+};
 const LOGIN_STATUS_LABEL: Record<string, string> = { verified: "код введён", locked: "попытки исчерпаны", expired: "код не введён", pending: "ожидает" };
-const ENDPOINT_LABEL: Record<string, string> = { send: "/api/v1/send", attribute: "/api/v1/attribute", contacts: "/api/v1/contacts" };
-const EVENT_TYPE_LABEL: Record<string, string> = {
-  subscribed: "новая подписка",
-  paused: "пауза",
-  resumed: "возобновление",
-  dead: "устройство отвалилось",
-  sms_activated: "SMS включён",
-  sms_deactivated: "SMS выключен",
-  email_activated: "Email включён",
-  email_deactivated: "Email выключен",
+const ENDPOINT_LABEL: Record<string, string> = {
+  attribute: "/api/v1/attribute",
+  subscribers: "/api/v1/subscribers",
+  templates: "/api/v1/templates",
+  campaigns: "/api/v1/campaigns",
+  automations: "/api/v1/automations",
 };
-const statusTone = (s: string) => (s === "sent" ? "good" : s === "failed" ? "bad" : "warn");
+const errorStatusTone = (s: string) => (s === "failed" ? "bad" : "warn");
 const loginStatusTone = (s: string) => (s === "verified" ? "good" : s === "locked" ? "bad" : "warn");
-const eventTone = (t: string) => {
-  if (t === "dead") return "bad";
-  if (t.endsWith("deactivated")) return "warn";
-  if (t === "subscribed" || t === "resumed" || t.endsWith("activated")) return "good";
-  return "warn";
-};
-
-function fmtApiDetail(d: Record<string, unknown> | null): string {
-  if (!d) return "";
-  const parts: string[] = [];
-  if (typeof d.total === "number") parts.push(`доставлено ${d.delivered ?? 0} из ${d.total}`);
-  if (typeof d.revenue === "number") parts.push(`${d.revenue.toLocaleString("ru-RU")} ₽`);
-  if (typeof d.created === "boolean") parts.push(d.created ? "новый контакт" : "обновлён");
-  return parts.join(" · ");
-}
 
 export default function LogTabs({
-  automationRows,
+  projectId,
   errorRows,
   loginRows,
   apiCallRows,
-  subEventRows,
 }: {
-  automationRows: AutomationRow[];
+  projectId: string;
   errorRows: ErrorRow[];
   loginRows: LoginRow[];
   apiCallRows: ApiCallRow[];
-  subEventRows: SubEventRow[];
 }) {
-  const [tab, setTab] = useState<"automations" | "errors" | "logins" | "api" | "events">("automations");
+  const [tab, setTab] = useState<"errors" | "logins" | "api">("errors");
+
+  const tabOptions: { value: typeof tab; label: string }[] = [
+    { value: "errors", label: "Ошибки отправки" },
+    { value: "logins", label: "Входы" },
+    { value: "api", label: "API" },
+  ];
 
   return (
     <div>
-      <div className="inline-flex gap-1 p-1 rounded-lg bg-surface-2 border border-border mb-4 flex-wrap">
-        <TabButton active={tab === "automations"} onClick={() => setTab("automations")}>
-          Автоматизации
-        </TabButton>
-        <TabButton active={tab === "errors"} onClick={() => setTab("errors")}>
-          Ошибки отправки{errorRows.length > 0 ? ` (${errorRows.length})` : ""}
-        </TabButton>
-        <TabButton active={tab === "logins"} onClick={() => setTab("logins")}>
-          Входы
-        </TabButton>
-        <TabButton active={tab === "api"} onClick={() => setTab("api")}>
-          Вебхуки/API
-        </TabButton>
-        <TabButton active={tab === "events"} onClick={() => setTab("events")}>
-          События подписчиков
-        </TabButton>
-      </div>
+      <SegmentedControl value={tab} onChange={setTab} options={tabOptions} className="mb-4 flex-wrap" />
 
-      {tab === "automations" && <AutomationsTab rows={automationRows} />}
-      {tab === "errors" && <ErrorsTab rows={errorRows} />}
+      {tab === "errors" && <ErrorsTab rows={errorRows} projectId={projectId} />}
       {tab === "logins" && <LoginsTab rows={loginRows} />}
       {tab === "api" && <ApiTab rows={apiCallRows} />}
-      {tab === "events" && <EventsTab rows={subEventRows} />}
     </div>
   );
 }
 
-function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "px-3 py-1.5 rounded-md text-[13px] font-medium cursor-pointer transition-colors",
-        active ? "bg-accent-tint text-accent" : "text-ink-muted hover:text-ink"
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-function AutomationsTab({ rows }: { rows: AutomationRow[] }) {
+function ErrorsTab({ rows, projectId }: { rows: ErrorRow[]; projectId: string }) {
   const { paged, pager } = usePager(rows);
-  if (!rows.length) return <Empty text="Пока пусто — здесь появятся срабатывания автоматизаций." />;
+  if (!rows.length) return <Empty text="Ошибок нет — все рассылки прошли штатно." />;
   return (
     <div>
       <div className="border border-border rounded-xl overflow-x-auto pretty-scroll">
         <table className="w-full border-collapse text-[13.5px] min-w-[680px]">
           <thead>
             <tr className="bg-surface-2 text-left">
-              <Th>Источник</Th>
-              <Th>Автоматизация</Th>
-              <Th>Статус</Th>
-              <Th right>Получатели</Th>
-              <Th>Детали</Th>
-              <Th>Время</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {paged.map((r) => (
-              <tr key={r.id} className="border-t border-border">
-                <Td>
-                  <Badge tone="accent">{SOURCE_LABEL[r.source] || r.source}</Badge>
-                </Td>
-                <Td>{r.title}</Td>
-                <Td>
-                  <Badge tone={statusTone(r.status)} dot>
-                    {STATUS_LABEL[r.status] || r.status}
-                  </Badge>
-                </Td>
-                <Td right>{r.recipients}</Td>
-                <Td className="text-ink-muted">{r.detail || "—"}</Td>
-                <Td className="text-ink-faint whitespace-nowrap">{new Date(r.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}</Td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {pager}
-    </div>
-  );
-}
-
-function ErrorsTab({ rows }: { rows: ErrorRow[] }) {
-  const { paged, pager } = usePager(rows);
-  if (!rows.length) return <Empty text="Ошибок нет — все отправки и срабатывания прошли штатно." />;
-  return (
-    <div>
-      <div className="border border-border rounded-xl overflow-x-auto pretty-scroll">
-        <table className="w-full border-collapse text-[13.5px] min-w-[640px]">
-          <thead>
-            <tr className="bg-surface-2 text-left">
-              <Th>Источник</Th>
-              <Th>Заголовок</Th>
+              <Th>Название</Th>
               <Th>Канал</Th>
+              <Th>Шаблон</Th>
+              <Th>Тип</Th>
+              <Th>Инициатор</Th>
               <Th>Статус</Th>
-              <Th>Детали</Th>
-              <Th>Время</Th>
+              <Th>Дата</Th>
             </tr>
           </thead>
           <tbody>
             {paged.map((r) => (
               <tr key={r.id} className="border-t border-border">
-                <Td>
-                  <Badge tone="accent">{SOURCE_LABEL[r.source] || r.source}</Badge>
-                </Td>
-                <Td>{r.title}</Td>
+                <Td className="truncate max-w-[220px]">{r.title}</Td>
                 <Td>
                   <Badge tone="accent">{CHANNEL_LABEL[r.channel] || r.channel}</Badge>
                 </Td>
                 <Td>
-                  <Badge tone={statusTone(r.status)} dot>
+                  {r.templateId ? (
+                    <Link
+                      href={`/admin/projects/${projectId}/templates/${r.templateId}/edit`}
+                      className="inline-flex items-center gap-1 max-w-[160px] text-ink hover:text-accent hover:underline"
+                    >
+                      <span className="min-w-0 truncate">{r.templateName || "Шаблон"}</span>
+                      <IconChevronRight size={13} stroke={2} className="text-ink-faint shrink-0" />
+                    </Link>
+                  ) : (
+                    <span className="text-ink-faint">—</span>
+                  )}
+                </Td>
+                <Td className="text-ink-muted whitespace-nowrap">{TYPE_LABEL[r.type]}</Td>
+                <Td className="text-ink-muted whitespace-nowrap">{INITIATOR_LABEL[r.initiator] || r.initiator}</Td>
+                <Td>
+                  <Badge tone={errorStatusTone(r.status)} dot>
                     {STATUS_LABEL[r.status] || r.status}
                   </Badge>
                 </Td>
-                <Td className="text-ink-muted">{r.detail || "—"}</Td>
                 <Td className="text-ink-faint whitespace-nowrap">{new Date(r.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}</Td>
               </tr>
             ))}
@@ -236,13 +159,14 @@ function LoginsTab({ rows }: { rows: LoginRow[] }) {
   return (
     <div>
       <div className="border border-border rounded-xl overflow-x-auto pretty-scroll">
-        <table className="w-full border-collapse text-[13.5px] min-w-[520px]">
+        <table className="w-full border-collapse text-[13.5px] min-w-[600px]">
           <thead>
             <tr className="bg-surface-2 text-left">
               <Th>Канал</Th>
+              <Th>Куда</Th>
               <Th>Провайдер</Th>
               <Th>Статус</Th>
-              <Th>Время</Th>
+              <Th>Дата</Th>
             </tr>
           </thead>
           <tbody>
@@ -251,6 +175,7 @@ function LoginsTab({ rows }: { rows: LoginRow[] }) {
                 <Td>
                   <Badge tone="accent">{CHANNEL_LABEL[r.channel] || r.channel}</Badge>
                 </Td>
+                <Td className="text-ink-muted font-mono">{r.contact || "—"}</Td>
                 <Td className="text-ink-muted">{r.provider || "—"}</Td>
                 <Td>
                   <Badge tone={loginStatusTone(r.status)} dot>
@@ -270,17 +195,18 @@ function LoginsTab({ rows }: { rows: LoginRow[] }) {
 
 function ApiTab({ rows }: { rows: ApiCallRow[] }) {
   const { paged, pager } = usePager(rows);
-  if (!rows.length) return <Empty text="Пока пусто — здесь появятся вызовы /api/v1/send, /api/v1/attribute и /api/v1/contacts." />;
+  const [openRow, setOpenRow] = useState<ApiCallRow | null>(null);
+  if (!rows.length) return <Empty text="Пока пусто — здесь появятся POST/PUT-вызовы /api/v1/campaigns, /api/v1/attribute, /api/v1/subscribers, /api/v1/templates и /api/v1/automations." />;
   return (
     <div>
       <div className="border border-border rounded-xl overflow-x-auto pretty-scroll">
-        <table className="w-full border-collapse text-[13.5px] min-w-[600px]">
+        <table className="w-full border-collapse text-[13.5px] min-w-[560px]">
           <thead>
             <tr className="bg-surface-2 text-left">
               <Th>Эндпоинт</Th>
               <Th>Статус</Th>
-              <Th>Детали</Th>
-              <Th>Время</Th>
+              <Th>Дата</Th>
+              <Th>{null}</Th>
             </tr>
           </thead>
           <tbody>
@@ -289,56 +215,76 @@ function ApiTab({ rows }: { rows: ApiCallRow[] }) {
                 <Td className="font-mono">{ENDPOINT_LABEL[r.endpoint] || r.endpoint}</Td>
                 <Td>
                   <Badge tone={r.ok ? "good" : "bad"} dot>
-                    {r.ok ? "успех" : "ошибка"}
+                    {r.statusCode ?? (r.ok ? "успех" : "ошибка")}
                   </Badge>
                 </Td>
-                <Td className="text-ink-muted">{r.ok ? fmtApiDetail(r.detail) || "—" : r.error || "—"}</Td>
                 <Td className="text-ink-faint whitespace-nowrap">{new Date(r.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}</Td>
+                <Td right>
+                  <button
+                    type="button"
+                    onClick={() => setOpenRow(r)}
+                    title="Тело запроса и ответа"
+                    className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted enabled:hover:text-ink enabled:hover:bg-surface-2 cursor-pointer"
+                  >
+                    <IconBraces size={15} stroke={1.8} />
+                  </button>
+                </Td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       {pager}
+      {openRow && (
+        <ApiCallModal label={ENDPOINT_LABEL[openRow.endpoint] || openRow.endpoint} requestBody={openRow.requestBody} responseBody={openRow.responseBody} onClose={() => setOpenRow(null)} />
+      )}
     </div>
   );
 }
 
-function EventsTab({ rows }: { rows: SubEventRow[] }) {
-  const { paged, pager } = usePager(rows);
-  if (!rows.length) return <Empty text="Пока пусто — здесь появятся подписки, паузы, отвалившиеся устройства и включение/отключение SMS/Email." />;
+// Сырые тело запроса и ответа одного вызова — тот же принцип, что
+// RawContextModal в карточке подписчика: показать как есть, не выжимку.
+function ApiCallModal({
+  label,
+  requestBody,
+  responseBody,
+  onClose,
+}: {
+  label: string;
+  requestBody: Record<string, unknown> | null;
+  responseBody: Record<string, unknown> | null;
+  onClose: () => void;
+}) {
+  const sections: { key: string; title: string; value: Record<string, unknown> | null }[] = [
+    { key: "request", title: "Тело запроса", value: requestBody },
+    { key: "response", title: "Ответ", value: responseBody },
+  ];
   return (
-    <div>
-      <div className="border border-border rounded-xl overflow-x-auto pretty-scroll">
-        <table className="w-full border-collapse text-[13.5px] min-w-[520px]">
-          <thead>
-            <tr className="bg-surface-2 text-left">
-              <Th>Канал</Th>
-              <Th>Событие</Th>
-              <Th>Детали</Th>
-              <Th>Время</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {paged.map((r) => (
-              <tr key={r.id} className="border-t border-border">
-                <Td>
-                  <Badge tone="accent">{CHANNEL_LABEL[r.channel] || r.channel}</Badge>
-                </Td>
-                <Td>
-                  <Badge tone={eventTone(r.type)} dot>
-                    {EVENT_TYPE_LABEL[r.type] || r.type}
-                  </Badge>
-                </Td>
-                <Td className="text-ink-muted">{r.detail}</Td>
-                <Td className="text-ink-faint whitespace-nowrap">{new Date(r.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}</Td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <Modal onClose={onClose} className="max-w-lg max-h-[85vh] flex flex-col">
+      <div className="flex items-center justify-between gap-3 pb-4 mb-4 border-b border-border shrink-0">
+        <h3 className="text-base font-semibold m-0 truncate">{label}</h3>
+        <button type="button" onClick={onClose} className="p-1 text-ink-faint hover:text-ink cursor-pointer shrink-0" title="Закрыть">
+          <IconX size={18} stroke={1.8} />
+        </button>
       </div>
-      {pager}
-    </div>
+      <div className="pretty-scroll flex-1 min-h-0 overflow-y-auto -mr-2 pr-2 flex flex-col gap-4">
+        {sections.map((s) => {
+          const empty = !s.value || Object.keys(s.value).length === 0;
+          return (
+            <div key={s.key}>
+              <div className="text-[12px] font-medium text-ink-muted mb-1.5">{s.title}</div>
+              {empty ? (
+                <p className="text-[12.5px] text-ink-faint m-0">Пусто</p>
+              ) : (
+                <pre className="text-[12px] font-mono bg-surface-2 rounded-lg p-3 overflow-x-auto pretty-scroll m-0 whitespace-pre-wrap break-words">
+                  {JSON.stringify(s.value, null, 2)}
+                </pre>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Modal>
   );
 }
 
@@ -377,7 +323,7 @@ function usePager<T>(rows: T[]) {
 }
 
 const Th = ({ children, right }: { children: React.ReactNode; right?: boolean }) => (
-  <th className={`px-3.5 py-2.5 text-[11px] uppercase tracking-wider text-ink-faint font-normal whitespace-nowrap ${right ? "text-right" : "text-left"}`}>
+  <th className={`px-3.5 py-2.5 text-[11px] text-ink-faint font-normal whitespace-nowrap ${right ? "text-right" : "text-left"}`}>
     {children}
   </th>
 );

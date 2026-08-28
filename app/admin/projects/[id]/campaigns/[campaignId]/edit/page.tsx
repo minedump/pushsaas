@@ -8,7 +8,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
   const { id, campaignId } = await params;
   const supabase = await createClient();
 
-  const { data: project } = await supabase.from("projects").select("id, is_active, timezone, product_feed_url").eq("id", id).maybeSingle();
+  const { data: project } = await supabase.from("projects").select("id, is_active, timezone").eq("id", id).maybeSingle();
   if (!project) notFound();
   await ensureProjectAccessible(project.id, project.is_active);
 
@@ -72,7 +72,6 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
       segmentOptions={segmentOptions}
       providerOptions={providerOptions}
       projectTimezone={project.timezone || "Europe/Moscow"}
-      hasFeed={!!project.product_feed_url}
     />
   );
 }

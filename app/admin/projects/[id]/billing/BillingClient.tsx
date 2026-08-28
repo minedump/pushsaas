@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PACKAGES } from "@/lib/packages";
 import { Badge, Button, Card, useDialogs } from "@/app/ui";
+import { friendlyError } from "@/lib/errors";
 
 type Tariff = { id: string; name: string; price_rub: number; monthly_push_limit: number; subscriber_limit: number | null };
 type Project = {
@@ -21,6 +22,28 @@ declare global {
   interface Window {
     cp?: { CloudPayments: new () => { pay: (t: string, o: object, cb: object) => void } };
   }
+}
+
+const PAYMENT_FAIL_REASONS: Record<string, string> = {
+  "Insufficient Funds": "недостаточно средств на карте",
+  "Do Not Honor": "банк отклонил операцию",
+  "Invalid Card Number": "неверный номер карты",
+  "Invalid Expiration Date": "неверный срок действия карты",
+  "Expired Card": "истёк срок действия карты",
+  "Incorrect CVV": "неверный код CVV",
+  "Restricted Card": "операции по карте ограничены банком",
+  "Lost Card": "карта заблокирована банком",
+  "Stolen Card": "карта заблокирована банком",
+  "Exceeds Withdrawal Limit": "превышен лимит операций по карте",
+  "Transaction Not Permitted": "банк запретил операцию для этой карты",
+  "Issuer Unavailable": "банк-эмитент временно недоступен",
+  "3DSecure Authentication Failed": "не пройдена проверка 3-D Secure",
+  "Time Out": "истекло время ожидания оплаты",
+};
+
+function translatePaymentFailReason(reason: string): string {
+  const known = PAYMENT_FAIL_REASONS[reason];
+  return known ? `Оплата не прошла: ${known}.` : "Оплата не прошла. Попробуйте другую карту или повторите позже.";
 }
 
 export default function BillingClient({
@@ -59,7 +82,10 @@ export default function BillingClient({
       { publicId, description, amount, currency: "RUB", accountId: project.id, invoiceId: `${project.id}-${Date.now()}`, data },
       {
         onSuccess: () => { toast("Оплата прошла. Баланс обновится в течение минуты.", "good"); setTimeout(() => router.refresh(), 2500); },
-        onFail: (reason: string) => toast("Оплата не прошла: " + reason, "bad"),
+        onFail: (reason: string) => {
+          if (reason === "User has cancelled") return; // закрыл окно оплаты сам — это не ошибка
+          toast(translatePaymentFailReason(reason), "bad");
+        },
       }
     );
   }
@@ -75,7 +101,7 @@ export default function BillingClient({
     setBusy(true);
     const { error } = await supabase.rpc("unsubscribe_project", { p_project_id: project.id });
     setBusy(false);
-    if (error) toast(error.message, "bad");
+    if (error) toast(friendlyError(error), "bad");
     else { toast("Вы вернулись на «Старт»", "good"); router.refresh(); }
   }
 
@@ -108,13 +134,6 @@ export default function BillingClient({
           </Button>
         )}
       </Card>
-
-      {!publicId && (
-        <Card className="mt-4 border-warn bg-warn-tint text-[13px]">
-          Приём оплаты не настроен: добавьте <code className="font-mono">NEXT_PUBLIC_CLOUDPAYMENTS_PUBLIC_ID</code> и{" "}
-          <code className="font-mono">CLOUDPAYMENTS_API_SECRET</code>. Механика тарифов и балансов уже работает.
-        </Card>
-      )}
 
       <h2 className="text-base font-semibold mt-8">Тарифы</h2>
       <div className="grid gap-3 mt-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>

@@ -1,12 +1,13 @@
 import crypto from "crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { sendPush } from "@/lib/webpush";
+import { sendPush, type PushPayload } from "@/lib/webpush";
 import { checkSendAbility, sendTelegramCode } from "./telegram";
 import { sendSms } from "./sms";
-import { sendEmailCode } from "./haskimail";
+import { sendEmail } from "./haskimail";
 import { sendSmsSmsc, sendTelegramSmsc, sendEmailSmsc } from "./smsc";
 import { resolveSmsProvider, resolveTelegramProvider, resolveEmailProvider } from "./providers";
 import { isRuCisPhone } from "@/lib/phone";
+import { applyTemplate } from "@/lib/template";
 
 // Единый каскад для ОДНОГО известного ключа входа — телефон ИЛИ email
 // (никогда оба сразу: у нас нет флоу, который просит подтвердить оба и
@@ -70,6 +71,60 @@ export function resolveOrder(configured: unknown): OtpChannel[] {
 function genCode(): string {
   return String(crypto.randomInt(0, 1000000)).padStart(6, "0");
 }
+
+// Шаблон для кода входа — назначается в Авторизации отдельно на push/sms/
+// email (см. AuthSettings.tsx, config.otp_templates), из общего списка
+// «Шаблоны». Telegram сюда не входит — Telegram Gateway API технически не
+// может нести произвольный контент, только код (см. sendTelegramCode).
+// Если для канала ничего не назначено — шлём прежний захардкоженный текст
+// (см. каждую ветку ниже), поведение без настройки не меняется.
+type OtpTemplateRow = {
+  title: string | null;
+  body: string | null;
+  url: string | null;
+  icon_url: string | null;
+  image_url: string | null;
+  badge_url: string | null;
+  actions: { title: string; url: string }[] | null;
+  subject: string | null;
+  html: string | null;
+  context: Record<string, unknown> | null;
+};
+
+async function loadOtpTemplate(
+  admin: ReturnType<typeof createAdminClient>,
+  projectId: string,
+  channel: "push" | "sms" | "email",
+  templateId: string | undefined
+): Promise<OtpTemplateRow | null> {
+  if (!templateId) return null;
+  const { data } = await admin
+    .from("templates")
+    .select("title, body, url, icon_url, image_url, badge_url, actions, subject, html, context")
+    .eq("id", templateId)
+    .eq("project_id", projectId)
+    .eq("channel", channel)
+    .maybeSingle();
+  return data;
+}
+
+// {{ code }} — одноразовый код, всегда доступен в шаблоне кода входа (см.
+// ContextDocs.tsx: остальной контекст шаблона под template.* не проставляется
+// автоматически при обычных рассылках, но здесь ни рассылки, ни кампании нет
+// — это ЕДИНСТВЕННЫЙ Liquid-контекст для этого письма/смс/пуша, поэтому
+// собственный context шаблона тоже отдаём плоским, а code — сверху, чтобы
+// одноимённое поле в контексте шаблона не могло его перекрыть.
+function otpAttrs(template: OtpTemplateRow | null, code: string): Record<string, unknown> {
+  return { ...(template?.context || {}), code };
+}
+
+// Дефолтный текст письма с кодом (без шаблона) — один и тот же для обоих
+// email-провайдеров (Haskimail/SMSC), простой текст без HTML-разметки.
+// Раньше у Haskimail был свой, более оформленный вариант с <b>/<p> — решили
+// не выделять один провайдер оформлением, если мерчант не назначил свой
+// шаблон, оба должны слать одинаково простое сообщение.
+const DEFAULT_OTP_EMAIL_SUBJECT = "Код подтверждения";
+const defaultOtpEmailBody = (code: string) => `Ваш код для входа: ${code} (действует 5 минут)`;
 
 function hashCode(otpId: string, code: string): string {
   return crypto.createHash("sha256").update(`${otpId}:${code}`).digest("hex");
@@ -172,6 +227,7 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
   const smsProvider = resolveSmsProvider(oidcClient?.config?.providers?.sms);
   const telegramProvider = resolveTelegramProvider(oidcClient?.config?.providers?.telegram);
   const emailProvider = resolveEmailProvider(oidcClient?.config?.providers?.email);
+  const otpTemplateIds: { push?: string; sms?: string; email?: string } = oidcClient?.config?.otp_templates || {};
 
   const otpId = crypto.randomUUID();
   const code = genCode();
@@ -190,7 +246,8 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
         attempts.push({ channel: ch, ok: false, reason: "not_configured" });
         continue;
       }
-      const r = await sendPushCode(projectId, key, code, secrets?.vapid_private_key || null);
+      const pushTemplate = await loadOtpTemplate(admin, projectId, "push", otpTemplateIds.push);
+      const r = await sendPushCode(projectId, key, code, secrets?.vapid_private_key || null, pushTemplate);
       attempts.push({ channel: ch, ok: r.ok, reason: r.reason });
       if (r.ok) { channel = ch; break; }
       continue;
@@ -200,12 +257,23 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
         attempts.push({ channel: ch, ok: false, reason: "not_configured" });
         continue;
       }
+      const emailTemplate = await loadOtpTemplate(admin, projectId, "email", otpTemplateIds.email);
+      const emailAttrs = otpAttrs(emailTemplate, code);
+      const emailSubject = emailTemplate ? applyTemplate(emailTemplate.subject, emailAttrs) : "";
+      const emailHtml = emailTemplate ? applyTemplate(emailTemplate.html, emailAttrs) : "";
       if (emailProvider === "smsc") {
         if (!smscLogin || !smscPassword || !emailFrom) {
           attempts.push({ channel: ch, ok: false, reason: "not_configured" });
           continue;
         }
-        const sent = await sendEmailSmsc(smscLogin, smscPassword, key.email, "Код подтверждения", `Ваш код для входа: ${code} (действует 5 минут)`, emailFrom);
+        const sent = await sendEmailSmsc(
+          smscLogin,
+          smscPassword,
+          key.email,
+          emailTemplate ? emailSubject : DEFAULT_OTP_EMAIL_SUBJECT,
+          emailTemplate ? emailHtml : defaultOtpEmailBody(code),
+          emailFrom
+        );
         attempts.push({ channel: ch, ok: sent.ok, reason: sent.ok ? undefined : "provider_error" });
         if (sent.ok) { channel = ch; usedProvider = "smsc"; providerMessageId = sent.messageId; break; }
         continue;
@@ -214,7 +282,13 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
         attempts.push({ channel: ch, ok: false, reason: "not_configured" });
         continue;
       }
-      const sent = await sendEmailCode(haskimailToken, key.email, code, emailFrom, haskimailTransactionalStream);
+      const sent = await sendEmail(
+        haskimailToken,
+        key.email,
+        { subject: emailTemplate ? emailSubject : DEFAULT_OTP_EMAIL_SUBJECT, html: emailTemplate ? emailHtml : defaultOtpEmailBody(code) },
+        emailFrom,
+        haskimailTransactionalStream
+      );
       attempts.push({ channel: ch, ok: sent, reason: sent ? undefined : "send_failed" });
       if (sent) { channel = ch; usedProvider = "haskimail"; break; }
       continue;
@@ -261,12 +335,14 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
         attempts.push({ channel: ch, ok: false, reason: "country_not_allowed" });
         continue;
       }
+      const smsTemplate = await loadOtpTemplate(admin, projectId, "sms", otpTemplateIds.sms);
+      const smsText = smsTemplate ? applyTemplate(smsTemplate.body, otpAttrs(smsTemplate, code)) : `Код подтверждения: ${code}`;
       if (smsProvider === "smsc") {
         if (!smscLogin || !smscPassword) {
           attempts.push({ channel: ch, ok: false, reason: "not_configured" });
           continue;
         }
-        const sent = await sendSmsSmsc(smscLogin, smscPassword, key.phone, `Код подтверждения: ${code}`, smsSender);
+        const sent = await sendSmsSmsc(smscLogin, smscPassword, key.phone, smsText, smsSender);
         attempts.push({ channel: ch, ok: sent.ok, reason: sent.ok ? undefined : "provider_error" });
         if (sent.ok) { channel = ch; usedProvider = "smsc"; providerMessageId = sent.messageId; break; }
         continue;
@@ -275,7 +351,7 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
         attempts.push({ channel: ch, ok: false, reason: "not_configured" });
         continue;
       }
-      const sent = await sendSms(secrets.bytehand_service_key, key.phone, `Код подтверждения: ${code}`, smsSender);
+      const sent = await sendSms(secrets.bytehand_service_key, key.phone, smsText, smsSender);
       attempts.push({ channel: ch, ok: sent.ok, reason: sent.ok ? undefined : "provider_error" });
       if (sent.ok) { channel = ch; usedProvider = "bytehand"; providerMessageId = sent.messageId; break; }
       continue;
@@ -302,7 +378,13 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
 // Push-код на устройства, уже привязанные (identity_devices) к identity,
 // найденной по этому ключу — телефону или email, симметрично. Не списывает
 // баланс — сервисный пуш.
-async function sendPushCode(projectId: string, key: OtpKey, code: string, vapidPrivate: string | null): Promise<{ ok: boolean; reason?: ChannelSkipReason }> {
+async function sendPushCode(
+  projectId: string,
+  key: OtpKey,
+  code: string,
+  vapidPrivate: string | null,
+  template: OtpTemplateRow | null = null
+): Promise<{ ok: boolean; reason?: ChannelSkipReason }> {
   if (!vapidPrivate) return { ok: false, reason: "not_configured" };
   const admin = createAdminClient();
   const isPhone = "phone" in key;
@@ -329,17 +411,22 @@ async function sendPushCode(projectId: string, key: OtpKey, code: string, vapidP
   if (!project?.vapid_public_key) return { ok: false, reason: "not_configured" };
 
   const vapid = { publicKey: project.vapid_public_key, privateKey: vapidPrivate };
+  const attrs = otpAttrs(template, code);
+  const payload: PushPayload = template
+    ? {
+        title: applyTemplate(template.title, attrs) || "Код входа",
+        body: applyTemplate(template.body, attrs) || `Ваш код: ${code} (действует 5 минут)`,
+        url: (template.url ? applyTemplate(template.url, attrs) : "") || "/",
+        icon: template.icon_url ? applyTemplate(template.icon_url, attrs) : undefined,
+        image: template.image_url ? applyTemplate(template.image_url, attrs) : undefined,
+        badge: template.badge_url ? applyTemplate(template.badge_url, attrs) : undefined,
+        actions: template.actions?.length ? template.actions.map((a) => ({ title: applyTemplate(a.title, attrs), url: applyTemplate(a.url, attrs) })) : undefined,
+      }
+    : // TTL у web-push задан сутки, но код живёт 5 минут — укажем это в тексте
+      { title: "Код входа", body: `Ваш код: ${code} (действует 5 минут)`, url: "/" };
   const results = await Promise.all(
     subs.map((s) =>
-      withTimeout(
-        sendPush(
-          { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-          // TTL у web-push задан сутки, но код живёт 5 минут — укажем это в тексте
-          { title: "Код входа", body: `Ваш код: ${code} (действует 5 минут)`, url: "/" },
-          vapid
-        ),
-        PUSH_SEND_TIMEOUT_MS
-      ).then(
+      withTimeout(sendPush({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, vapid), PUSH_SEND_TIMEOUT_MS).then(
         () => true,
         () => false
       )

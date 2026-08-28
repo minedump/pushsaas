@@ -1,10 +1,24 @@
+import { IconLock } from "@tabler/icons-react";
 import { cn } from "./cn";
 
 const base =
   "w-full text-sm px-3 py-2 rounded-lg border border-border bg-surface text-ink " +
-  "placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-accent-line focus:ring-offset-0";
+  "placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-accent-line focus:ring-offset-0 " +
+  "disabled:opacity-60 disabled:cursor-not-allowed";
 
+// Заблокированный инпут получает иконку замка автоматически — раньше её
+// добавляли вручную в паре мест (не везде одинаково), теперь один источник
+// правды: любой disabled-инпут в проекте выглядит одинаково без лишних
+// пропсов у вызывающего кода.
 export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
+  if (props.disabled) {
+    return (
+      <div className={cn("relative", className)}>
+        <input className={cn(base, "w-full pr-9")} {...props} />
+        <IconLock size={16} stroke={1.8} className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-faint pointer-events-none" />
+      </div>
+    );
+  }
   return <input className={cn(base, className)} {...props} />;
 }
 

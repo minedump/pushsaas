@@ -36,9 +36,9 @@ SaaS для отправки веб-push уведомлений (работаю�
 - [x] **10. Подписчики** — список, платформы iOS/Android, теги/сегменты, редактирование через RLS
 - [x] **11. Биллинг** — виджет CloudPayments, вебхук (HMAC), крон-продление (3 ретрая), пакеты, отписка, блок-редирект. ⚠️ применить `0002_billing.sql` + добавить ключи CloudPayments для реальных оплат
 - [x] **12. Суперадмин** — клиенты (вкл/выкл, «войти», бонусы + активация тарифа через RPC), CRUD тарифов
-- [x] **13. API для клиентов** — ключи (хеш+префикс), `/api/v1/send`, `/api/v1/trigger`, `/api/v1/subscribers`
+- [x] **13. API для клиентов** — ключи (хеш+префикс), `/api/v1/campaigns`, `/api/v1/trigger`, `/api/v1/subscribers`
 - [x] **14. Реальный тест на iPhone** — задеплоено на Vercel (pushsaas-lime.vercel.app), проверено на yuliawave.com ✅
-- [x] **15. Вход по телефону (OIDC для InSales)** — свой OpenID Connect провайдер (`/oidc/{projectId}/…`, RS256, обязательный userinfo), identity-слой (телефон ↔ push-устройства через `device_token` + link-отскок), каскад кодов push → Telegram Gateway → SMS Bytehand, отправка по телефону в `/api/v1/send` (`phones`), настройки в админке («Вход по телефону»). ⚠️ применить `0003_identity_oidc.sql`; инструкция Telegram — `docs/telegram-gateway.md`. Проверено на стенде: InSales принимает ID Token только с `phone_number`; Issuer в админку InSales вводить без `https://`
+- [x] **15. Вход по телефону (OIDC для InSales)** — свой OpenID Connect провайдер (`/oidc/{projectId}/…`, RS256, обязательный userinfo), identity-слой (телефон ↔ push-устройства через `device_token` + link-отскок), каскад кодов push → Telegram Gateway → SMS Bytehand, отправка по телефону в `/api/v1/campaigns` (`phones`), настройки в админке («Вход по телефону»). ⚠️ применить `0003_identity_oidc.sql`; инструкция Telegram — `docs/telegram-gateway.md`. Проверено на стенде: InSales принимает ID Token только с `phone_number`; Issuer в админку InSales вводить без `https://`
 
 - [x] **16. V2-пакет** (миграция `0009_v2.sql`) — см. подробности ниже.
 
@@ -52,9 +52,9 @@ SaaS для отправки веб-push уведомлений (работаю�
 - **Защита от рассинхрона миграций:** все новые колонки (`paused`, `attribution_*`, `campaigns.actions`, `resend_api_key`) читаются/пишутся best-effort в изолированных запросах — если 0009 ещё не накатана, платформа не падает, просто новые фичи выключены.
 
 **Новое:**
-- **Rich push** — до 2 кнопок-действий (`campaigns.actions`, `automations.config.actions`) в конструкторе рассылки, `/api/v1/send`, `/api/v1/trigger`; обрабатываются в `service-worker.js`.
+- **Rich push** — до 2 кнопок-действий (`campaigns.actions`, `automations.config.actions`) в конструкторе рассылки, `/api/v1/campaigns`, `/api/v1/trigger`; обрабатываются в `service-worker.js`.
 - **Email-канал OTP** — Resend API, только для возвратных клиентов (email подтягивается автоматически из `client.email` в транзакционных вебхуках заказа рядом с телефоном). Каскад: push → email → Telegram → SMS.
-- **Таргетинг по email** — `/api/v1/send` принимает `emails`/`email` наравне с `phones`/`phone` (`lib/identity.ts: emailsToSubscriberIds`).
+- **Таргетинг по email** — `/api/v1/campaigns` принимает `emails`/`email` наравне с `phones`/`phone` (`lib/identity.ts: emailsToSubscriberIds`).
 - **Универсальный триггер — транзакционные vs рассылочные** — тоггл в конструкторе автоматизации: транзакционная шлёт точечно по телефону (нет телефона → пропуск), рассылочная — по сегменту/всем (сегмент тоже из тела по пути).
 - **Атрибуция заказов к пушам** (`order_attributions`, `/api/v1/attribute`) — last-click модель: скрипт трекинга помечает клик по пушу first-party-кукой (`document.cookie` в виджете, формат `<campaignId>.<timestampMs>`), отдельный вебхук на заказ сверяет куку и записывает выручку к кампании. Настройки — блок на странице «Кампании»: только имя куки (по умолчанию `pss_attr`), путь в теле заказа больше не настраивается руками — InSales сам кладёт любую куку из списка `/admin2/checkout` → «Список cookies, которые требуется сохранить при оформлении заказа» в `order.cookies.<имя>`, и мы читаем её ровно оттуда (подтверждено реальным телом заказа InSales, `number`/`total_price` — дефолтные пути к номеру/сумме тоже подтверждены). Мерчанту нужно вписать одно и то же имя куки в двух местах — у нас и в `/admin2/checkout`.
 - **Расширенная аналитика** (`/admin/projects/[id]/analytics`) — рост подписчиков за 30 дней, разбивка по платформам, топ кампаний по CTR, активность автоматизаций, выручка (если атрибуция включена).

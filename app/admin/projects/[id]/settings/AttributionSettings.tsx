@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Card, Input, Label, useDialogs } from "@/app/ui";
+import { Button, Card, Input, useDialogs } from "@/app/ui";
 import CopyBox from "../CopyBox";
 
 // Атрибуция заказов к пушам — вебхук всегда живой по своему токену, никакого
@@ -29,6 +29,7 @@ export default function AttributionSettings({
   const [busy, setBusy] = useState(false);
 
   async function save() {
+    if (busy) return;
     setBusy(true);
     const res = await fetch("/api/admin/attribution/settings", {
       method: "POST",
@@ -46,41 +47,58 @@ export default function AttributionSettings({
   }
 
   return (
-    <Card className="mt-4">
-      <h2 className="text-base font-semibold m-0">Атрибуция заказов к рассылкам</h2>
-      <p className="text-ink-muted text-[13px] mt-1">
-        Заказы, оформленные после перехода по рассылке, сами появятся в Аналитике и Рассылках — ничего отдельно
-        включать не нужно.
+    <section className="mt-10">
+      <h2 className="text-lg font-semibold mb-1">Атрибуция заказов к рассылкам</h2>
+      <p className="text-[13px] text-ink-muted mt-0 mb-3">
+        Добавьте вебхук ниже в настройках магазина — и заказы, оформленные после перехода по рассылке, начнут
+        появляться в Аналитике и Рассылках.
       </p>
 
-      <div className="text-[13px] font-semibold mt-3">Вебхук на создание/обновление заказа</div>
-      <CopyBox text={webhookUrl} />
+      <Card>
+        <div className="text-[13.5px] font-semibold mb-3">Вебхук атрибуции</div>
+        <CopyBox text={webhookUrl} />
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <div>
-          <Label>Имя куки</Label>
-          <Input value={s.cookieName} onChange={(e) => setS({ ...s, cookieName: e.target.value })} placeholder="pss_attr" />
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div>
+            <label htmlFor="attr-cookie-name" className="text-[13px] text-ink-muted block mb-1">
+              Имя куки
+            </label>
+            <Input
+              id="attr-cookie-name"
+              value={s.cookieName}
+              onChange={(e) => setS({ ...s, cookieName: e.target.value })}
+              placeholder="pss_attr"
+            />
+          </div>
+          <div>
+            <label htmlFor="attr-window-days" className="text-[13px] text-ink-muted block mb-1">
+              Окно атрибуции (дней)
+            </label>
+            <Input
+              id="attr-window-days"
+              type="number"
+              min={1}
+              value={s.windowDays}
+              onChange={(e) => setS({ ...s, windowDays: Number(e.target.value) })}
+            />
+          </div>
         </div>
-        <div>
-          <Label>Окно атрибуции (дней)</Label>
-          <Input type="number" min={1} value={s.windowDays} onChange={(e) => setS({ ...s, windowDays: Number(e.target.value) })} />
-        </div>
-      </div>
-      <p className="text-[12.5px] text-ink-faint mt-2 mb-0">
-        Впишите это же имя в InSales:{" "}
-        {domain ? (
-          <a href={`https://${domain}/admin2/checkout`} target="_blank" rel="noreferrer" className="text-accent">
-            Настройки оформления заказа
-          </a>
-        ) : (
-          "Настройки оформления заказа"
-        )}{" "}
-        → «Список cookies, которые требуется сохранить при оформлении заказа».
-      </p>
+        <p className="text-[12.5px] text-ink-faint mt-2 mb-0">
+          Впишите это же имя в InSales:{" "}
+          {domain ? (
+            <a href={`https://${domain}/admin2/checkout`} target="_blank" rel="noreferrer" className="text-accent">
+              Настройки оформления заказа
+            </a>
+          ) : (
+            "Настройки оформления заказа"
+          )}{" "}
+          → «Список cookies, которые требуется сохранить при оформлении заказа».
+        </p>
 
-      <Button size="sm" className="mt-3" disabled={busy} onClick={save}>
-        Сохранить
-      </Button>
-    </Card>
+        <div className="flex gap-2 mt-3">
+          <Button onClick={save}>Сохранить</Button>
+        </div>
+      </Card>
+    </section>
   );
 }

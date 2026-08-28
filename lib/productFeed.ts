@@ -319,42 +319,6 @@ export async function clearProductFeed(projectId: string): Promise<void> {
 // {{ product.params.Название }} с пробелом в ключе — только через скобки).
 const PRODUCT_COLUMNS = "external_id, group_id, name, price, old_price, image_url, url, categories, collections, params";
 
-// Правило подбора товаров для рассылок/приветственных, куда фид подключают
-// не через событие (там id уже в payload), а вручную — либо конкретный
-// список, либо «N новых» (по first_seen_at, см. migration 0064). Для
-// welcome/событийных резолвится заново при КАЖДОЙ отправке (см. sendWelcomeNow)
-// — это единственная причина, почему для них нужно правило, а не готовый
-// массив: одна и та же цепочка шлётся многим подписчикам в разное время.
-export type ProductsRule = { mode: "manual"; external_ids: string[] } | { mode: "newest"; count: number; category?: string | null };
-
-export async function resolveProductsByRule(projectId: string, rule: ProductsRule): Promise<ProductFeedItem[]> {
-  const admin = createAdminClient();
-  if (rule.mode === "manual") {
-    const ids = [...new Set(rule.external_ids)].slice(0, 50);
-    if (!ids.length) return [];
-    const { data } = await admin.from("product_feed_items").select(PRODUCT_COLUMNS).eq("project_id", projectId).in("external_id", ids);
-    if (!data?.length) return [];
-    const byId = new Map(data.map((p) => [p.external_id, p]));
-    // порядок — как выбрал админ, а не как вернула база.
-    return ids.map((id) => byId.get(id)).filter((p): p is ProductFeedItem => !!p);
-  }
-  const count = Math.max(1, Math.min(rule.count || 1, 20));
-  let query = admin.from("product_feed_items").select(PRODUCT_COLUMNS).eq("project_id", projectId).order("first_seen_at", { ascending: false }).limit(count);
-  if (rule.category) query = query.contains("categories", [rule.category]);
-  const { data } = await query;
-  return data || [];
-}
-
-// Обёртка над resolveProductsByRule в форме, готовой к мержу в Liquid-контекст
-// (как и resolveProductContext) — {{ products }} для цикла, {{ product }} —
-// первый, для шаблонов, которые ожидают одиночный товар.
-export async function resolveProductsContext(projectId: string, rule: ProductsRule | null | undefined): Promise<Record<string, unknown>> {
-  if (!rule) return {};
-  const products = await resolveProductsByRule(projectId, rule);
-  if (!products.length) return {};
-  return { products, product: products[0] };
-}
-
 // Ссылка на товар ИЛИ категорию внутри ручного JSON-контекста
 // (template.*/context.*) — {"id": "123"} рядом с любыми другими полями.
 // Элемент считается ссылкой, только если id — строка/число; объект без id

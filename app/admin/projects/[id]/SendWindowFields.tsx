@@ -1,7 +1,14 @@
 "use client";
 
-import { Input, Label, Select, Toggle } from "@/app/ui";
+import { Input, Label, Toggle } from "@/app/ui";
+import { CustomSelect } from "@/app/ui/CustomSelect";
 import { cn } from "@/app/ui/cn";
+
+const SPACING_UNIT_OPTIONS = [
+  { value: "1", label: "минут" },
+  { value: "60", label: "часов" },
+  { value: "1440", label: "дней" },
+];
 
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 const DAY_LABEL: Record<number, string> = { 1: "Пн", 2: "Вт", 3: "Ср", 4: "Чт", 5: "Пт", 6: "Сб", 0: "Вс" };
@@ -96,11 +103,12 @@ export function SendWindowFields({
               onChange={(e) => onChange({ ...value, spacingAmount: Number(e.target.value) })}
               className="w-20"
             />
-            <Select value={value.spacingUnit} onChange={(e) => onChange({ ...value, spacingUnit: Number(e.target.value) })} className="flex-1">
-              <option value={1}>минут</option>
-              <option value={60}>часов</option>
-              <option value={1440}>дней</option>
-            </Select>
+            <CustomSelect
+              value={String(value.spacingUnit)}
+              onChange={(v) => onChange({ ...value, spacingUnit: Number(v) })}
+              options={SPACING_UNIT_OPTIONS}
+              className="flex-1"
+            />
           </div>
         </>
       )}

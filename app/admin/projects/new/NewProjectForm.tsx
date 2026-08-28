@@ -31,19 +31,16 @@ export default function NewProjectForm() {
   }
 
   return (
-    <main className="max-w-lg mx-auto">
+    <main className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-semibold">Новый проект</h1>
-      <p className="text-ink-muted mt-0">
-        Проект — это один сайт, на котором вы собираете подписчиков. Для него сгенерируется своя пара VAPID-ключей.
-      </p>
 
       <Card className="mt-5">
         <form onSubmit={submit}>
           <Label>Название</Label>
           <Input value={name} onChange={(e) => setName(e.target.value)} required placeholder="Мой магазин" />
           <div className="h-4" />
-          <Label>Домен сайта (без https://)</Label>
-          <Input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="yuliawave.com" />
+          <Label>Домен сайта</Label>
+          <Input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="myshop.ru" />
           {error && <p className="text-bad text-[13px] mt-3.5">{error}</p>}
           <Button className="mt-5" disabled={busy}>
             {busy ? "Создаём…" : "Создать проект"}

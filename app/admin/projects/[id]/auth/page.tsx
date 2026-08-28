@@ -57,6 +57,13 @@ export default async function AuthPage({ params }: { params: Promise<{ id: strin
   }
   const hasEmailFrom = !!oidc?.config?.email_from?.toString().trim();
 
+  const { data: templates } = await supabase
+    .from("templates")
+    .select("id, name, channel")
+    .eq("project_id", id)
+    .in("channel", ["push", "sms", "email"])
+    .order("name");
+
   return (
     <main className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-semibold">Авторизация</h1>
@@ -65,6 +72,7 @@ export default async function AuthPage({ params }: { params: Promise<{ id: strin
         projectId={id}
         projectDomain={project.domain}
         issuer={issuerFor(id)}
+        templates={templates ?? []}
         initial={
           oidc
             ? {
@@ -73,6 +81,7 @@ export default async function AuthPage({ params }: { params: Promise<{ id: strin
                 channels: { push: true, email: true, telegram: true, sms: true, ...(oidc.config?.channels || {}) },
                 channelOrder: Array.isArray(oidc.config?.channel_order) ? oidc.config.channel_order : [],
                 providers: oidc.config?.providers || {},
+                otpTemplates: oidc.config?.otp_templates || {},
                 hideNativeLoginButton: !!oidc.config?.hide_native_login_button,
                 authButtonText: oidc.config?.auth_button_text || "",
                 authButtonIcon: oidc.config?.auth_button_icon || "",

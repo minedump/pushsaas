@@ -46,7 +46,7 @@ export async function GET(req: Request) {
     const { data: due } = await admin
       .from("automation_jobs")
       .select(
-        "id, project_id, automation_id, subscriber_id, identity_id, payload, automations(type, channel, template_id, name, title, body, click_url, config, segment_tags, spacing_enabled, spacing_minutes, send_window_enabled, send_days, send_time_from, send_time_to, send_window_subscriber_tz, cascade, channel_templates, provider, platforms), subscribers(id, endpoint, p256dh, auth, is_active, attributes)"
+        "id, project_id, automation_id, subscriber_id, identity_id, payload, automations(type, channel, template_id, name, title, body, click_url, config, segment_tags, spacing_enabled, spacing_minutes, send_window_enabled, send_days, send_time_from, send_time_to, send_window_subscriber_tz, cascade, channel_templates, provider, platforms, is_transactional), subscribers(id, endpoint, p256dh, auth, is_active, attributes)"
       )
       .eq("status", "pending")
       .lte("fire_at", new Date().toISOString())
@@ -96,18 +96,36 @@ export async function GET(req: Request) {
           templateId = resolved?.templateId || null;
         }
 
+        // Каскадное задание, заведённое по sms/email-триггеру (или push с уже
+        // известной identity), несёт identity_id, а job.subscriber_id — null
+        // (см. fireWelcomeAutomations). Если приоритет в итоге резолвится в
+        // push, sendWelcomeNow всё равно требует subscriberId — резолвим
+        // активное устройство контакта здесь же, тем же приёмом, что и у
+        // каскадных recurring-заданий.
+        let subscriberId = job.subscriber_id || undefined;
+        if (a.cascade && channel === "push" && !subscriberId && identityId) {
+          const { data: link } = await admin
+            .from("identity_devices")
+            .select("subscriber_id, subscribers!inner(is_active)")
+            .eq("identity_id", identityId)
+            .eq("subscribers.is_active", true)
+            .limit(1)
+            .maybeSingle();
+          subscriberId = (link?.subscriber_id as string | undefined) || undefined;
+        }
+
         const providerHint =
           channel && (channel === "sms" || channel === "email")
             ? a.provider || (project?.welcome_channel_provider as Record<string, string> | null)?.[channel] || null
             : null;
-        const status = channel && templateId
+        const status = channel && templateId && (channel === "push" ? subscriberId : true)
           ? await sendWelcomeNow(
               admin,
               job.project_id,
               job.automation_id,
               channel,
               templateId,
-              { subscriberId: job.subscriber_id || undefined, identityId },
+              { subscriberId, identityId },
               providerHint,
               a.name ?? null,
               a.spacing_enabled ? a.spacing_minutes ?? null : null,
@@ -121,7 +139,8 @@ export async function GET(req: Request) {
               project?.timezone || "Europe/Moscow",
               "welcome",
               null,
-              (a.platforms as string[] | null) || null
+              (a.platforms as string[] | null) || null,
+              a.is_transactional ? "transactional" : "marketing"
             )
           : "skipped";
         if (status === "sent") sent++;
@@ -142,7 +161,12 @@ export async function GET(req: Request) {
         let templateId = a.template_id as string | null;
         let status: "sent" | "failed" | "skipped" = "skipped";
 
-        if ((a.cascade || a.template_id) && job.subscriber_id && !paused.has(job.subscriber_id)) {
+        // paused — личная пауза устройства, что вызвало событие; для
+        // транзакционных (a.is_transactional) не учитываем её здесь же, той
+        // же семантикой, что и bypass внутри sendWelcomeNow ниже — иначе для
+        // событийных транзакционная отправка блокировалась бы ДО того, как
+        // до него дойдёт код sendWelcomeNow.
+        if ((a.cascade || a.template_id) && job.subscriber_id && (a.is_transactional || !paused.has(job.subscriber_id))) {
           const { data: link } = await admin
             .from("identity_devices")
             .select("identity_id")
@@ -229,11 +253,72 @@ export async function GET(req: Request) {
               project?.timezone || "Europe/Moscow",
               "event",
               eventPayload,
-              (a.platforms as string[] | null) || null
+              (a.platforms as string[] | null) || null,
+              a.is_transactional ? "transactional" : "marketing"
             );
           }
         }
 
+        if (status === "sent") sent++;
+        else skipped++;
+        continue;
+      }
+
+      // recurring (см. lib/sender.ts fireRecurringAutomation) — задание в
+      // очередь ставится ТОЛЬКО для каскадных карточек (одноканальные шлются
+      // сразу бродкастом через campaigns, минуя эту очередь); канал резолвится
+      // здесь же, в момент разбора, тем же способом, что и у каскадных welcome.
+      if (a?.type === "recurring") {
+        const { data: project } = await admin.from("projects").select("welcome_channel_provider, timezone").eq("id", job.project_id).maybeSingle();
+        const identityId = job.identity_id || undefined;
+        const resolved = await resolveCascadeChannel(admin, job.project_id, identityId, (a.channel_templates as Record<string, string> | null) || {});
+        const channel = resolved?.channel || null;
+        const templateId = resolved?.templateId || null;
+        // Задание каскадной recurring-карточки несёт только identity_id (см.
+        // fireRecurringAutomation) — а push-ветка sendWelcomeNow требует
+        // subscriberId, не identityId. Резолвим активное устройство контакта
+        // здесь же, только когда канал реально выиграл push.
+        let subscriberId: string | undefined;
+        if (channel === "push" && identityId) {
+          const { data: link } = await admin
+            .from("identity_devices")
+            .select("subscriber_id, subscribers!inner(is_active)")
+            .eq("identity_id", identityId)
+            .eq("subscribers.is_active", true)
+            .limit(1)
+            .maybeSingle();
+          subscriberId = (link?.subscriber_id as string | undefined) || undefined;
+        }
+        const providerHint =
+          channel && (channel === "sms" || channel === "email")
+            ? a.provider || (project?.welcome_channel_provider as Record<string, string> | null)?.[channel] || null
+            : null;
+        const status =
+          channel && templateId && (channel === "push" ? subscriberId : identityId)
+            ? await sendWelcomeNow(
+                admin,
+                job.project_id,
+                job.automation_id,
+                channel,
+                templateId,
+                { subscriberId, identityId },
+                providerHint,
+                a.name ?? null,
+                a.spacing_enabled ? a.spacing_minutes ?? null : null,
+                {
+                  enabled: !!a.send_window_enabled,
+                  days: (a.send_days as number[] | null) || null,
+                  timeFrom: a.send_time_from,
+                  timeTo: a.send_time_to,
+                  useSubscriberTz: !!a.send_window_subscriber_tz,
+                },
+                project?.timezone || "Europe/Moscow",
+                "recurring",
+                null,
+                (a.platforms as string[] | null) || null,
+                a.is_transactional ? "transactional" : "marketing"
+              )
+            : "skipped";
         if (status === "sent") sent++;
         else skipped++;
         continue;
