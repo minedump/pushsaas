@@ -1,0 +1,250 @@
+# SENDERA целиком: приложение + self-hosted Supabase в одном наборе сервисов.
+# Тот же приём, что и в проекте puller (docker-compose там), плюс auth
+# (GoTrue) — puller обходился без него, SENDERA использует Supabase Auth
+# для входа в админку (email+пароль).
+#
+# Боевой запуск (сервер с доменом, HTTPS выпускается автоматически):
+#   docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d
+#
+# Отладка на своей машине (без домена, по адресу localhost:3000):
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+#
+# Состав намеренно минимальный — только то, что приложение использует:
+#   db       — Postgres с расширениями pg_cron (внутреннее расписание) и pg_net
+#   auth     — GoTrue: вход/регистрация владельцев (email+пароль), RLS auth.uid()
+#   rest     — PostgREST: через него читаются/пишутся таблицы и вызываются RPC
+#   storage  — файловое хранилище: медиатека, иконки PWA-манифеста
+#   gateway  — маршрутизатор /rest/v1, /storage/v1, /auth/v1 (заменяет Kong)
+#   app      — приложение; перед стартом само накатывает миграции
+#
+# Не включены: realtime, аналитика, студия — приложение их не использует.
+
+# Логи всех сервисов ограничены по размеру: без этого файлы растут без предела
+# и однажды забивают диск — а вместе с ним останавливают базу.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# Общие ужесточения для всех сервисов: процесс внутри контейнера не может
+# поднять себе права (в том числе через setuid-программы базового образа),
+# а форк-бомба упирается в потолок процессов раньше, чем в память хоста.
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 256
+  ulimits:
+    nofile:
+      soft: 8192
+      hard: 16384
+
+# У каждого сервиса свой потолок памяти и процессора: без них тяжёлая
+# операция (сборка изображений sharp, полный экспорт подписчиков) способна
+# съесть всю память сервера и утащить за собой базу.
+# Это потолки, а не резервирование — обычное потребление в разы меньше.
+services:
+  db:
+    networks: [backend]
+    <<: *hardening
+    logging: *logging
+    # postgres форкает процесс на соединение — потолок процессов выше общего
+    pids_limit: 512
+    # серверу базы нужны смена владельца файлов и переключение пользователя
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID, FOWNER, DAC_OVERRIDE]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # штатный образ без правок: его конфиг (/etc/postgresql) уже включает
+    # pg_cron и pg_net, а роли и расширения досоздаёт приложение при старте
+    mem_limit: 2g
+    cpus: "1.5"
+    image: supabase/postgres:15.8.1.060
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+  auth:
+    networks: [backend]
+    <<: *hardening
+    logging: *logging
+    cap_drop: [ALL]
+    mem_limit: 192m
+    cpus: "0.5"
+    image: supabase/gotrue:v2.196.0
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: "9999"
+      API_EXTERNAL_URL: ${APP_BASE_URL:?APP_BASE_URL обязателен}
+      GOTRUE_SITE_URL: ${APP_BASE_URL:?APP_BASE_URL обязателен}
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@db:5432/postgres
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: "3600"
+      # регистрация владельцев — прямо из формы входа (см. app/login/page.tsx,
+      # supabase.auth.signUp); своего почтового сервера нет, письма не шлём —
+      # тот же режим, что сейчас на облачном Supabase-проекте (автоподтверждение)
+      GOTRUE_DISABLE_SIGNUP: "false"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
+      GOTRUE_RATE_LIMIT_EMAIL_SENT: "100"
+
+  rest:
+    networks: [backend]
+    <<: *hardening
+    logging: *logging
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    mem_limit: 192m
+    cpus: "0.5"
+    image: postgrest/postgrest:v12.2.3
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@db:5432/postgres
+      PGRST_DB_SCHEMAS: public,storage
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+
+  storage:
+    networks: [backend]
+    <<: *hardening
+    logging: *logging
+    cap_drop: [ALL]
+    mem_limit: 256m
+    cpus: "0.5"
+    image: supabase/storage-api:v1.11.13
+    restart: unless-stopped
+    depends_on:
+      - db
+      - rest
+    environment:
+      ANON_KEY: ${SUPABASE_ANON_KEY}
+      SERVICE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD}@db:5432/postgres
+      POSTGREST_URL: http://rest:3000
+      FILE_SIZE_LIMIT: "52428800"
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: sendera
+      REGION: local
+      GLOBAL_S3_BUCKET: sendera
+    volumes:
+      - storage-data:/var/lib/storage
+
+  gateway:
+    networks: [backend]
+    <<: *hardening
+    logging: *logging
+    # непривилегированный образ nginx: мастер-процесс не от root
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+      - /var/cache/nginx:rw,nosuid,size=16m
+      - /var/run:rw,nosuid,size=8m
+    mem_limit: 64m
+    cpus: "0.5"
+    build:
+      context: ./docker
+      dockerfile: gateway/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - rest
+      - storage
+      - auth
+
+  app:
+    # приложение — единственный мостик между наружной сетью и внутренней
+    networks: [edge, backend]
+    <<: *hardening
+    logging: *logging
+    cap_drop: [ALL]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    mem_limit: 1500m
+    cpus: "1.5"
+    image: ${APP_IMAGE:-sendera-app:local}
+    build:
+      context: .
+      args:
+        # /supabase — не адрес gateway напрямую: и браузер, и серверный код
+        # этого же приложения (middleware, lib/supabase/server.ts) ходят на
+        # Supabase-совместимый API через САМО приложение, единым адресом
+        # (next.config.mjs сам проксирует /supabase/* на gateway:8000).
+        # Это принципиально: supabase-ssr выводит имя сессионной cookie из
+        # хоста этого URL — разойдись он у браузера и у сервера, cookie
+        # одного не найдётся под именем, которое ищет другой, и getUser()
+        # решит, что сессии нет, хотя она есть.
+        NEXT_PUBLIC_SUPABASE_URL: ${APP_BASE_URL:?APP_BASE_URL обязателен}/supabase
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_APP_URL: ${APP_BASE_URL}
+        NEXT_PUBLIC_CLOUDPAYMENTS_PUBLIC_ID: ${NEXT_PUBLIC_CLOUDPAYMENTS_PUBLIC_ID}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      gateway:
+        condition: service_started
+    environment:
+      # серверному коду то же значение нужно в runtime — NEXT_PUBLIC_* читает
+      # и браузер, и сервер (см. lib/supabase/client.ts и server.ts); значение
+      # совпадает с build args выше — клиентский бандл собран с тем же
+      NEXT_PUBLIC_SUPABASE_URL: ${APP_BASE_URL}/supabase
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      NEXT_PUBLIC_APP_URL: ${APP_BASE_URL}
+      NEXT_PUBLIC_CLOUDPAYMENTS_PUBLIC_ID: ${NEXT_PUBLIC_CLOUDPAYMENTS_PUBLIC_ID}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/postgres
+      APP_BASE_URL: ${APP_BASE_URL}
+      CRON_SECRET: ${CRON_SECRET}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT}
+      CLOUDPAYMENTS_PUBLIC_ID: ${CLOUDPAYMENTS_PUBLIC_ID}
+      CLOUDPAYMENTS_API_SECRET: ${CLOUDPAYMENTS_API_SECRET}
+      UNSUBSCRIBE_SECRET: ${UNSUBSCRIBE_SECRET}
+      OUTBOUND_PROXY_URL: ${OUTBOUND_PROXY_URL}
+    # миграции накатываются перед стартом сервера: так порядок соблюдается
+    # без отдельного сервиса и ожидания между контейнерами
+    command: ["sh", "-c", "node scripts/migrate.mjs && node server.js"]
+    # наружу порт не публикуем: снаружи стоит caddy и ходит сюда по
+    # внутренней сети. Для отладки без него есть docker-compose.local.yml
+    expose:
+      - "3000"
+
+# Имена томов Docker выводит из имени каталога проекта — на сервере он
+# постоянный (/opt/sendera), поэтому данные переживают пересборки.
+volumes:
+  db-data:
+  storage-data:
+
+# Две сети вместо одной общей: контейнер, торчащий наружу, не должен видеть
+# базу, auth и хранилище напрямую — только приложение.
+networks:
+  edge:
+  backend:
+    internal: true

@@ -52,10 +52,37 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# Миграции и скрипт их наката (scripts/migrate.mjs, см. docker-compose.yml —
+# self-hosted стенд накатывает их перед стартом). Скрипт живёт вне сборки
+# Next, поэтому в автономный сервер его зависимости не попадают сами —
+# берём драйвер Postgres из стадии, где зависимости уже установлены.
+# На боевой деплой (TimeWeb, без docker-compose) это не влияет: команда
+# запуска образа по умолчанию (CMD ниже) миграции не вызывает.
+COPY --from=builder --chown=nextjs:nodejs /app/supabase ./supabase
+COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/pg ./node_modules/pg
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/pg-cloudflare ./node_modules/pg-cloudflare
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/pg-connection-string ./node_modules/pg-connection-string
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/pg-int8 ./node_modules/pg-int8
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/pg-pool ./node_modules/pg-pool
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/pg-protocol ./node_modules/pg-protocol
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/pg-types ./node_modules/pg-types
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/pgpass ./node_modules/pgpass
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/postgres-array ./node_modules/postgres-array
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/postgres-bytea ./node_modules/postgres-bytea
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/postgres-date ./node_modules/postgres-date
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/postgres-interval ./node_modules/postgres-interval
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/split2 ./node_modules/split2
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/xtend ./node_modules/xtend
+
 USER nextjs
 EXPOSE 3000
 
 # Серверные переменные (Supabase service role, VAPID, CloudPayments secret,
 # CRON_SECRET и т.д.) передавайте через `docker run -e ...` / compose env —
 # в образ не запекаются.
+#
+# По умолчанию миграции НЕ накатываются (боевой деплой на TimeWeb не задаёт
+# DATABASE_URL и использует облачный Supabase, миграции на который накатывают
+# отдельно) — self-hosted docker-compose.yml переопределяет command сам.
 CMD ["node", "server.js"]

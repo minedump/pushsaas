@@ -1,0 +1,20 @@
+# Отладка на своей машине: приложение доступно по http://localhost:3001
+# без HTTPS и без домена (порт 3000 на этой машине занят другим стендом —
+# см. APP_BASE_URL в .env).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+#
+# Внутренний и внешний порт совпадают (3001=3001) намеренно: сервер сам себе
+# ходит на NEXT_PUBLIC_SUPABASE_URL=http://localhost:3001/supabase из кода
+# middleware/lib/supabase/server.ts — если бы порты разошлись (как при
+# стандартном "3001:3000"), "localhost:3001" внутри контейнера не резолвился
+# бы никуда (проброс портов докера — только снаружи внутрь, не наоборот).
+
+services:
+  app:
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: "3001"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3001/ || exit 1"]
