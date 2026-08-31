@@ -174,8 +174,9 @@ function escapeHtml(s: string) {
 // Плавающая кнопка — при клике сразу вызывает sendera.subscribe() (значит и
 // системный диалог сразу, без промежуточного шага). Скрывается: если уже
 // подписан (проверка при рендере, не только пост-фактум клика), если
-// закрыта крестиком (пауза config.dismissDays), и на iOS вне standalone
-// показывает вместо себя инструкцию «на экран Домой» вместо подписки.
+// закрыта крестиком (пауза config.dismissDays), и на iOS вне standalone —
+// там подписка технически невозможна (см. needsHomeScreen), кнопка вообще
+// не показывается, а не подменяется инструкцией.
 export function buttonBlock(projectId: string, config: ButtonConfig): string {
   const baseCss = toCssText(buttonBaseStyle(config));
   return `(function(){
@@ -189,8 +190,8 @@ export function buttonBlock(projectId: string, config: ButtonConfig): string {
 
   ready(function(){
     if(!window.sendera){ console.error("[sendera] подключите скрипт /embed/{projectId}.js"); return; }
-    var homeScreen = needsHomeScreen();
-    if(!homeScreen && !("serviceWorker" in navigator && "PushManager" in window && "Notification" in window)) return;
+    if(needsHomeScreen()) return; // iOS вне standalone — подписка технически невозможна, кнопку не показываем
+    if(!("serviceWorker" in navigator && "PushManager" in window && "Notification" in window)) return;
     if(document.getElementById("sendera-btn")) return;
 
     function dismissed(){ try { var raw = localStorage.getItem(DISMISS_KEY); if(!raw) return false; return (Date.now() - Number(raw)) < DISMISS_DAYS * 86400000; } catch(e){ return false; } }
@@ -221,24 +222,22 @@ export function buttonBlock(projectId: string, config: ButtonConfig): string {
         var label = document.createElement("span");
         label.textContent = ${JSON.stringify(config.text)};
 
-        if(homeScreen){
-          btn.innerHTML = '${BELL_SVG}';
-          btn.appendChild(label);
-          label.textContent = "Добавьте на экран «Домой»";
-          btn.appendChild(closeBtn);
-          btn.addEventListener("click", function(){ alert("Нажмите «Поделиться», затем «На экран «Домой»» — после этого уведомления заработают."); });
-          document.body.appendChild(btn);
-          window.sendera.event("widget_button_shown", {});
-          return;
-        }
-
         btn.innerHTML = '${BELL_SVG}';
         btn.appendChild(label);
         btn.appendChild(closeBtn);
+        btn.style.transition = "opacity .3s ease";
         btn.addEventListener("click", function(){
           window.sendera.event("widget_button_clicked", {});
           window.sendera.subscribe().then(function(){ return window.sendera.isSubscribed(); }).then(function(yes){
-            if(yes){ btn.innerHTML = '${CHECK_SVG}'; var s=document.createElement("span"); s.textContent="Вы подписаны"; btn.appendChild(s); btn.disabled = true; }
+            if(yes){
+              btn.innerHTML = '${CHECK_SVG}';
+              var s=document.createElement("span"); s.textContent="Вы подписаны"; btn.appendChild(s);
+              btn.disabled = true;
+              // держим обычный вид ещё пару секунд, чтобы посетитель успел
+              // прочитать «Вы подписаны», затем сама убирает себя с экрана —
+              // задерживаться дальше незачем, дело сделано
+              setTimeout(function(){ btn.style.opacity = "0"; setTimeout(function(){ btn.remove(); }, 300); }, 2500);
+            }
           });
         });
         document.body.appendChild(btn);
@@ -258,6 +257,7 @@ export function promptBlock(projectId: string, config: PromptConfig): string {
   const DISMISS_KEY = `pss_prompt_dismissed_${projectId}`;
   const title = escapeHtml(config.title);
   const body = escapeHtml(config.body);
+  const iosBody = escapeHtml(config.iosBody);
   const color = config.color;
   const textColor = config.textColor;
   const secondaryColor = config.secondaryColor;
@@ -302,7 +302,7 @@ export function promptBlock(projectId: string, config: PromptConfig): string {
           '<div class="pss-p-icon" style="color:${color}">' + BELL + '</div>' +
           '<div class="pss-p-text">' +
             '<div class="pss-p-title">${title}</div>' +
-            '<div class="pss-p-body">' + (homeScreen ? 'Добавьте сайт на экран «Домой», чтобы получать уведомления на iPhone.' : '${body}') + '</div>' +
+            '<div class="pss-p-body">' + (homeScreen ? '${iosBody}' : '${body}') + '</div>' +
           '</div>' +
           '<div class="pss-p-actions">' +
             '<button type="button" class="pss-p-later" style="background:${secondaryBg};color:${secondaryColor}">Не сейчас</button>' +

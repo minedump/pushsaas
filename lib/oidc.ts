@@ -58,6 +58,7 @@ export type OidcContext = {
   privateKeyPem: string;
   clientSecretHash: string;
   projectDomain: string | null;
+  logoUrl: string | null;
 };
 
 export async function getOidcContext(projectId: string): Promise<OidcContext | null> {
@@ -69,7 +70,7 @@ export async function getOidcContext(projectId: string): Promise<OidcContext | n
       .select("oidc_private_key_pem, oidc_client_secret_hash")
       .eq("project_id", projectId)
       .maybeSingle(),
-    admin.from("projects").select("domain, is_active").eq("id", projectId).maybeSingle(),
+    admin.from("projects").select("domain, is_active, logo_url").eq("id", projectId).maybeSingle(),
   ]);
   if (!client || !secrets?.oidc_private_key_pem || !secrets?.oidc_client_secret_hash || !project?.is_active) return null;
   return {
@@ -81,6 +82,7 @@ export async function getOidcContext(projectId: string): Promise<OidcContext | n
     privateKeyPem: secrets.oidc_private_key_pem,
     clientSecretHash: secrets.oidc_client_secret_hash,
     projectDomain: project.domain || null,
+    logoUrl: project.logo_url || null,
   };
 }
 

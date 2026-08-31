@@ -27,6 +27,7 @@ export type PromptConfig = {
   enabled: boolean;
   title: string;
   body: string;
+  iosBody: string;
   color: string;
   textColor: string;
   secondaryColor: string;
@@ -56,6 +57,7 @@ export const DEFAULT_PROMPT: PromptConfig = {
   enabled: false,
   title: "Получайте уведомления",
   body: "Узнавайте первыми о заказах и акциях",
+  iosBody: "Добавьте сайт на экран «Домой», чтобы получать уведомления на iPhone.",
   color: "#2c4a66",
   textColor: "#ffffff",
   secondaryColor: "#5a6570",
@@ -122,6 +124,7 @@ export function resolvePromptConfig(raw: unknown): PromptConfig {
     enabled: c.enabled === true,
     title: typeof c.title === "string" && c.title.trim() ? c.title.trim().slice(0, 60) : DEFAULT_PROMPT.title,
     body: typeof c.body === "string" && c.body.trim() ? c.body.trim().slice(0, 140) : DEFAULT_PROMPT.body,
+    iosBody: typeof c.iosBody === "string" && c.iosBody.trim() ? c.iosBody.trim().slice(0, 140) : DEFAULT_PROMPT.iosBody,
     color: typeof c.color === "string" && HEX.test(c.color.trim()) ? c.color.trim() : DEFAULT_PROMPT.color,
     textColor: typeof c.textColor === "string" && HEX.test(c.textColor.trim()) ? c.textColor.trim() : DEFAULT_PROMPT.textColor,
     secondaryColor:

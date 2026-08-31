@@ -36,10 +36,11 @@ import { applyTemplate } from "@/lib/template";
 // канал = свой lib/otp/<provider>.ts + ветка ниже + строка в providers.ts —
 // сам канал (порядок, гео-ограничение, RU/СНГ-гейт) от провайдера не зависит.
 
-const OTP_TTL_MS = 5 * 60 * 1000;
+export const OTP_TTL_MS = 5 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
 const RATE_WINDOW_MS = 10 * 60 * 1000;
-const RATE_MAX_SENDS = 3;
+const RATE_MAX_SENDS = 9;
+const RATE_MAX_SENDS_PER_CHANNEL = 3;
 
 export type OtpChannel = "push" | "email" | "telegram" | "sms";
 export type OtpKey = { phone: string } | { email: string };
@@ -49,7 +50,8 @@ export type ChannelSkipReason =
   | "no_subscription" // push: нет привязанного активного устройства
   | "provider_error" // sms/telegram: внешний сервис отказал/ошибся
   | "send_failed" // попытка была, доставка не подтвердилась
-  | "country_not_allowed"; // sms/telegram: номер не РФ/СНГ — не шлём вовсе
+  | "country_not_allowed" // sms/telegram: номер не РФ/СНГ — не шлём вовсе
+  | "channel_rate_limited"; // 3 отправки этим каналом за 10 минут уже исчерпаны — каскад идёт дальше
 
 export type ChannelAttempt = { channel: OtpChannel; ok: boolean; reason?: ChannelSkipReason };
 
@@ -189,14 +191,25 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
   const rateKey = isPhone ? key.phone : key.email;
   const rateColumn = isPhone ? "phone" : "email";
 
+  // Один запрос на оба лимита: общий (RATE_MAX_SENDS за окно, любым каналом)
+  // и по каждому каналу отдельно (RATE_MAX_SENDS_PER_CHANNEL) — после того,
+  // как конкретный канал исчерпал свою квоту, дальше и явный resend этим же
+  // каналом, и обычный каскад его просто пропускают (см. tryOrder/capped
+  // ниже) — тем же способом больше не шлём, что бы ни попросили.
   const windowStart = new Date(Date.now() - RATE_WINDOW_MS).toISOString();
-  const { count } = await admin
+  const { data: recentSends } = await admin
     .from("otp_requests")
-    .select("id", { count: "exact", head: true })
+    .select("channel")
     .eq("project_id", projectId)
     .eq(rateColumn, rateKey)
     .gte("created_at", windowStart);
-  if ((count || 0) >= RATE_MAX_SENDS) return { ok: false, error: "rate_limited", attempts };
+  if ((recentSends?.length || 0) >= RATE_MAX_SENDS) return { ok: false, error: "rate_limited", attempts };
+  const channelCounts: Partial<Record<OtpChannel, number>> = {};
+  for (const r of recentSends || []) {
+    const ch = r.channel as OtpChannel;
+    channelCounts[ch] = (channelCounts[ch] || 0) + 1;
+  }
+  const channelCapped = (ch: OtpChannel) => (channelCounts[ch] || 0) >= RATE_MAX_SENDS_PER_CHANNEL;
 
   const { data: secrets } = await admin
     .from("project_secrets")
@@ -235,12 +248,21 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
   // Применимые для этого ключа каналы: phone → push/telegram/sms, email → push/email.
   const applicable: OtpChannel[] = isPhone ? ["push", "telegram", "sms"] : ["push", "email"];
   const configuredOrder = resolveOrder(oidcClient?.config?.channel_order).filter((c) => applicable.includes(c));
-  const tryOrder: OtpChannel[] = opts.forceChannel ? [opts.forceChannel] : configuredOrder;
+  // Явный запрос конкретного канала (кнопка "Отправить ещё раз"/альтернативный
+  // канал) уважается, ПОКА у этого канала есть квота. Как только канал выбрал
+  // свои 3 отправки за 10 минут — тем же каналом больше не шлём никого, даже
+  // по явной просьбе: вместо него идём по всему каскаду заново (капнутые
+  // каналы просто пропускаются ниже) — это и есть принудительный переход.
+  const tryOrder: OtpChannel[] = opts.forceChannel && !channelCapped(opts.forceChannel) ? [opts.forceChannel] : configuredOrder;
   let channel: OtpChannel | null = null;
   let usedProvider: string | null = null;
   let providerMessageId: string | undefined;
 
   for (const ch of tryOrder) {
+    if (channelCapped(ch)) {
+      attempts.push({ channel: ch, ok: false, reason: "channel_rate_limited" });
+      continue;
+    }
     if (ch === "push") {
       if (channels.push === false) {
         attempts.push({ channel: ch, ok: false, reason: "not_configured" });
@@ -462,7 +484,14 @@ export async function verifyOtp(otpId: string, code: string): Promise<VerifyOtpR
 // каналом — берёт самую полезную причину из попыток (провайдерская ошибка
 // важнее, чем «канал не настроен» — это то, что реально можно почитать).
 export function describeNoChannel(attempts: ChannelAttempt[]): string {
-  const priority: ChannelSkipReason[] = ["provider_error", "send_failed", "no_subscription", "country_not_allowed", "not_configured"];
+  const priority: ChannelSkipReason[] = [
+    "provider_error",
+    "send_failed",
+    "no_subscription",
+    "country_not_allowed",
+    "not_configured",
+    "channel_rate_limited",
+  ];
   for (const reason of priority) {
     const hit = attempts.find((a) => a.reason === reason);
     if (!hit) continue;
@@ -476,6 +505,8 @@ export function describeNoChannel(attempts: ChannelAttempt[]): string {
         return "SMS и Telegram-код доступны только для номеров России и СНГ. Попробуйте войти по почте.";
       case "not_configured":
         return "Вход временно недоступен — магазин ещё не настроил ни один способ доставки кода.";
+      case "channel_rate_limited":
+        return "Слишком много отправок каждым доступным способом — подождите 10 минут.";
     }
   }
   return "Не удалось отправить код. Подпишитесь на уведомления на сайте магазина или попробуйте позже.";

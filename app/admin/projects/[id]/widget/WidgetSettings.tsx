@@ -237,6 +237,19 @@ export default function WidgetSettings({
             />
           </div>
           <div>
+            <Label>Текст на iPhone (сайт не добавлен на «Домой»)</Label>
+            <Textarea
+              value={prompt.iosBody}
+              onChange={(e) => setPrompt({ ...prompt, iosBody: e.target.value })}
+              rows={2}
+              placeholder="Добавьте сайт на экран «Домой», чтобы получать уведомления на iPhone."
+            />
+            <p className="text-xs text-ink-faint mt-1">
+              Safari на iPhone вне режима «На экране «Домой»» не умеет спрашивать разрешение на уведомления — вместо
+              кнопки «Разрешить» показывается этот текст с подсказкой.
+            </p>
+          </div>
+          <div>
             <Label>Скругление</Label>
             <CustomSelect
               value={prompt.borderRadius}

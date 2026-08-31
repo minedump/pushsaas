@@ -17,7 +17,9 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
 
   const { data: project } = await supabase
     .from("projects")
-    .select("id, name, domain, is_active, ym_counter_id, timezone, product_feed_url, product_feed_updated_at, product_feed_item_count, product_feed_error")
+    .select(
+      "id, name, domain, is_active, ym_counter_id, timezone, product_feed_url, product_feed_updated_at, product_feed_item_count, product_feed_error, logo_url"
+    )
     .eq("id", id)
     .maybeSingle();
   if (!project) notFound();
@@ -155,6 +157,7 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
         feedUpdatedAt={project.product_feed_updated_at}
         feedItemCount={project.product_feed_item_count || 0}
         feedError={project.product_feed_error}
+        initialLogoUrl={project.logo_url}
       />
 
       {attributionToken && (

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { IconRefresh } from "@tabler/icons-react";
+import { IconRefresh, IconPhoto } from "@tabler/icons-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button, Card, Input, useDialogs } from "@/app/ui";
 import { friendlyError } from "@/lib/errors";
@@ -39,6 +39,7 @@ export default function ProjectSettings({
   feedUpdatedAt,
   feedItemCount,
   feedError,
+  initialLogoUrl,
 }: {
   projectId: string;
   initialName: string;
@@ -49,6 +50,7 @@ export default function ProjectSettings({
   feedUpdatedAt: string | null;
   feedItemCount: number;
   feedError: string | null;
+  initialLogoUrl: string | null;
 }) {
   const supabase = createClient();
   const router = useRouter();
@@ -59,6 +61,8 @@ export default function ProjectSettings({
   const [feedUrl, setFeedUrl] = useState(initialFeedUrl || "");
   const [feedBusy, setFeedBusy] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [logoUrl, setLogoUrl] = useState(initialLogoUrl);
+  const [logoBusy, setLogoBusy] = useState(false);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -149,6 +153,36 @@ export default function ProjectSettings({
     window.location.href = "/admin";
   }
 
+  async function uploadLogo(file: File) {
+    setLogoBusy(true);
+    const form = new FormData();
+    form.append("projectId", projectId);
+    form.append("file", file);
+    const res = await fetch("/api/admin/project-logo/upload", { method: "POST", body: form });
+    const json = await res.json().catch(() => ({}));
+    setLogoBusy(false);
+    if (!res.ok) return toast(json.error || "Не удалось загрузить логотип", "bad");
+    setLogoUrl(json.url);
+    toast("Логотип сохранён", "good");
+  }
+
+  async function removeLogo() {
+    if (logoBusy) return;
+    const ok = await confirm({ title: "Убрать логотип с экрана входа?", confirmText: "Убрать", danger: true });
+    if (!ok) return;
+    setLogoBusy(true);
+    const res = await fetch("/api/admin/project-logo/upload", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId }),
+    });
+    const json = await res.json().catch(() => ({}));
+    setLogoBusy(false);
+    if (!res.ok) return toast(json.error || "Не удалось убрать логотип", "bad");
+    setLogoUrl(null);
+    toast("Логотип убран", "good");
+  }
+
   return (
     <>
       <section className="mt-10">
@@ -198,6 +232,40 @@ export default function ProjectSettings({
               </Button>
             </div>
           </form>
+        </Card>
+
+        <Card className={`mt-3 ${logoBusy ? "opacity-60" : ""}`}>
+          <div className="text-[13.5px] font-semibold mb-1">Логотип</div>
+          <p className="text-[13px] text-ink-muted mt-0 mb-3">Загрузите логотип проекта.</p>
+          <div className="flex items-center gap-4 flex-wrap">
+            <label className="flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-border rounded-xl w-28 h-28 cursor-pointer hover:border-accent transition-colors shrink-0">
+              {logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={logoUrl} alt="Логотип" className="max-w-20 max-h-20 object-contain" />
+              ) : (
+                <IconPhoto size={26} stroke={1.5} className="text-ink-faint" />
+              )}
+              <input
+                type="file"
+                accept="image/png,image/webp,image/svg+xml,image/jpeg"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) uploadLogo(file);
+                }}
+              />
+            </label>
+            <div className="text-[13px] text-ink-muted">
+              <div>PNG, WebP, SVG или JPG · до 2 МБ</div>
+              <div className="text-[12px] text-ink-faint mt-0.5">Нажмите на рамку, чтобы выбрать файл — загружается сразу</div>
+              {logoUrl && (
+                <Button variant="danger" size="sm" type="button" className="mt-2" onClick={removeLogo} disabled={logoBusy}>
+                  Убрать логотип
+                </Button>
+              )}
+            </div>
+          </div>
         </Card>
       </section>
 
