@@ -75,6 +75,13 @@ services:
     <<: *hardening
     logging: *logging
     cap_drop: [ALL]
+    # образ уже по умолчанию запускает GoTrue от непривилегированного
+    # пользователя supabase (проверено docker inspect) — user: здесь просто
+    # закрепляет это явно, поведение не меняет (security-аудит 2026-09-01)
+    user: supabase
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
     mem_limit: 192m
     cpus: "0.5"
     image: supabase/gotrue:v2.196.0
@@ -107,6 +114,9 @@ services:
     <<: *hardening
     logging: *logging
     cap_drop: [ALL]
+    # образ уже по умолчанию запускает PostgREST от uid 1000 (проверено
+    # docker inspect) — явный пин без изменения поведения (см. auth выше)
+    user: "1000"
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=32m
@@ -129,6 +139,15 @@ services:
     <<: *hardening
     logging: *logging
     cap_drop: [ALL]
+    # единственный писательский путь уже вынесен в именованный volume
+    # (/var/lib/storage ниже) — остальной rootfs можно закрыть на чтение
+    # (security-аудит 2026-09-01). Явный user: не пинуем — образ по
+    # умолчанию стартует от root, а его entrypoint может рассчитывать на
+    # это для смены владельца volume при первом старте; трогать без
+    # проверки на реальных данных прод-бакета не стали.
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
     mem_limit: 256m
     cpus: "0.5"
     image: supabase/storage-api:v1.11.13
@@ -179,6 +198,13 @@ services:
     <<: *hardening
     logging: *logging
     cap_drop: [ALL]
+    # rootfs на чтение — единственные писательские пути Next.js в рантайме
+    # (data/fetch cache) и os.tmpdir() вынесены в tmpfs явно (security-аудит
+    # 2026-09-01). scripts/migrate.mjs пишет только в БД, не на диск.
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+      - /app/.next/cache:rw,noexec,nosuid,size=64m
     healthcheck:
       # node:20-bookworm-slim не содержит wget/curl — используем то, что точно есть
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
@@ -222,6 +248,7 @@ services:
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@db:5432/postgres
       APP_BASE_URL: ${APP_BASE_URL}
       CRON_SECRET: ${CRON_SECRET}
+      OIDC_STATE_SECRET: ${OIDC_STATE_SECRET}
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
       VAPID_SUBJECT: ${VAPID_SUBJECT}

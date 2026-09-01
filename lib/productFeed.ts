@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { fetchPublicUrl } from "@/lib/ssrfGuard";
 
 // Товарный фид в формате YML (Яндекс.Маркет) — тот же формат, что отдаёт
 // штатный экспорт InSales по умолчанию. Разбор — ручной, регулярками: формат
@@ -209,7 +210,10 @@ export async function refreshProductFeed(projectId: string): Promise<{ ok: boole
 
   let xml: string;
   try {
-    const res = await fetch(feedUrl, { signal: AbortSignal.timeout(45_000) });
+    // fetchPublicUrl — не голый fetch: блокирует адреса внутренней сети/
+    // localhost/cloud-metadata на каждом хопе редиректа (SSRF-защита, см.
+    // lib/ssrfGuard.ts) — product_feed_url задаёт сам админ проекта.
+    const res = await fetchPublicUrl(feedUrl, { signal: AbortSignal.timeout(45_000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     xml = await res.text();
   } catch (e) {

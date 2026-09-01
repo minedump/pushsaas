@@ -32,12 +32,33 @@ export async function OPTIONS(req: Request) {
   return new NextResponse(null, { status: 204, headers: corsHeaders(req.headers.get("origin") || "") });
 }
 
+// Preflight (OPTIONS) не несёт тела — projectId ещё неизвестен, поэтому он
+// по необходимости отражает Origin разрешительно (см. corsHeaders). Реальная
+// проверка — здесь, в момент, когда projectId уже известен: куку узнавания
+// выставляем, только если Origin действительно принадлежит домену ЭТОГО
+// проекта (та же логика, что redirectHostAllowed в auth/route.ts), иначе
+// чужая страница с любым projectId в теле не сможет добыть себе валидную
+// recognize-куку чужого проекта на браузере жертвы.
+function originMatchesDomain(origin: string, domain: string | null | undefined): boolean {
+  if (!domain) return false;
+  try {
+    const host = new URL(origin).hostname;
+    return host === domain || host.endsWith(`.${domain}`);
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(req: Request) {
-  const cors = corsHeaders(req.headers.get("origin") || "");
+  const origin = req.headers.get("origin") || "";
+  const cors = corsHeaders(origin);
   const { projectId, deviceToken } = (await req.json().catch(() => ({}))) as { projectId?: string; deviceToken?: string };
   if (!projectId || !deviceToken) return NextResponse.json({ ok: false }, { status: 400, headers: cors });
 
   const admin = createAdminClient();
+  const { data: project } = await admin.from("projects").select("domain").eq("id", projectId).maybeSingle();
+  if (!originMatchesDomain(origin, project?.domain)) return NextResponse.json({ ok: false }, { status: 200, headers: cors });
+
   const { data: sub } = await admin
     .from("subscribers")
     .select("id")

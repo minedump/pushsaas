@@ -832,7 +832,7 @@ export async function POST(req: Request, routeCtx: { params: Promise<{ projectId
 
     await admin.from("oidc_auth_sessions").update({ identity_id: identity.id, status: "verified" }).eq("id", session.id);
     oidcLog("auth:verified", { projectId, sessionId: session.id, identityId: identity.id, key });
-    return issueCodeAndRedirect(session.id);
+    return issueCodeAndRedirect(projectId, session.id);
   }
 
   return new Response("bad action", { status: 400 });

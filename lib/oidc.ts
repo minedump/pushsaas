@@ -24,10 +24,17 @@ export function oidcLog(tag: string, data: Record<string, unknown>) {
   console.log(`[oidc:${tag}]`, JSON.stringify(data));
 }
 
-// HMAC-подпись служебных параметров (continue-редирект после отскока).
-// Ключ — секрет платформы; выделенная переменная с fallback на service key.
+// HMAC-подпись служебных параметров (sid/sig сессии входа, continue-редирект,
+// device-recognition кука). Раньше при отсутствии OIDC_STATE_SECRET тихо
+// падали на SUPABASE_SERVICE_ROLE_KEY (переиспользование ключа не по
+// назначению — service key даёт полный обход RLS) либо на захардкоженный
+// "dev-secret" (публичный литерал прямо в исходниках). Секьюрити-аудит
+// (2026-09-01): оба fallback'а убраны — без переменной подписывать нечем,
+// падаем сразу и явно, а не молча слабым ключом.
 function hmacKey(): string {
-  return process.env.OIDC_STATE_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || "dev-secret";
+  const key = process.env.OIDC_STATE_SECRET;
+  if (!key) throw new Error("OIDC_STATE_SECRET не задан — им подписываются sid/sig сессии входа и device-recognition кука");
+  return key;
 }
 
 export function signParam(value: string): string {

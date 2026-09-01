@@ -2,7 +2,10 @@
 # PushSaaS — Next.js 15, multi-stage build → минимальный рантайм-образ.
 # Debian slim (не Alpine): sharp/vips на musl иногда капризничает, здесь не рискуем.
 
-FROM node:20-bookworm-slim AS base
+# Пин по digest, не по мутабельному тегу (security-аудит 2026-09-01) —
+# node:20-bookworm-slim, свежий на момент фикса. Обновлять сознательно:
+# docker pull node:20-bookworm-slim && docker inspect --format='{{index .RepoDigests 0}}' node:20-bookworm-slim
+FROM node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS base
 
 # ---------------------------------------------------------------------
 # deps — устанавливаем зависимости отдельным слоем (кэшируется, пока не

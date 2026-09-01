@@ -17,7 +17,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ projectId: str
   const body = new URLSearchParams(await req.text());
   const creds = parseClientAuth(req, body);
   const authVia = (req.headers.get("authorization") || "").startsWith("Basic ") ? "basic" : "post";
-  if (creds.id !== oidc.clientId || sha256(creds.secret) !== oidc.clientSecretHash) {
+  // client_id — не секрет, обычное сравнение; client_secret сравниваем
+  // constant-time (тот же приём, что verifyParam в lib/oidc.ts) — обычный
+  // !== на хешах теоретически даёт атакующему тайминг-сигнал о совпадении
+  // префикса секрета.
+  const secretHash = Buffer.from(sha256(creds.secret));
+  const expectedHash = Buffer.from(oidc.clientSecretHash);
+  const secretOk = secretHash.length === expectedHash.length && crypto.timingSafeEqual(secretHash, expectedHash);
+  if (creds.id !== oidc.clientId || !secretOk) {
     oidcLog("token", { projectId, ua, authVia, outcome: "invalid_client:bad_creds" });
     return NextResponse.json({ error: "invalid_client" }, { status: 401 });
   }

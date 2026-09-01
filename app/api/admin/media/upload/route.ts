@@ -32,7 +32,14 @@ export async function POST(req: Request) {
 
   if (!(file instanceof File) || !file.size) return NextResponse.json({ error: "Выберите файл" }, { status: 400 });
   if (file.size > MAX_BYTES) return NextResponse.json({ error: "Файл больше 20 МБ" }, { status: 400 });
-  if (!/^image\//.test(file.type)) return NextResponse.json({ error: "Можно загружать только изображения" }, { status: 400 });
+  // svg+xml исключён намеренно: библиотека используется в письмах/шаблонах
+  // (email-клиенты SVG почти не рендерят), а файл отдаётся с того же origin,
+  // что и сам апп — вложенный <script> в SVG был бы stored XSS (см.
+  // security-аудит 2026-09-01; в отличие от лого, здесь нет нужды его
+  // поддерживать, поэтому проще исключить формат целиком, чем санитизировать).
+  if (!/^image\//.test(file.type) || file.type === "image/svg+xml") {
+    return NextResponse.json({ error: "Можно загружать только изображения (без SVG)" }, { status: 400 });
+  }
 
   const admin = createAdminClient();
   await ensureBucket(admin);

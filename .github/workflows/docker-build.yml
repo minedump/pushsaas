@@ -13,6 +13,12 @@ name: Build & push app image
 #                            NEXT_PUBLIC_CLOUDPAYMENTS_PUBLIC_ID
 # (значения не секретные — видны в браузере любому посетителю — но их всё
 # равно удобнее держать в настройках репозитория, а не в самом workflow)
+#
+# Все сторонние Actions ниже пинены на commit SHA, не на мутабельный тег
+# (security-аудит 2026-09-01, detecting-malicious-npm-packages — тот же
+# принцип supply-chain-abuse применён к CI-actions: скомпрометированный
+#/перевыпущенный релиз тега исполнился бы с правом packages:write и
+# доступом к registry-credentials).
 
 on:
   push:
@@ -33,13 +39,30 @@ jobs:
       packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0 # gitleaks сканирует историю коммитов, не только рабочую копию
+
+      # Secrets-scanning ДО сборки/пуша образа — секьюрити-аудит 2026-09-01,
+      # implementing-secrets-scanning-in-ci-cd. Пока не блокирует пайплайн
+      # (continue-on-error) — в истории репозитория уже есть один известный
+      # случай (захардкоженный старый cron_secret в supabase/migrations/
+      # 0090_cron_app_config.sql, тот самый, который этот же аудит заставил
+      # ротировать, старое значение больше не действует нигде) — включить
+      # жёсткий гейт (убрать continue-on-error) можно в любой момент отдельным
+      # PR, когда конкретно этот known-finding будет заведён в gitleaks
+      # allowlist или сам файл истории признан неважным.
+      - name: Scan for leaked secrets (gitleaks)
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -47,7 +70,7 @@ jobs:
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
@@ -55,7 +78,8 @@ jobs:
             type=sha,format=short
 
       - name: Build & push
-        uses: docker/build-push-action@v6
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           push: true
@@ -68,3 +92,26 @@ jobs:
             NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
             NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL }}
             NEXT_PUBLIC_CLOUDPAYMENTS_PUBLIC_ID=${{ vars.NEXT_PUBLIC_CLOUDPAYMENTS_PUBLIC_ID }}
+
+      # SBOM + известные CVE в зависимостях образа — generating-and-analyzing-sboms,
+      # scanning-docker-images-with-trivy. Тоже отчётный режим (exit-code 0):
+      # это первый прогон, база ещё не проверялась Trivy вообще — включать
+      # жёсткий --fail-on-severity стоит только после того, как первый отчёт
+      # разобран (не ронять деплой на уже существующих, никем ещё не
+      # виденных находках без предупреждения).
+      - name: Generate SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          format: cyclonedx-json
+          output-file: sbom.cyclonedx.json
+          upload-artifact: true
+
+      - name: Scan image for known vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        continue-on-error: true
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: "0"

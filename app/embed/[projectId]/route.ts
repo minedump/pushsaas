@@ -29,7 +29,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ projectId: str
   const api = process.env.NEXT_PUBLIC_APP_URL || "";
 
   if (!project?.vapid_public_key) {
-    return new Response(`console.error("[sendera] проект не найден: ${projectId}");`, {
+    // projectId — сырой сегмент URL; JSON.stringify экранирует его как
+    // строковый литерал (как и в успешной ветке ниже, см. widget()) —
+    // без этого запрос вида /embed/x");alert(1)//.js ломает строку и
+    // исполняет произвольный JS в ответе с Content-Type application/javascript.
+    return new Response(`console.error("[sendera] проект не найден:", ${JSON.stringify(projectId)});`, {
       status: 404,
       headers: { "Content-Type": "application/javascript; charset=utf-8" },
     });
