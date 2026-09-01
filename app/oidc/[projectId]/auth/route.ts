@@ -14,6 +14,7 @@ import {
   type ChannelAttempt,
 } from "@/lib/otp";
 import { needsDeliveryPoll } from "@/lib/otp/providers";
+import { BUTTON_SIZE_CSS, INPUT_SIZE_CSS, BUTTON_RADIUS_PX, INPUT_RADIUS_PX, LOGO_SIZE_PX } from "@/lib/login-style";
 
 // Страница входа по телефону/почте (authorization endpoint).
 //
@@ -83,18 +84,24 @@ const RESEND_LABEL: Record<OtpChannel, string> = {
   sms: "Отправить код по SMS",
 };
 
-function page(title: string, inner: string, logoUrl: string | null): Response {
+function page(title: string, inner: string, ctx: OidcContext): Response {
+  const { logoUrl, loginStyle: style } = ctx;
+  const logoPx = LOGO_SIZE_PX[style.logoSize];
   const logo = logoUrl
-    ? `<img src="${esc(logoUrl)}" alt="" style="display:block;margin:0 auto 1.2rem;max-width:88px;max-height:88px">`
+    ? `<img src="${esc(logoUrl)}" alt="" style="display:block;margin:0 auto 1.2rem;max-width:${logoPx}px;max-height:${logoPx}px">`
     : "";
+  const inputRadius = INPUT_RADIUS_PX[style.inputSize][style.borderRadius];
+  const buttonRadius = BUTTON_RADIUS_PX[style.buttonSize][style.borderRadius];
+  const inputCss = INPUT_SIZE_CSS[style.inputSize];
+  const buttonCss = BUTTON_SIZE_CSS[style.buttonSize];
   const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>
 <style>
-  body{font:16px/1.5 system-ui,-apple-system,sans-serif;max-width:420px;margin:8vh auto 0;padding:0 1.2rem;color:#16202a}
+  body{font:16px/1.5 system-ui,-apple-system,sans-serif;max-width:420px;margin:8vh auto 0;padding:0 1.2rem;color:${style.textColor}}
   h2{font-size:20px;margin:0 0 1rem;text-align:center}
   label{display:block;margin:.9rem 0 .25rem;font-size:14px;color:#45505c}
-  input{width:100%;margin-top:.9rem;padding:.65rem .75rem;border:1px solid #c3ccd6;border-radius:8px;font-size:17px;box-sizing:border-box}
-  button{width:100%;margin-top:1.1rem;padding:.75rem;border:0;border-radius:8px;background:#2c4a66;color:#fff;font-size:16px;cursor:pointer}
+  input{width:100%;margin-top:.9rem;padding:${inputCss.padding};border:1px solid #c3ccd6;border-radius:${inputRadius};font-size:${inputCss.fontSize}px;line-height:1;box-sizing:border-box}
+  button{width:100%;margin-top:1.1rem;padding:${buttonCss.padding};border:0;border-radius:${buttonRadius};background:${style.buttonColor};color:${style.buttonTextColor};font-size:${buttonCss.fontSize}px;line-height:1;cursor:pointer}
   button:disabled{opacity:.6;cursor:default}
   .alt{background:none;color:#2c4a66;text-decoration:underline;font-size:14px;margin-top:.6rem;padding:.3rem}
   .note{font-size:14px;color:#5a6570;margin-top:.7rem;text-align:center}
@@ -164,7 +171,7 @@ function phoneForm(
          if (!input.value) input.value = "+7 ";
        });
      })();</script>`,
-    ctx.logoUrl
+    ctx
   );
 }
 
@@ -187,7 +194,7 @@ function emailForm(
      <p class="note">${
        opts.viaFallback ? "Что-то пошло не так с отправкой на телефон — давайте попробуем по почте." : "Отправим код подтверждения на вашу почту."
      }</p>`,
-    ctx.logoUrl
+    ctx
   );
 }
 
@@ -302,7 +309,7 @@ function codeForm(
      <p class="note">Код отправлен ${CHANNEL_LABEL[channel]} · <span style="white-space:nowrap">${esc(maskedTarget)}</span></p>
      ${countdownScript}
      ${pollScript}`,
-    ctx.logoUrl
+    ctx
   );
 }
 

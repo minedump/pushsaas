@@ -7,11 +7,24 @@ import { Button, Card, ColorField, CustomSelect, Input, Label, Textarea, Toggle,
 import CopyBox from "../CopyBox";
 import IntegrationCard from "../IntegrationCard";
 import { SMS_PROVIDERS, TELEGRAM_PROVIDERS, EMAIL_PROVIDERS } from "@/lib/otp/providers";
+import { DEFAULT_LOGIN_STYLE, LOGIN_SIZES, LOGIN_RADIUS_VALUES, type LoginStyleConfig, type LoginSize } from "@/lib/login-style";
+import type { CornerRadius } from "@/lib/widget-config";
+import LoginStylePreview from "./LoginStylePreview";
 
 type ChannelKey = "push" | "email" | "telegram" | "sms";
 const DEFAULT_ORDER: ChannelKey[] = ["push", "email", "telegram", "sms"];
 const CHANNEL_TITLE: Record<ChannelKey, string> = { push: "Push-уведомление", email: "Email", telegram: "Telegram", sms: "SMS" };
 const BUTTON_SIZES = ["s", "m", "l", "xl"] as const;
+
+const LOGIN_SIZE_LABEL: Record<LoginSize, string> = { s: "Маленький", m: "Средний", l: "Большой" };
+const LOGIN_RADIUS_LABEL: Record<CornerRadius, string> = {
+  none: "Без закругления",
+  sm: "Маленькое закругление",
+  md: "Среднее закругление",
+  lg: "Большое закругление",
+};
+const LOGIN_BG_COLOR_PRESETS = ["#2c4a66", "#111827", "#2563eb", "#7c3aed", "#16a34a", "#ea580c", "#dc2626", "#0d9488"];
+const LOGIN_TEXT_COLOR_PRESETS = ["#ffffff", "#0a0a0a", "#f5f5f5", "#374151"];
 
 // На каждый канал может появляться больше одного провайдера (см.
 // lib/otp/providers.ts) — растущий список, не меняем структуру страницы,
@@ -39,6 +52,7 @@ type Initial = {
   authButtonColor: string;
   authButtonSize: string;
   authButtonRounded: boolean;
+  loginStyle: LoginStyleConfig;
   hasTelegram: boolean;
   hasBytehand: boolean;
   hasHaskimail: boolean;
@@ -77,6 +91,8 @@ export default function AuthSettings({
   const [authButtonColor, setAuthButtonColor] = useState(initial?.authButtonColor || "");
   const [authButtonSize, setAuthButtonSize] = useState(initial?.authButtonSize || "");
   const [authButtonRounded, setAuthButtonRounded] = useState(initial?.authButtonRounded ?? false);
+  const [loginStyle, setLoginStyle] = useState<LoginStyleConfig>(initial?.loginStyle || DEFAULT_LOGIN_STYLE);
+  const [busyLoginStyle, setBusyLoginStyle] = useState(false);
   const [providers, setProviders] = useState<Providers>(initial?.providers || {});
 
   // Настроен ли конкретный провайдер (не канал) — ключи/токены теперь только
@@ -296,6 +312,20 @@ export default function AuthSettings({
       }),
     });
     setBusy(false);
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) return toast(j.error || "Ошибка", "bad");
+    toast("Сохранено", "good");
+    router.refresh();
+  }
+
+  async function saveLoginStyle() {
+    setBusyLoginStyle(true);
+    const res = await fetch("/api/admin/oidc/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, loginStyle }),
+    });
+    setBusyLoginStyle(false);
     const j = await res.json().catch(() => ({}));
     if (!res.ok) return toast(j.error || "Ошибка", "bad");
     toast("Сохранено", "good");
@@ -540,6 +570,90 @@ export default function AuthSettings({
         </p>
         <CopyBox text={embedSnippet} />
       </IntegrationCard>
+
+      <h2 className="text-base font-semibold mt-8">Оформление страницы входа</h2>
+      <p className="text-sm text-ink-muted mt-1">Внешний вид кнопки и поля ввода на странице входа (телефон/почта/код).</p>
+      <div className="mt-3 flex flex-col gap-4">
+        <Card className={`flex flex-col gap-3 ${busyLoginStyle ? "opacity-60" : ""}`}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <Label>Размер кнопки</Label>
+              <CustomSelect
+                value={loginStyle.buttonSize}
+                onChange={(v) => setLoginStyle({ ...loginStyle, buttonSize: v as LoginSize })}
+                options={LOGIN_SIZES.map((s) => ({ value: s, label: LOGIN_SIZE_LABEL[s] }))}
+                className="w-full"
+              />
+            </div>
+            <div>
+              <Label>Размер поля ввода</Label>
+              <CustomSelect
+                value={loginStyle.inputSize}
+                onChange={(v) => setLoginStyle({ ...loginStyle, inputSize: v as LoginSize })}
+                options={LOGIN_SIZES.map((s) => ({ value: s, label: LOGIN_SIZE_LABEL[s] }))}
+                className="w-full"
+              />
+            </div>
+          </div>
+          <div>
+            <Label>Скругление (кнопка и поле ввода)</Label>
+            <CustomSelect
+              value={loginStyle.borderRadius}
+              onChange={(v) => setLoginStyle({ ...loginStyle, borderRadius: v as CornerRadius })}
+              options={LOGIN_RADIUS_VALUES.map((r) => ({ value: r, label: LOGIN_RADIUS_LABEL[r] }))}
+              className="w-full"
+            />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <Label>Цвет фона кнопки</Label>
+              <ColorField
+                value={loginStyle.buttonColor}
+                onChange={(v) => setLoginStyle({ ...loginStyle, buttonColor: v })}
+                presets={LOGIN_BG_COLOR_PRESETS}
+              />
+            </div>
+            <div>
+              <Label>Цвет текста кнопки</Label>
+              <ColorField
+                value={loginStyle.buttonTextColor}
+                onChange={(v) => setLoginStyle({ ...loginStyle, buttonTextColor: v })}
+                presets={LOGIN_TEXT_COLOR_PRESETS}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <Label>Цвет основного текста</Label>
+              <ColorField
+                value={loginStyle.textColor}
+                onChange={(v) => setLoginStyle({ ...loginStyle, textColor: v })}
+                presets={LOGIN_TEXT_COLOR_PRESETS}
+              />
+            </div>
+            <div>
+              <Label>Размер логотипа</Label>
+              <CustomSelect
+                value={loginStyle.logoSize}
+                onChange={(v) => setLoginStyle({ ...loginStyle, logoSize: v as LoginSize })}
+                options={LOGIN_SIZES.map((s) => ({ value: s, label: LOGIN_SIZE_LABEL[s] }))}
+                className="w-full"
+              />
+            </div>
+          </div>
+
+          <div>
+            <Button size="md" disabled={busyLoginStyle} onClick={saveLoginStyle}>
+              Сохранить оформление
+            </Button>
+          </div>
+        </Card>
+
+        <div>
+          <div className="text-sm font-semibold text-ink mb-2">Предпросмотр</div>
+          <LoginStylePreview config={loginStyle} />
+        </div>
+      </div>
 
       {!projectDomain && (
         <Card className="mt-5 border-warn bg-warn-tint">

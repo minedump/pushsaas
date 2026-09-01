@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { SignJWT, importPKCS8, exportJWK } from "jose";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { resolveLoginStyle, type LoginStyleConfig } from "@/lib/login-style";
 
 // OIDC-провайдер для входа покупателя InSales (и любого OIDC RP).
 // Мультитенантность: issuer на проект — {APP_URL}/oidc/{projectId}.
@@ -59,6 +60,7 @@ export type OidcContext = {
   clientSecretHash: string;
   projectDomain: string | null;
   logoUrl: string | null;
+  loginStyle: LoginStyleConfig;
 };
 
 export async function getOidcContext(projectId: string): Promise<OidcContext | null> {
@@ -83,6 +85,7 @@ export async function getOidcContext(projectId: string): Promise<OidcContext | n
     clientSecretHash: secrets.oidc_client_secret_hash,
     projectDomain: project.domain || null,
     logoUrl: project.logo_url || null,
+    loginStyle: resolveLoginStyle(client.config?.login_style),
   };
 }
 

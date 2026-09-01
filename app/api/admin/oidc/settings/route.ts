@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { resolveLoginStyle } from "@/lib/login-style";
 
 // Настройки входа по телефону: каналы каскада + их порядок, подпись SMS,
 // email-отправитель, видимость нативной кнопки InSales, токены каналов.
@@ -19,6 +20,7 @@ export async function POST(req: Request) {
     authButtonColor,
     authButtonSize,
     authButtonRounded,
+    loginStyle,
     smsSender,
     emailFrom,
     telegramToken,
@@ -145,6 +147,7 @@ export async function POST(req: Request) {
   }
   if (authButtonSize !== undefined) config.auth_button_size = ["s", "m", "l", "xl"].includes(authButtonSize) ? authButtonSize : null;
   if (authButtonRounded !== undefined) config.auth_button_rounded = !!authButtonRounded;
+  if (loginStyle !== undefined) config.login_style = resolveLoginStyle(loginStyle);
   if (smsSender !== undefined) config.sms_sender = smsSender || null;
   if (emailFrom !== undefined) config.email_from = emailFrom || null;
 

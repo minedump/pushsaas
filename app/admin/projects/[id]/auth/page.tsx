@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureProjectAccessible } from "@/lib/guards";
 import { issuerFor } from "@/lib/oidc";
+import { resolveLoginStyle } from "@/lib/login-style";
 import AuthSettings from "./AuthSettings";
 
 export default async function AuthPage({ params }: { params: Promise<{ id: string }> }) {
@@ -88,6 +89,7 @@ export default async function AuthPage({ params }: { params: Promise<{ id: strin
                 authButtonColor: oidc.config?.auth_button_color || "",
                 authButtonSize: oidc.config?.auth_button_size || "",
                 authButtonRounded: !!oidc.config?.auth_button_rounded,
+                loginStyle: resolveLoginStyle(oidc.config?.login_style),
                 hasTelegram,
                 hasBytehand,
                 hasHaskimail,
