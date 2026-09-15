@@ -10,6 +10,21 @@ const KNOWN_CODES: Record<string, string> = {
   "42501": "Недостаточно прав для этого действия",
   "23514": "Значение не проходит проверку",
   PGRST301: "Сессия истекла — обновите страницу и войдите заново",
+
+  // Supabase Auth (GoTrue) — коды из error.code, см. app/login/page.tsx.
+  // Сообщения самого GoTrue всегда на английском, свой код показывать нельзя.
+  invalid_credentials: "Неверный email или пароль",
+  user_already_exists: "Пользователь с таким email уже зарегистрирован",
+  email_exists: "Пользователь с таким email уже зарегистрирован",
+  user_not_found: "Пользователь с таким email не найден",
+  email_not_confirmed: "Email не подтверждён",
+  weak_password: "Пароль слишком простой — минимум 6 символов",
+  same_password: "Новый пароль совпадает со старым",
+  validation_failed: "Проверьте правильность email",
+  email_address_invalid: "Некорректный формат email",
+  over_email_send_rate_limit: "Слишком много попыток — подождите немного и повторите",
+  over_request_rate_limit: "Слишком много попыток — подождите немного и повторите",
+  signup_disabled: "Регистрация временно недоступна",
 };
 
 function hasCyrillic(s: string): boolean {

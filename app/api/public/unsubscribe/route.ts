@@ -9,7 +9,13 @@ import { verifyUnsubscribeToken } from "@/lib/unsubscribe";
 // участия). token — HMAC(projectId+email), см. lib/unsubscribe.ts.
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const { p: projectId, e: email, t: token } = body as { p?: string; e?: string; t?: string };
+  const { p: projectId, e: email, t: token, pss_c: campaignId, pss_r: recipientToken } = body as {
+    p?: string;
+    e?: string;
+    t?: string;
+    pss_c?: string;
+    pss_r?: string;
+  };
   if (!projectId || !email || !token) return NextResponse.json({ error: "Некорректная ссылка" }, { status: 400 });
   if (!verifyUnsubscribeToken(projectId, email, token)) return NextResponse.json({ error: "Некорректная или устаревшая ссылка" }, { status: 403 });
 
@@ -29,5 +35,29 @@ export async function POST(req: Request) {
         () => {}
       );
   }
+
+  // Привязка к конкретной отправке — pss_c/pss_r уже едут на ссылке отписки
+  // (её тоже переписывает injectClickTracking в lib/sender.ts, как и любую
+  // https-ссылку в письме), просто раньше нигде не читались. token сам по
+  // себе не подписан ничем сверх HMAC p+e выше — совпадение по
+  // (campaign_id, token) — та же модель доверия, что у open/click
+  // (app/api/public/open, /track): подделка требует знать оба значения,
+  // а от неверных campaignId просто ничего не обновится.
+  if (campaignId && recipientToken) {
+    const { data: updated } = await admin
+      .from("campaign_recipients")
+      .update({ unsubscribed_at: new Date().toISOString() })
+      .eq("campaign_id", campaignId)
+      .eq("token", recipientToken)
+      .is("unsubscribed_at", null)
+      .select("id");
+    if (updated?.length) {
+      await admin.rpc("increment_campaign_unsubscribed", { p_campaign_id: campaignId }).then(
+        () => {},
+        () => {}
+      );
+    }
+  }
+
   return NextResponse.json({ ok: true });
 }

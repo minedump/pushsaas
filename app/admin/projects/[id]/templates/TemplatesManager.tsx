@@ -11,13 +11,12 @@ import {
   IconFolderPlus,
   IconPencil,
   IconX,
-  IconChevronLeft,
   IconChevronRight,
   IconSearch,
   IconSend,
 } from "@tabler/icons-react";
 import { createClient } from "@/lib/supabase/client";
-import { BulkActionsMenu, Button, ButtonLink, Checkbox, CustomSelect, Input, Label, Modal, SortableTh, useDialogs, type SortDir } from "@/app/ui";
+import { BulkActionsMenu, Button, ButtonLink, Checkbox, CustomSelect, Input, Label, Modal, Pagination, SortableTh, useDialogs, type SortDir } from "@/app/ui";
 import { friendlyError } from "@/lib/errors";
 import { MessagePreviewModal } from "../MessagePreviewModal";
 import { IdCopy } from "../IdCopy";
@@ -359,7 +358,7 @@ export default function TemplatesManager({
             <button
               type="button"
               onClick={() => updateSearch("")}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-ink-faint hover:text-ink cursor-pointer"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-ink-faint hover:text-ink transition-colors cursor-pointer"
               aria-label="Очистить поиск"
             >
               <IconX size={15} stroke={2} />
@@ -458,14 +457,14 @@ export default function TemplatesManager({
                       <div className="flex justify-end gap-1">
                         <Link
                           href={`/admin/projects/${projectId}/templates/${t.id}/edit`}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2"
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink transition-colors hover:bg-surface-2"
                           title="Изменить"
                         >
                           <IconPencil size={15} stroke={1.8} />
                         </Link>
                         <Link
                           href={`/admin/projects/${projectId}/campaigns/new?channel=${t.channel}&templateId=${t.id}`}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2"
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink transition-colors hover:bg-surface-2"
                           title="Отправить рассылку"
                         >
                           <IconSend size={15} stroke={1.8} />
@@ -473,7 +472,7 @@ export default function TemplatesManager({
                         <button
                           type="button"
                           onClick={() => setPreviewId(t.id)}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2 cursor-pointer"
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink transition-colors hover:bg-surface-2 cursor-pointer"
                           title="Превью"
                         >
                           <IconEye size={15} stroke={1.8} />
@@ -481,7 +480,7 @@ export default function TemplatesManager({
                         <button
                           type="button"
                           onClick={() => duplicateTemplates([t.id])}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2 cursor-pointer"
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink transition-colors hover:bg-surface-2 cursor-pointer"
                           title="Копировать"
                         >
                           <IconCopy size={15} stroke={1.8} />
@@ -489,7 +488,7 @@ export default function TemplatesManager({
                         <button
                           type="button"
                           onClick={() => remove(t.id)}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-bad hover:bg-surface-2 cursor-pointer"
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-bad transition-colors hover:bg-surface-2 cursor-pointer"
                           title="Удалить"
                         >
                           <IconTrash size={15} stroke={1.8} />
@@ -509,24 +508,7 @@ export default function TemplatesManager({
             </table>
           </div>
 
-          {visible.length > 0 && (
-            <div className="flex items-center justify-between mt-3 text-[13px] text-ink-muted">
-              <span>
-                {(pageSafe - 1) * PAGE_SIZE + 1}–{Math.min(pageSafe * PAGE_SIZE, visible.length)} из {visible.length}
-              </span>
-              <div className="flex items-center gap-2">
-                <Button variant="secondary" size="sm" disabled={pageSafe <= 1} onClick={() => setPage((p) => p - 1)}>
-                  <IconChevronLeft size={15} stroke={2} />
-                </Button>
-                <span className="tabular-nums">
-                  {pageSafe} / {pageCount}
-                </span>
-                <Button variant="secondary" size="sm" disabled={pageSafe >= pageCount} onClick={() => setPage((p) => p + 1)}>
-                  <IconChevronRight size={15} stroke={2} />
-                </Button>
-              </div>
-            </div>
-          )}
+          <Pagination page={pageSafe} total={visible.length} pageSize={PAGE_SIZE} onChange={setPage} />
         </div>
 
       {previewTemplate && (
@@ -581,7 +563,7 @@ function MoveModal({
         <h3 className="text-base font-semibold m-0">
           Переместить {count} шаблон{count === 1 ? "" : "ов"}
         </h3>
-        <button type="button" onClick={onClose} className="p-1 text-ink-faint hover:text-ink cursor-pointer" title="Закрыть">
+        <button type="button" onClick={onClose} className="p-1 text-ink-faint hover:text-ink transition-colors cursor-pointer" title="Закрыть">
           <IconX size={18} stroke={1.8} />
         </button>
       </div>
@@ -608,7 +590,7 @@ function MoveModal({
 }
 
 const Th = ({ children }: { children: React.ReactNode }) => (
-  <th className="px-3.5 py-2.5 text-[11px] text-ink-faint font-normal whitespace-nowrap text-left">{children}</th>
+  <th className="px-3.5 py-2.5 text-[11px] text-ink-muted font-normal whitespace-nowrap text-left">{children}</th>
 );
 const Td = ({ children, className = "", title }: { children: React.ReactNode; className?: string; title?: string }) => (
   <td className={`px-3.5 py-3 align-middle ${className}`} title={title}>
@@ -648,7 +630,7 @@ function FolderEditModal({
     <Modal onClose={onClose}>
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-base font-semibold m-0">Папка</h3>
-        <button type="button" onClick={onClose} className="p-1 text-ink-faint hover:text-ink cursor-pointer" title="Закрыть">
+        <button type="button" onClick={onClose} className="p-1 text-ink-faint hover:text-ink transition-colors cursor-pointer" title="Закрыть">
           <IconX size={18} stroke={1.8} />
         </button>
       </div>

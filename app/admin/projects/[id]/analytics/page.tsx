@@ -267,11 +267,11 @@ export default async function AnalyticsPage({
             <table className="w-full border-collapse text-[13.5px] min-w-[480px]">
               <thead>
                 <tr className="text-left">
-                  <th className="pb-2 text-[11px] text-ink-faint font-normal">Виджет</th>
-                  <th className="pb-2 text-[11px] text-ink-faint font-normal text-right">Показано</th>
-                  <th className="pb-2 text-[11px] text-ink-faint font-normal text-right">Клики</th>
-                  <th className="pb-2 text-[11px] text-ink-faint font-normal text-right">CTR</th>
-                  <th className="pb-2 text-[11px] text-ink-faint font-normal text-right">Закрыто</th>
+                  <th className="pb-2 text-[11px] text-ink-muted font-normal">Виджет</th>
+                  <th className="pb-2 text-[11px] text-ink-muted font-normal text-right">Показано</th>
+                  <th className="pb-2 text-[11px] text-ink-muted font-normal text-right">Клики</th>
+                  <th className="pb-2 text-[11px] text-ink-muted font-normal text-right">CTR</th>
+                  <th className="pb-2 text-[11px] text-ink-muted font-normal text-right">Закрыто</th>
                 </tr>
               </thead>
               <tbody>

@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { IconChevronLeft, IconChevronRight, IconBraces, IconX } from "@tabler/icons-react";
-import { Badge, Button, Modal, SegmentedControl } from "@/app/ui";
+import { IconChevronRight, IconBraces, IconX } from "@tabler/icons-react";
+import { Badge, Button, Modal, Pagination, SegmentedControl } from "@/app/ui";
 
 const PAGE_SIZE = 25;
 
@@ -224,7 +224,7 @@ function ApiTab({ rows }: { rows: ApiCallRow[] }) {
                     type="button"
                     onClick={() => setOpenRow(r)}
                     title="Тело запроса и ответа"
-                    className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted enabled:hover:text-ink enabled:hover:bg-surface-2 cursor-pointer"
+                    className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted transition-colors enabled:hover:text-ink enabled:hover:bg-surface-2 cursor-pointer"
                   >
                     <IconBraces size={15} stroke={1.8} />
                   </button>
@@ -263,7 +263,7 @@ function ApiCallModal({
     <Modal onClose={onClose} className="max-w-lg max-h-[85vh] flex flex-col">
       <div className="flex items-center justify-between gap-3 pb-4 mb-4 border-b border-border shrink-0">
         <h3 className="text-base font-semibold m-0 truncate">{label}</h3>
-        <button type="button" onClick={onClose} className="p-1 text-ink-faint hover:text-ink cursor-pointer shrink-0" title="Закрыть">
+        <button type="button" onClick={onClose} className="p-1 text-ink-faint hover:text-ink transition-colors cursor-pointer shrink-0" title="Закрыть">
           <IconX size={18} stroke={1.8} />
         </button>
       </div>
@@ -301,29 +301,14 @@ function usePager<T>(rows: T[]) {
 
   const pager =
     rows.length > 0 ? (
-      <div className="flex items-center justify-between mt-3 text-[13px] text-ink-muted">
-        <span>
-          {(pageSafe - 1) * PAGE_SIZE + 1}–{Math.min(pageSafe * PAGE_SIZE, rows.length)} из {rows.length}
-        </span>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" size="sm" disabled={pageSafe <= 1} onClick={() => setPage((p) => p - 1)}>
-            <IconChevronLeft size={15} stroke={2} />
-          </Button>
-          <span className="tabular-nums">
-            {pageSafe} / {pageCount}
-          </span>
-          <Button variant="secondary" size="sm" disabled={pageSafe >= pageCount} onClick={() => setPage((p) => p + 1)}>
-            <IconChevronRight size={15} stroke={2} />
-          </Button>
-        </div>
-      </div>
+      <Pagination page={pageSafe} total={rows.length} pageSize={PAGE_SIZE} onChange={setPage} />
     ) : null;
 
   return { paged, pager };
 }
 
 const Th = ({ children, right }: { children: React.ReactNode; right?: boolean }) => (
-  <th className={`px-3.5 py-2.5 text-[11px] text-ink-faint font-normal whitespace-nowrap ${right ? "text-right" : "text-left"}`}>
+  <th className={`px-3.5 py-2.5 text-[11px] text-ink-muted font-normal whitespace-nowrap ${right ? "text-right" : "text-left"}`}>
     {children}
   </th>
 );

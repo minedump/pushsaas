@@ -60,7 +60,7 @@ export function BulkActionsMenu({
                   setOpen(false);
                   item.onClick();
                 }}
-                className="flex items-center gap-2 w-full text-left text-sm px-3 py-2 text-ink hover:bg-surface-2 cursor-pointer"
+                className="flex items-center gap-2 w-full text-left text-sm px-3 py-2 text-ink hover:bg-surface-2 transition-colors cursor-pointer"
               >
                 {item.icon}
                 {item.label}

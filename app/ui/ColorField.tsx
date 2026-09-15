@@ -131,7 +131,7 @@ function CustomColorPicker({ hex, onChange }: { hex: string; onChange: (hex: str
       <div
         ref={sv.ref}
         onPointerDown={sv.onPointerDown}
-        className="relative w-full h-[130px] rounded-md cursor-crosshair touch-none"
+        className="relative w-full h-[130px] rounded-lg cursor-crosshair touch-none"
         style={{
           background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, ${pureHue})`,
         }}

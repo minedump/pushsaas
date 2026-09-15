@@ -13,10 +13,10 @@ type Variant = "primary" | "secondary" | "danger" | "ghost";
 type Size = "sm" | "md";
 
 const variants: Record<Variant, string> = {
-  primary: "bg-accent text-white border border-accent hover:opacity-90",
-  secondary: "bg-surface text-ink border border-border hover:bg-surface-2",
-  danger: "bg-bad-solid text-white border border-bad-solid hover:opacity-90",
-  ghost: "bg-transparent text-ink-muted border border-transparent hover:bg-surface-2",
+  primary: "btn-shift btn-shift-primary text-white border border-accent",
+  secondary: "btn-shift btn-shift-secondary text-ink border border-border",
+  danger: "btn-shift btn-shift-danger text-white border border-bad-solid",
+  ghost: "btn-shift btn-shift-ghost text-ink-muted border border-transparent",
 };
 const sizes: Record<Size, string> = {
   sm: "px-2.5 py-1.5 text-xs rounded-md gap-1.5",
@@ -34,7 +34,7 @@ export function Button({
   return (
     <button
       className={cn(
-        "inline-flex items-center justify-center whitespace-nowrap font-semibold cursor-pointer transition-opacity disabled:opacity-50 disabled:cursor-not-allowed",
+        "inline-flex items-center justify-center whitespace-nowrap font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
         variants[variant],
         sizes[size],
         className
@@ -57,7 +57,7 @@ export function ButtonLink({
   return (
     <a
       className={cn(
-        "inline-flex items-center justify-center whitespace-nowrap font-semibold cursor-pointer transition-opacity no-underline",
+        "inline-flex items-center justify-center whitespace-nowrap font-semibold cursor-pointer no-underline",
         variants[variant],
         sizes[size],
         className

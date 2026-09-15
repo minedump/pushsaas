@@ -81,7 +81,7 @@ export default function SetupStep({
           onClick={verify}
           disabled={busy}
           title="Проверить"
-          className="p-1.5 rounded-md text-ink-muted hover:bg-surface-2 hover:text-ink disabled:opacity-50"
+          className="p-1.5 rounded-md text-ink-muted transition-colors hover:bg-surface-2 hover:text-ink disabled:opacity-50"
         >
           <IconRefresh size={17} stroke={1.8} className={busy ? "animate-spin" : ""} />
         </button>

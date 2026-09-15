@@ -179,7 +179,11 @@ const CAMPAIGN_FULL_FIELDS: ApiField[] = [
   { name: "scheduledAt", type: "string | null", description: "ISO-дата запланированной отправки." },
   { name: "sentAt", type: "string | null", description: "ISO-дата фактической отправки." },
   { name: "error", type: "string | null", description: "Причина сбоя, если status: failed." },
-  { name: "sentCount, deliveredCount, failedCount, clickedCount, openedCount", type: "number", description: "Статистика отправки (openedCount — только email)." },
+  {
+    name: "sentCount, deliveredCount, failedCount, clickedCount, openedCount, unsubscribedCount",
+    type: "number",
+    description: "Статистика отправки (openedCount и unsubscribedCount — только email).",
+  },
   { name: "sendWindow", type: "object", description: SEND_WINDOW_DESC, children: SEND_WINDOW_CHILDREN },
   { name: "spacing", type: "object", description: SPACING_DESC, children: SPACING_CHILDREN },
   { name: "createdAt", type: "string", description: "ISO-дата создания." },
@@ -526,7 +530,7 @@ export const API_GROUPS: ApiGroup[] = [
         summary:
           "Полная карточка одной рассылки по её id — содержимое сообщения (текст/HTML/rich push), кому и как она адресована (сегмент/контакты), и статистика отправки (доставлено/не доставлено/клики). Используйте после создания через POST /api/v1/campaigns, чтобы проверить итоговый статус или отследить прогресс.",
         responseExample:
-          '{\n  "id": "b2f1...", "channel": "push", "status": "sent", "type": "marketing", "initiator": "api",\n  "internalTitle": "Распродажа выходного дня", "title": "Привет", "body": "Тест", "subject": null, "html": null,\n  "url": null, "icon": null, "image": null, "badge": null, "actions": [],\n  "segmentTags": ["vip"], "platforms": [], "contacts": [],\n  "templateId": null, "templateData": null,\n  "scheduledAt": null, "sentAt": "2026-08-25T09:00:00Z", "error": null,\n  "sentCount": 42, "deliveredCount": 41, "failedCount": 1, "clickedCount": 3, "openedCount": 0,\n  "sendWindow": { "enabled": false, "days": null, "timeFrom": null, "timeTo": null, "subscriberTz": false },\n  "spacing": { "enabled": false, "minutes": null },\n  "createdAt": "2026-08-25T08:59:50Z"\n}',
+          '{\n  "id": "b2f1...", "channel": "push", "status": "sent", "type": "marketing", "initiator": "api",\n  "internalTitle": "Распродажа выходного дня", "title": "Привет", "body": "Тест", "subject": null, "html": null,\n  "url": null, "icon": null, "image": null, "badge": null, "actions": [],\n  "segmentTags": ["vip"], "platforms": [], "contacts": [],\n  "templateId": null, "templateData": null,\n  "scheduledAt": null, "sentAt": "2026-08-25T09:00:00Z", "error": null,\n  "sentCount": 42, "deliveredCount": 41, "failedCount": 1, "clickedCount": 3, "openedCount": 0, "unsubscribedCount": 0,\n  "sendWindow": { "enabled": false, "days": null, "timeFrom": null, "timeTo": null, "subscriberTz": false },\n  "spacing": { "enabled": false, "minutes": null },\n  "createdAt": "2026-08-25T08:59:50Z"\n}',
         responseFields: CAMPAIGN_FULL_FIELDS,
         errors: [AUTH_ERROR, { code: 404, description: "Рассылка не найдена (не существует, или принадлежит другому проекту)." }],
       },

@@ -100,7 +100,7 @@ export function SegmentTagsInput({
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => addTag(o)}
-                className="flex items-center w-full text-left text-sm px-3 py-2 cursor-pointer text-ink hover:bg-surface-2"
+                className="flex items-center w-full text-left text-sm px-3 py-2 cursor-pointer text-ink transition-colors hover:bg-surface-2"
               >
                 {o}
               </button>

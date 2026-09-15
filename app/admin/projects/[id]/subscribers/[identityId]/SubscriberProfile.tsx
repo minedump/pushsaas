@@ -328,7 +328,7 @@ export default function SubscriberProfile({
                             onClick={() => setPreviewRow(r)}
                             disabled={!r.rendered_content}
                             title={r.rendered_content ? "Превью сообщения" : "Нет снимка содержимого (отправлено до этой функции)"}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted enabled:hover:text-ink enabled:hover:bg-surface-2 disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted transition-colors enabled:hover:text-ink enabled:hover:bg-surface-2 disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
                           >
                             <IconEye size={15} stroke={1.8} />
                           </button>
@@ -337,7 +337,7 @@ export default function SubscriberProfile({
                             onClick={() => setContextRow(r)}
                             disabled={!r.raw_context}
                             title={r.raw_context ? "Сырой контекст отправки" : "Нет снимка контекста (отправлено до этой функции)"}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted enabled:hover:text-ink enabled:hover:bg-surface-2 disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted transition-colors enabled:hover:text-ink enabled:hover:bg-surface-2 disabled:opacity-30 cursor-pointer disabled:cursor-not-allowed"
                           >
                             <IconBraces size={15} stroke={1.8} />
                           </button>
@@ -503,7 +503,7 @@ function RawContextModal({ label, snapshot, onClose }: { label: string; snapshot
     <Modal onClose={onClose} className="max-w-lg max-h-[85vh] flex flex-col">
       <div className="flex items-center justify-between gap-3 pb-4 mb-4 border-b border-border shrink-0">
         <h3 className="text-base font-semibold m-0 truncate">{label}</h3>
-        <button type="button" onClick={onClose} className="p-1 text-ink-faint hover:text-ink cursor-pointer shrink-0" title="Закрыть">
+        <button type="button" onClick={onClose} className="p-1 text-ink-faint hover:text-ink transition-colors cursor-pointer shrink-0" title="Закрыть">
           <IconX size={18} stroke={1.8} />
         </button>
       </div>
@@ -535,7 +535,7 @@ const Td = ({ children, className = "" }: { children: React.ReactNode; className
 
 const Th = ({ children, right }: { children: React.ReactNode; right?: boolean }) => (
   <th
-    className={`px-2 first:pl-0 last:pr-0 pb-1.5 text-[11px] text-ink-faint font-normal whitespace-nowrap ${right ? "text-right" : "text-left"}`}
+    className={`px-2 first:pl-0 last:pr-0 pb-1.5 text-[11px] text-ink-muted font-normal whitespace-nowrap ${right ? "text-right" : "text-left"}`}
   >
     {children}
   </th>

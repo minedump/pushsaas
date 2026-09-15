@@ -2,6 +2,10 @@
 
 import { cn } from "./cn";
 
+// label обязателен, не опционален — голый переключатель без текста рядом
+// не говорит, что именно он включает/выключает ни глазами, ни скринридеру.
+// Минимум — "Вкл"/"Выкл" по месту (см. AuthSettings.tsx), где нет более
+// содержательного текста под рукой.
 export function Toggle({
   checked,
   onChange,
@@ -11,7 +15,7 @@ export function Toggle({
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
-  label?: React.ReactNode;
+  label: React.ReactNode;
   disabled?: boolean;
   className?: string;
 }) {

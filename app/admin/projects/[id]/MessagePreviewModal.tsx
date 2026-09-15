@@ -94,7 +94,7 @@ export function MessagePreviewModal({
           <h3 className="text-base font-semibold m-0 truncate">{label}</h3>
           <Badge tone="accent">{CHANNEL_LABEL[content.channel]}</Badge>
         </div>
-        <button type="button" onClick={onClose} className="p-1 text-ink-faint hover:text-ink cursor-pointer shrink-0" title="Закрыть">
+        <button type="button" onClick={onClose} className="p-1 text-ink-faint hover:text-ink transition-colors cursor-pointer shrink-0" title="Закрыть">
           <IconX size={18} stroke={1.8} />
         </button>
       </div>

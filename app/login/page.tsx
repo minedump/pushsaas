@@ -2,8 +2,10 @@
 
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { IconBell } from "@tabler/icons-react";
 import { createClient } from "@/lib/supabase/client";
-import { Button, Input, Label, Card } from "@/app/ui";
+import { Button, Checkbox, Input, Label, Card } from "@/app/ui";
+import { friendlyError } from "@/lib/errors";
 
 export default function LoginPage() {
   return (
@@ -22,6 +24,8 @@ function LoginForm() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [consentPersonalData, setConsentPersonalData] = useState(false);
+  const [consentMarketing, setConsentMarketing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -31,16 +35,36 @@ function LoginForm() {
       setError("Укажите имя");
       return;
     }
+    if (mode === "signup" && !consentPersonalData) {
+      setError("Нужно согласие на обработку персональных данных и политику конфиденциальности");
+      return;
+    }
     setBusy(true);
     setError(null);
     const fn =
       mode === "signin"
         ? supabase.auth.signInWithPassword({ email, password })
-        : supabase.auth.signUp({ email, password, options: { data: { full_name: name.trim() } } });
+        : supabase.auth.signUp({
+            email,
+            password,
+            options: {
+              data: {
+                full_name: name.trim(),
+                // Тот же момент, что и сама регистрация — обе обязательные
+                // галочки идут одной строкой в форме, поэтому и согласие
+                // на обработку данных, и на политику конфиденциальности
+                // фиксируются одинаковым флагом (см. handle_new_user в
+                // supabase/migrations/0094_signup_consents.sql).
+                consent_personal_data: consentPersonalData,
+                consent_privacy_policy: consentPersonalData,
+                consent_marketing: consentMarketing,
+              },
+            },
+          });
     const { error } = await fn;
     setBusy(false);
     if (error) {
-      setError(error.message);
+      setError(friendlyError(error, mode === "signin" ? "Не удалось войти" : "Не удалось зарегистрироваться"));
       return;
     }
     router.push(params.get("next") || "/admin");
@@ -49,7 +73,15 @@ function LoginForm() {
 
   return (
     <main className="max-w-sm mx-auto mt-20 px-5">
-      <h1 className="text-2xl font-semibold mb-1">SENDERA</h1>
+      {/* Тот же brand-локап, что в ките (раздел «Логотип») — из двух
+          показанных там размеров взят крупный (24px/700, 28px значок);
+          компактный 16px/20px — тот, что использует шапка панели
+          (AdminShell.tsx). Здесь эта строка играет роль заголовка страницы,
+          поэтому крупнее уместнее. */}
+      <div className="flex items-center gap-2 font-bold text-2xl text-ink mb-1">
+        <IconBell size={28} stroke={1.8} className="text-accent" />
+        SENDERA
+      </div>
       <p className="text-ink-muted mt-0 mb-7">
         {mode === "signin" ? "Вход в панель управления" : "Регистрация"}
       </p>
@@ -75,6 +107,33 @@ function LoginForm() {
             minLength={6}
             autoComplete={mode === "signin" ? "current-password" : "new-password"}
           />
+
+          {mode === "signup" && (
+            <div className="flex flex-col gap-2.5 mt-4">
+              <Checkbox
+                checked={consentPersonalData}
+                onChange={setConsentPersonalData}
+                label={
+                  <span className="text-ink-muted">
+                    Согласен с{" "}
+                    <a href="/legal/privacy" target="_blank" className="text-accent hover:underline">
+                      политикой конфиденциальности
+                    </a>{" "}
+                    и даю{" "}
+                    <a href="/legal/personal-data" target="_blank" className="text-accent hover:underline">
+                      согласие на обработку персональных данных
+                    </a>
+                  </span>
+                }
+              />
+              <Checkbox
+                checked={consentMarketing}
+                onChange={setConsentMarketing}
+                label={<span className="text-ink-muted">Хочу получать новости и предложения по email</span>}
+              />
+            </div>
+          )}
+
           {error && <p className="text-bad text-[13px] mt-3.5">{error}</p>}
           <Button className="w-full mt-5" disabled={busy}>
             {busy ? "…" : mode === "signin" ? "Войти" : "Зарегистрироваться"}

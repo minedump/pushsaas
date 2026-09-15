@@ -8,14 +8,13 @@ import {
   IconSearch,
   IconPlayerPlayFilled,
   IconPlayerPauseFilled,
-  IconChevronLeft,
   IconChevronRight,
   IconPencil,
   IconTrash,
   IconTagPlus,
   IconTagMinus,
 } from "@tabler/icons-react";
-import { BulkActionsMenu, Button, Checkbox, Input, SortableTh, TagEditor, useDialogs, type SortDir } from "@/app/ui";
+import { BulkActionsMenu, Button, Checkbox, Input, Pagination, SortableTh, TagEditor, useDialogs, type SortDir } from "@/app/ui";
 import { CustomSelect, type ComboOption } from "@/app/ui/CustomSelect";
 import { cn } from "@/app/ui/cn";
 
@@ -322,7 +321,7 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
             <button
               type="button"
               onClick={() => setQuery("")}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-ink-faint hover:text-ink cursor-pointer"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-ink-faint hover:text-ink transition-colors cursor-pointer"
               aria-label="Очистить поиск"
             >
               <IconX size={15} stroke={2} />
@@ -434,7 +433,7 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
                       <div className="flex justify-end gap-1">
                         <Link
                           href={`/admin/projects/${projectId}/subscribers/${r.identityId}/edit`}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2"
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink transition-colors hover:bg-surface-2"
                           title="Изменить"
                         >
                           <IconPencil size={15} stroke={1.8} />
@@ -442,7 +441,7 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
                         <button
                           type="button"
                           onClick={() => removeContact(r)}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-bad hover:bg-surface-2 cursor-pointer"
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-bad transition-colors hover:bg-surface-2 cursor-pointer"
                           title="Удалить"
                         >
                           <IconTrash size={15} stroke={1.8} />
@@ -464,24 +463,7 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
         </table>
       </div>
 
-      {filtered.length > 0 && (
-        <div className="flex items-center justify-between mt-3 text-[13px] text-ink-muted">
-          <span>
-            {(pageSafe - 1) * PAGE_SIZE + 1}–{Math.min(pageSafe * PAGE_SIZE, filtered.length)} из {filtered.length}
-          </span>
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm" disabled={pageSafe <= 1} onClick={() => setPage((p) => p - 1)}>
-              <IconChevronLeft size={15} stroke={2} />
-            </Button>
-            <span className="tabular-nums">
-              {pageSafe} / {pageCount}
-            </span>
-            <Button variant="secondary" size="sm" disabled={pageSafe >= pageCount} onClick={() => setPage((p) => p + 1)}>
-              <IconChevronRight size={15} stroke={2} />
-            </Button>
-          </div>
-        </div>
-      )}
+      <Pagination page={pageSafe} total={filtered.length} pageSize={PAGE_SIZE} onChange={setPage} />
     </div>
   );
 }
@@ -531,7 +513,7 @@ function ChannelBadge({ label, active, onClick }: { label: string; active: boole
 }
 
 const Th = ({ children }: { children: React.ReactNode }) => (
-  <th className="px-3.5 py-2.5 text-[11px] text-ink-faint font-normal whitespace-nowrap">{children}</th>
+  <th className="px-3.5 py-2.5 text-[11px] text-ink-muted font-normal whitespace-nowrap">{children}</th>
 );
 const Td = ({ children, className = "" }: { children: React.ReactNode; className?: string }) => (
   <td className={`px-3.5 py-3 align-middle ${className}`}>{children}</td>

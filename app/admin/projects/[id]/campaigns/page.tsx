@@ -18,7 +18,9 @@ export default async function CampaignsPage({ params }: { params: Promise<{ id: 
   // = push, без типа = marketing/manual — те же дефолты, что и в БД).
   const { data: campaignsFull, error: campaignsErr } = await supabase
     .from("campaigns")
-    .select("id, title, internal_title, status, channel, sent_count, delivered_count, failed_count, clicked_count, sent_at, created_at, type, initiator, template_id")
+    .select(
+      "id, title, internal_title, status, channel, sent_count, delivered_count, failed_count, clicked_count, unsubscribed_count, sent_at, created_at, type, initiator, template_id"
+    )
     .eq("project_id", id)
     .order("created_at", { ascending: false })
     .limit(500);
@@ -38,6 +40,7 @@ export default async function CampaignsPage({ params }: { params: Promise<{ id: 
     initiator: "manual" as string,
     internal_title: null as string | null,
     template_id: null as string | null,
+    unsubscribed_count: 0,
     ...c,
   }));
 
@@ -129,6 +132,7 @@ export default async function CampaignsPage({ params }: { params: Promise<{ id: 
       sent_count: c.sent_count,
       delivered_count: c.delivered_count,
       clicked_count: c.clicked_count,
+      unsubscribed_count: c.unsubscribed_count,
       revenue: revenueByCampaign.get(c.id) || 0,
       orders: ordersByCampaign.get(c.id) || 0,
       paid: paidByCampaign.get(c.id) || 0,
@@ -168,6 +172,7 @@ export default async function CampaignsPage({ params }: { params: Promise<{ id: 
     sent_count: r.recipients,
     delivered_count: r.status === "sent" ? r.recipients : 0,
     clicked_count: 0,
+    unsubscribed_count: 0,
     revenue: 0,
     orders: 0,
     paid: 0,
@@ -197,6 +202,7 @@ export default async function CampaignsPage({ params }: { params: Promise<{ id: 
     sent_count: 1,
     delivered_count: 1,
     clicked_count: 0,
+    unsubscribed_count: 0,
     revenue: 0,
     orders: 0,
     paid: 0,

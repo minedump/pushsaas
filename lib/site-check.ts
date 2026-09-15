@@ -19,7 +19,7 @@ async function get(url: string): Promise<Response | null> {
       signal: ctrl.signal,
       cache: "no-store",
       redirect: "follow",
-      headers: { "User-Agent": "PushSaaS-SetupCheck/1.0 (+https://pushsaas.app)" },
+      headers: { "User-Agent": "Sendera-SetupCheck/1.0 (+https://app.sendera.ru)" },
     });
     clearTimeout(t);
     return res;

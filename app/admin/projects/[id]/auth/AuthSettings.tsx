@@ -186,7 +186,7 @@ export default function AuthSettings({
       setChannels(prev);
       return;
     }
-    toast(v ? "Канал включён" : "Канал выключен", v ? "good" : "neutral");
+    toast(v ? "Канал включён" : "Канал выключен", v ? "good" : "warn");
   }
 
   async function handleProviderChange(key: ChannelKey, providerId: string) {
@@ -252,7 +252,7 @@ export default function AuthSettings({
       toast(j.error || "Ошибка", "bad");
       return;
     }
-    toast(next ? "Вход включён" : "Вход выключен", next ? "good" : "neutral");
+    toast(next ? "Вход включён" : "Вход выключен", next ? "good" : "warn");
     router.refresh();
   }
 

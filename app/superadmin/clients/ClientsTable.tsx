@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { IconChevronLeft, IconChevronRight, IconGift, IconLogin2, IconPlayerPauseFilled, IconPlayerPlayFilled, IconSearch, IconX } from "@tabler/icons-react";
+import { IconGift, IconLogin2, IconPlayerPauseFilled, IconPlayerPlayFilled, IconSearch, IconX } from "@tabler/icons-react";
 import { createClient } from "@/lib/supabase/client";
-import { Badge, Button, Input, useDialogs } from "@/app/ui";
+import { Badge, Button, Input, Pagination, useDialogs } from "@/app/ui";
 import { CustomSelect } from "@/app/ui/CustomSelect";
 import { friendlyError } from "@/lib/errors";
 
@@ -106,7 +106,7 @@ export default function ClientsTable({ rows, tariffs }: { rows: Row[]; tariffs: 
           <button
             type="button"
             onClick={() => setQuery("")}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-ink-faint hover:text-ink cursor-pointer"
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-ink-faint hover:text-ink transition-colors cursor-pointer"
             aria-label="Очистить поиск"
           >
             <IconX size={15} stroke={2} />
@@ -159,7 +159,7 @@ export default function ClientsTable({ rows, tariffs }: { rows: Row[]; tariffs: 
                   <div className="flex gap-1 items-center">
                     <Link
                       href={`/admin/projects/${r.id}`}
-                      className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2"
+                      className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink transition-colors hover:bg-surface-2"
                       title="Войти в проект"
                     >
                       <IconLogin2 size={15} stroke={1.8} />
@@ -167,7 +167,7 @@ export default function ClientsTable({ rows, tariffs }: { rows: Row[]; tariffs: 
                     <button
                       type="button"
                       onClick={() => toggleActive(r)}
-                      className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2 cursor-pointer"
+                      className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink transition-colors hover:bg-surface-2 cursor-pointer"
                       title={r.is_active ? "Выключить" : "Включить"}
                     >
                       {r.is_active ? <IconPlayerPauseFilled size={13} /> : <IconPlayerPlayFilled size={13} />}
@@ -175,7 +175,7 @@ export default function ClientsTable({ rows, tariffs }: { rows: Row[]; tariffs: 
                     <button
                       type="button"
                       onClick={() => grantBonus(r)}
-                      className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2 cursor-pointer"
+                      className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink transition-colors hover:bg-surface-2 cursor-pointer"
                       title="Начислить бонус"
                     >
                       <IconGift size={15} stroke={1.8} />
@@ -196,22 +196,7 @@ export default function ClientsTable({ rows, tariffs }: { rows: Row[]; tariffs: 
       </div>
 
       {filtered.length > 0 && (
-        <div className="flex items-center justify-between mt-3 text-[13px] text-ink-muted">
-          <span>
-            {(pageSafe - 1) * PAGE_SIZE + 1}–{Math.min(pageSafe * PAGE_SIZE, filtered.length)} из {filtered.length}
-          </span>
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm" disabled={pageSafe <= 1} onClick={() => setPage((p) => p - 1)}>
-              <IconChevronLeft size={15} stroke={2} />
-            </Button>
-            <span className="tabular-nums">
-              {pageSafe} / {pageCount}
-            </span>
-            <Button variant="secondary" size="sm" disabled={pageSafe >= pageCount} onClick={() => setPage((p) => p + 1)}>
-              <IconChevronRight size={15} stroke={2} />
-            </Button>
-          </div>
-        </div>
+        <Pagination page={pageSafe} total={filtered.length} pageSize={PAGE_SIZE} onChange={setPage} />
       )}
     </div>
   );

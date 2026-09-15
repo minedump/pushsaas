@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# PushSaaS — Next.js 15, multi-stage build → минимальный рантайм-образ.
+# SENDERA — Next.js 15, multi-stage build → минимальный рантайм-образ.
 # Debian slim (не Alpine): sharp/vips на musl иногда капризничает, здесь не рискуем.
 
 # Пин по digest, не по мутабельному тегу (security-аудит 2026-09-01) —

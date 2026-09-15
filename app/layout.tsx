@@ -1,5 +1,18 @@
 import type { Metadata } from "next";
+import { Manrope } from "next/font/google";
 import "./globals.css";
+
+// Геометрический гротеск с мягкими скруглениями — та же гарнитура на всех
+// платформах вместо системного стека (San Francisco/Segoe/Roboto по ОС).
+// next/font сам скачивает и самостоятельно раздаёт файлы шрифта со своего же
+// домена при сборке — внешнего запроса к Google Fonts в рантайме нет,
+// поэтому CSP (connect-src/style-src 'self') трогать не нужно.
+const manrope = Manrope({
+  subsets: ["latin", "cyrillic"],
+  weight: ["400", "500", "600", "700", "800"],
+  variable: "--font-manrope",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "SENDERA — платформа веб-пушей",
@@ -25,7 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   // suppressHydrationWarning отключает предупреждение именно и только по
   // этому тегу/атрибутам, не по всему дереву.
   return (
-    <html lang="ru" suppressHydrationWarning>
+    <html lang="ru" suppressHydrationWarning className={manrope.variable}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>

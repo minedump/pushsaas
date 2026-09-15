@@ -42,7 +42,7 @@ function TriggerWebhookDocsModal({
     <Modal onClose={onClose} className="max-w-lg max-h-[85vh] flex flex-col">
       <div className="flex items-center justify-between gap-3 pb-4 mb-4 border-b border-border shrink-0">
         <h3 className="text-base font-semibold m-0">Какой вебхук установить и откуда взять ключ</h3>
-        <button type="button" onClick={onClose} className="p-1 text-ink-faint hover:text-ink cursor-pointer shrink-0" title="Закрыть">
+        <button type="button" onClick={onClose} className="p-1 text-ink-faint hover:text-ink transition-colors cursor-pointer shrink-0" title="Закрыть">
           <IconX size={18} stroke={1.8} />
         </button>
       </div>

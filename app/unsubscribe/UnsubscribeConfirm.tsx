@@ -3,7 +3,19 @@
 import { useState } from "react";
 import { Button } from "@/app/ui";
 
-export default function UnsubscribeConfirm({ projectId, email, token }: { projectId: string; email: string; token: string }) {
+export default function UnsubscribeConfirm({
+  projectId,
+  email,
+  token,
+  campaignId,
+  recipientToken,
+}: {
+  projectId: string;
+  email: string;
+  token: string;
+  campaignId?: string;
+  recipientToken?: string;
+}) {
   const [state, setState] = useState<"idle" | "busy" | "done" | "error">("idle");
 
   async function confirm() {
@@ -11,7 +23,7 @@ export default function UnsubscribeConfirm({ projectId, email, token }: { projec
     const res = await fetch("/api/public/unsubscribe", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ p: projectId, e: email, t: token }),
+      body: JSON.stringify({ p: projectId, e: email, t: token, pss_c: campaignId, pss_r: recipientToken }),
     });
     setState(res.ok ? "done" : "error");
   }

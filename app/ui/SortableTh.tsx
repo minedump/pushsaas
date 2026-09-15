@@ -31,7 +31,7 @@ export function SortableTh<K extends string>({
         onClick={() => onClick(sortKey)}
         className={cn(
           "inline-flex items-center gap-1 cursor-pointer transition-colors",
-          active ? "text-ink" : "text-ink-faint hover:text-ink"
+          active ? "text-ink" : "text-ink-muted hover:text-ink"
         )}
       >
         {label}

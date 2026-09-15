@@ -15,11 +15,11 @@ export function TagEditor({ tags, onChange }: { tags: string[]; onChange: (t: st
     <div className="flex flex-wrap gap-1.5 items-center">
       {tags.map((t) => (
         <Badge key={t} tone="accent">
-          {t}
+          <span className="inline-block -translate-y-px">{t}</span>
           <button
             type="button"
             onClick={() => onChange(tags.filter((x) => x !== t))}
-            className="flex items-center border-none bg-transparent cursor-pointer text-inherit p-0 ml-0.5 opacity-70 hover:opacity-100"
+            className="flex items-center border-none bg-transparent cursor-pointer text-inherit p-0 ml-0.5 opacity-70 hover:opacity-100 transition-opacity"
             aria-label="удалить тег"
           >
             <IconX size={12} stroke={2.5} />

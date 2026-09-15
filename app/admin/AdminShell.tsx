@@ -33,6 +33,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { CustomSelect } from "@/app/ui/CustomSelect";
 import { DialogProvider } from "@/app/ui/Dialogs";
+import { TooltipHost } from "@/app/ui/Tooltip";
 import { cn } from "@/app/ui/cn";
 
 type Project = { id: string; name: string; is_active: boolean };
@@ -142,6 +143,7 @@ export default function AdminShell({
 
   return (
     <DialogProvider>
+      <TooltipHost />
       <script
         // Синхронно, до гидратации — иначе виден мелькающий пересвет
         // развёрнутого меню при каждом переходе (полная перезагрузка, см.
@@ -167,7 +169,7 @@ export default function AdminShell({
                 ariaLabel="Текущий проект"
                 className="w-[220px]"
                 footer={
-                  <a href="/admin/projects/new" className="flex items-center gap-2 w-full text-left text-sm px-3 py-2 text-ink hover:bg-surface-2 cursor-pointer no-underline">
+                  <a href="/admin/projects/new" className="flex items-center gap-2 w-full text-left text-sm px-3 py-2 text-ink transition-colors hover:bg-surface-2 cursor-pointer no-underline">
                     <IconPlus size={15} stroke={2} />
                     Создать проект
                   </a>
@@ -183,7 +185,7 @@ export default function AdminShell({
             <button
               onClick={logout}
               title="Выход"
-              className="grid place-items-center w-[38px] h-[38px] rounded-lg border border-border text-ink bg-surface hover:bg-surface-2 cursor-pointer"
+              className="grid place-items-center w-[38px] h-[38px] rounded-lg border border-border text-ink bg-surface transition-colors hover:bg-surface-2 cursor-pointer"
             >
               <IconLogout size={18} stroke={1.8} />
             </button>
@@ -342,7 +344,7 @@ function ProjectSwitcherIcon({
           <li>
             <a
               href="/admin/projects/new"
-              className="flex items-center gap-2 w-full text-left text-sm px-3 py-2 text-ink hover:bg-surface-2 cursor-pointer no-underline"
+              className="flex items-center gap-2 w-full text-left text-sm px-3 py-2 text-ink transition-colors hover:bg-surface-2 cursor-pointer no-underline"
             >
               <IconPlus size={15} stroke={2} />
               Создать проект
@@ -385,7 +387,7 @@ function ThemeToggle() {
     <button
       onClick={toggle}
       title={mounted ? (isDark ? "Светлая тема" : "Тёмная тема") : undefined}
-      className="grid place-items-center w-[38px] h-[38px] rounded-lg border border-border text-ink bg-surface hover:bg-surface-2 cursor-pointer"
+      className="grid place-items-center w-[38px] h-[38px] rounded-lg border border-border text-ink bg-surface transition-colors hover:bg-surface-2 cursor-pointer"
     >
       {isDark ? <IconSun size={18} stroke={1.8} /> : <IconMoon size={18} stroke={1.8} />}
     </button>

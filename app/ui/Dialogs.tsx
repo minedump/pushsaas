@@ -1,11 +1,12 @@
 "use client";
 
 import { createContext, useCallback, useContext, useState } from "react";
+import { IconX } from "@tabler/icons-react";
 import { Button } from "./Button";
 import { Input } from "./Input";
 import { cn } from "./cn";
 
-type Tone = "neutral" | "good" | "bad" | "warn";
+type Tone = "good" | "bad" | "warn";
 
 type ConfirmOpts = { title: string; message?: string; confirmText?: string; cancelText?: string; danger?: boolean };
 type PromptOpts = { title: string; message?: string; defaultValue?: string; placeholder?: string; confirmText?: string };
@@ -20,7 +21,7 @@ type Toast = { id: string; message: string; tone: Tone };
 type DialogsApi = {
   confirm: (o: ConfirmOpts) => Promise<boolean>;
   prompt: (o: PromptOpts) => Promise<string | null>;
-  toast: (message: string, tone?: Tone) => void;
+  toast: (message: string, tone: Tone) => void;
 };
 
 const Ctx = createContext<DialogsApi | null>(null);
@@ -32,7 +33,6 @@ export function useDialogs() {
 }
 
 const toastTone: Record<Toast["tone"], string> = {
-  neutral: "bg-surface border-border text-ink",
   good: "bg-good-tint border-good text-good",
   bad: "bg-bad-tint border-bad text-bad",
   warn: "bg-warn-tint border-warn text-warn",
@@ -55,7 +55,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
       }),
     []
   );
-  const toast = useCallback((message: string, tone: Tone = "neutral") => {
+  const toast = useCallback((message: string, tone: Tone) => {
     const id = Math.random().toString(36).slice(2);
     setToasts((t) => [...t, { id, message, tone }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3500);
@@ -86,15 +86,21 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
           onMouseDown={(e) => e.target === e.currentTarget && cancel()}
         >
           <div
-            className="w-full max-w-sm bg-surface border border-border rounded-2xl p-5 shadow-2xl"
+            className="w-full max-w-sm bg-surface border border-border rounded-2xl p-5 shadow-modal"
             style={{ animation: "ui-pop .16s ease-out" }}
             onKeyDown={(e) => {
               if (e.key === "Escape") cancel();
               if (e.key === "Enter" && dialog.kind === "prompt") resolvePrompt(promptValue);
             }}
           >
-            <h3 className="text-base font-semibold m-0">{dialog.title}</h3>
-            {dialog.message && <p className="text-sm text-ink-muted mt-2 mb-0">{dialog.message}</p>}
+            <div className="flex items-center justify-between gap-3 pb-4 mb-4 border-b border-border">
+              <h3 className="text-base font-semibold m-0">{dialog.title}</h3>
+              <button type="button" onClick={cancel} className="p-1 text-ink-faint hover:text-ink transition-colors cursor-pointer shrink-0" title="Закрыть">
+                <IconX size={18} stroke={1.8} />
+              </button>
+            </div>
+
+            {dialog.message && <p className="text-sm text-ink-muted m-0">{dialog.message}</p>}
 
             {dialog.kind === "prompt" && (
               <Input
@@ -106,7 +112,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
               />
             )}
 
-            <div className="flex justify-end gap-2 mt-5">
+            <div className="flex justify-end gap-2 pt-4 mt-4 border-t border-border">
               <Button variant="secondary" size="sm" onClick={cancel}>
                 {dialog.kind === "confirm" ? dialog.cancelText ?? "Отмена" : "Отмена"}
               </Button>

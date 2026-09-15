@@ -7,7 +7,7 @@ import { withShortenedLinks } from "@/lib/linkPreview";
 import { logApiCall } from "@/lib/apiLog";
 
 const FULL_SELECT =
-  "id, channel, status, type, initiator, title, body, subject, html_body, icon_url, image_url, click_url, badge_url, segment_tags, platforms, contacts, actions, template_id, template_data, internal_title, scheduled_at, sent_at, sent_count, delivered_count, failed_count, clicked_count, opened_count, error, send_window_enabled, send_days, send_time_from, send_time_to, send_window_subscriber_tz, spacing_enabled, spacing_minutes, created_at";
+  "id, channel, status, type, initiator, title, body, subject, html_body, icon_url, image_url, click_url, badge_url, segment_tags, platforms, contacts, actions, template_id, template_data, internal_title, scheduled_at, sent_at, sent_count, delivered_count, failed_count, clicked_count, opened_count, unsubscribed_count, error, send_window_enabled, send_days, send_time_from, send_time_to, send_window_subscriber_tz, spacing_enabled, spacing_minutes, created_at";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toCampaign(c: any) {
@@ -40,6 +40,7 @@ function toCampaign(c: any) {
     failedCount: c.failed_count,
     clickedCount: c.clicked_count,
     openedCount: c.opened_count,
+    unsubscribedCount: c.unsubscribed_count,
     sendWindow: {
       enabled: !!c.send_window_enabled,
       days: c.send_days,

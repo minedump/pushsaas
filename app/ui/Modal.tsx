@@ -30,7 +30,7 @@ export function Modal({
       style={{ animation: "ui-fade .12s ease-out" }}
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className={cn("w-full bg-surface border border-border rounded-2xl p-5 shadow-2xl", className || "max-w-sm")} style={{ animation: "ui-pop .16s ease-out" }}>
+      <div className={cn("w-full bg-surface border border-border rounded-2xl p-5 shadow-modal", className || "max-w-sm")} style={{ animation: "ui-pop .16s ease-out" }}>
         {children}
       </div>
     </div>

@@ -14,10 +14,10 @@ export function Checkbox({
   className?: string;
 }) {
   return (
-    <label className={cn("inline-flex items-center gap-2 text-sm cursor-pointer select-none", className)}>
+    <label className={cn("inline-flex items-start gap-2 text-sm cursor-pointer select-none", className)}>
       <span
         className={cn(
-          "grid place-items-center w-[18px] h-[18px] rounded-[5px] border transition-colors",
+          "grid place-items-center w-[18px] h-[18px] mt-[0.5px] shrink-0 rounded-[5px] border transition-colors",
           checked ? "bg-accent border-accent text-white" : "bg-surface border-border"
         )}
       >

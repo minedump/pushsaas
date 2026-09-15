@@ -93,13 +93,17 @@ export function CustomSelect({
         aria-label={ariaLabel}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "flex items-center justify-between gap-2 w-full text-sm pl-3 pr-2.5 py-2 rounded-lg border border-border bg-surface text-ink cursor-pointer transition-colors",
+          "group flex items-center justify-between gap-2 w-full text-sm pl-3 pr-2.5 py-2 rounded-lg border border-border bg-surface text-ink cursor-pointer transition-colors",
           "hover:border-accent-line focus:outline-none focus:ring-2 focus:ring-accent-line",
           open && "border-accent-line ring-2 ring-accent-line"
         )}
       >
         <span className={cn("truncate", !selected && "text-ink-faint")}>{selected ? selected.label : placeholder}</span>
-        <IconChevronDown size={16} stroke={2} className={cn("shrink-0 text-ink-faint transition-transform", open && "rotate-180")} />
+        <IconChevronDown
+          size={16}
+          stroke={2}
+          className={cn("shrink-0 text-ink-faint transition-[transform,color] group-hover:text-ink", open && "rotate-180")}
+        />
       </button>
 
       {open &&

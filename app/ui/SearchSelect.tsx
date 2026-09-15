@@ -64,7 +64,7 @@ export function SearchSelect({
 
   return (
     <div ref={rootRef} className={cn("relative", className)}>
-      <div className="relative">
+      <div className="relative group">
         <input
           type="text"
           value={open ? query : allowCustom ? value : selected?.label || ""}
@@ -84,7 +84,14 @@ export function SearchSelect({
             allowCustom ? "cursor-text" : "cursor-pointer"
           )}
         />
-        <IconChevronDown size={16} stroke={2} className={cn("pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint transition-transform", open && "rotate-180")} />
+        <IconChevronDown
+          size={16}
+          stroke={2}
+          className={cn(
+            "pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint transition-[transform,color] group-hover:text-ink",
+            open && "rotate-180"
+          )}
+        />
       </div>
 
       {open && (

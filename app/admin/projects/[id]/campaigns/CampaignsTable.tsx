@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { IconChevronLeft, IconChevronRight, IconDownload, IconSearch, IconX, IconSend, IconTrash, IconPencil, IconCopy } from "@tabler/icons-react";
-import { Badge, Button, Input, SortableTh, useDialogs, type SortDir } from "@/app/ui";
+import { IconChevronRight, IconDownload, IconSearch, IconX, IconSend, IconTrash, IconPencil, IconCopy } from "@tabler/icons-react";
+import { Badge, Button, Input, Pagination, SortableTh, useDialogs, type SortDir } from "@/app/ui";
 import { CustomSelect, type ComboOption } from "@/app/ui/CustomSelect";
 import { createClient } from "@/lib/supabase/client";
 
@@ -24,6 +24,7 @@ type Row = {
   sent_count: number;
   delivered_count: number;
   clicked_count: number;
+  unsubscribed_count: number;
   created_at: string;
   revenue: number;
   orders: number;
@@ -41,6 +42,7 @@ type SortKey =
   | "delivered_count"
   | "clicked_count"
   | "ctr"
+  | "unsubscribed_count"
   | "orders"
   | "revenue"
   | "paid"
@@ -202,6 +204,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
         switch (sortKey) {
           case "delivered_count":
           case "clicked_count":
+          case "unsubscribed_count":
           case "orders":
           case "revenue":
           case "paid":
@@ -252,7 +255,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
             <button
               type="button"
               onClick={() => updateSearch("")}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-ink-faint hover:text-ink cursor-pointer"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-ink-faint hover:text-ink transition-colors cursor-pointer"
               aria-label="Очистить поиск"
             >
               <IconX size={15} stroke={2} />
@@ -274,6 +277,14 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
               <SortableTh label="Отправлено" sortKey="delivered_count" active={sortKey === "delivered_count"} dir={sortDir} onClick={onSortClick} right />
               <SortableTh label="Клики" sortKey="clicked_count" active={sortKey === "clicked_count"} dir={sortDir} onClick={onSortClick} right />
               <SortableTh label="CTR" sortKey="ctr" active={sortKey === "ctr"} dir={sortDir} onClick={onSortClick} right />
+              <SortableTh
+                label="Отписки"
+                sortKey="unsubscribed_count"
+                active={sortKey === "unsubscribed_count"}
+                dir={sortDir}
+                onClick={onSortClick}
+                right
+              />
               <SortableTh label="Заказы" sortKey="orders" active={sortKey === "orders"} dir={sortDir} onClick={onSortClick} right />
               <SortableTh label="Выручка" sortKey="revenue" active={sortKey === "revenue"} dir={sortDir} onClick={onSortClick} right />
               <SortableTh label="Оплачено" sortKey="paid" active={sortKey === "paid"} dir={sortDir} onClick={onSortClick} right />
@@ -289,6 +300,10 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
               // как было раньше).
               const notYetSent = c.status === "draft" || c.status === "scheduled";
               const hasStats = !!c.campaignId && !notYetSent;
+              // Ссылка отписки уходит только в email (см. lib/sender.ts —
+              // unsubscribe_url подставляется исключительно при отправке
+              // писем) — на push/sms кампаниях столбец всегда прочерк, не 0.
+              const hasUnsubStats = hasStats && c.channel === "email";
               const titleOverride = c.campaignId ? titleOverrides[c.campaignId] : undefined;
               const displayTitle = titleOverride !== undefined ? titleOverride || c.title : c.internal_title || c.title;
               return (
@@ -348,6 +363,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
                   <Td right>{hasStats ? c.delivered_count : "—"}</Td>
                   <Td right>{hasStats ? c.clicked_count : "—"}</Td>
                   <Td right>{hasStats && c.status === "sent" ? `${cctr}%` : "—"}</Td>
+                  <Td right>{hasUnsubStats ? c.unsubscribed_count : "—"}</Td>
                   <Td right>{hasStats ? c.orders : "—"}</Td>
                   <Td right>{hasStats ? `${c.revenue.toLocaleString("ru-RU")} ₽` : "—"}</Td>
                   <Td right>{hasStats ? `${c.paid.toLocaleString("ru-RU")} ₽` : "—"}</Td>
@@ -359,7 +375,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
                           type="button"
                           disabled={busyId === c.campaignId}
                           onClick={() => duplicateCampaign(c.campaignId!)}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink transition-colors hover:bg-surface-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                           title="Копировать как новую"
                         >
                           <IconCopy size={15} stroke={1.8} />
@@ -369,7 +385,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
                         <>
                           <Link
                             href={`/admin/projects/${projectId}/campaigns/${c.campaignId}/edit`}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2"
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink transition-colors hover:bg-surface-2"
                             title="Изменить"
                           >
                             <IconPencil size={15} stroke={1.8} />
@@ -378,7 +394,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
                             type="button"
                             disabled={busyId === c.campaignId}
                             onClick={() => sendDraft(c.campaignId!)}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink transition-colors hover:bg-surface-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                             title="Отправить сейчас"
                           >
                             <IconSend size={15} stroke={1.8} />
@@ -387,7 +403,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
                             type="button"
                             disabled={busyId === c.campaignId}
                             onClick={() => deleteDraft(c.campaignId!, c.status)}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-bad hover:bg-surface-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-bad transition-colors hover:bg-surface-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                             title={c.status === "draft" ? "Удалить черновик" : "Отменить"}
                           >
                             <IconTrash size={15} stroke={1.8} />
@@ -397,7 +413,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
                       {c.campaignId && (c.status === "sent" || c.status === "failed") && (
                         <a
                           href={`/api/admin/campaigns/${c.campaignId}/recipients?projectId=${projectId}`}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2"
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink transition-colors hover:bg-surface-2"
                           title="Скачать статистику по каждому адресату"
                         >
                           <IconDownload size={15} stroke={1.8} />
@@ -410,7 +426,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={14} className="px-3.5 py-6 text-center text-ink-muted">
+                <td colSpan={15} className="px-3.5 py-6 text-center text-ink-muted">
                   Ничего не найдено
                 </td>
               </tr>
@@ -419,24 +435,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
         </table>
       </div>
 
-      {filtered.length > 0 && (
-        <div className="flex items-center justify-between mt-3 text-[13px] text-ink-muted">
-          <span>
-            {(pageSafe - 1) * PAGE_SIZE + 1}–{Math.min(pageSafe * PAGE_SIZE, filtered.length)} из {filtered.length}
-          </span>
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm" disabled={pageSafe <= 1} onClick={() => setPage((p) => p - 1)}>
-              <IconChevronLeft size={15} stroke={2} />
-            </Button>
-            <span className="tabular-nums">
-              {pageSafe} / {pageCount}
-            </span>
-            <Button variant="secondary" size="sm" disabled={pageSafe >= pageCount} onClick={() => setPage((p) => p + 1)}>
-              <IconChevronRight size={15} stroke={2} />
-            </Button>
-          </div>
-        </div>
-      )}
+      <Pagination page={pageSafe} total={filtered.length} pageSize={PAGE_SIZE} onChange={setPage} />
     </div>
   );
 }
@@ -486,7 +485,7 @@ function InlineTitle({ value, editable, onSave }: { value: string; editable: boo
         <button
           type="button"
           onClick={() => setEditing(true)}
-          className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 p-0.5 rounded text-ink-faint hover:text-ink cursor-pointer"
+          className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 p-0.5 rounded text-ink-faint hover:text-ink transition-colors cursor-pointer"
           title="Изменить название"
         >
           <IconPencil size={16} stroke={1.8} />
@@ -497,7 +496,7 @@ function InlineTitle({ value, editable, onSave }: { value: string; editable: boo
 }
 
 const Th = ({ children, right }: { children: React.ReactNode; right?: boolean }) => (
-  <th className={`px-3.5 py-2.5 text-[11px] text-ink-faint font-normal whitespace-nowrap ${right ? "text-right" : "text-left"}`}>
+  <th className={`px-3.5 py-2.5 text-[11px] text-ink-muted font-normal whitespace-nowrap ${right ? "text-right" : "text-left"}`}>
     {children}
   </th>
 );

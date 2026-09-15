@@ -42,9 +42,12 @@ export default function NewProjectForm() {
           <Label>Домен сайта</Label>
           <Input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="myshop.ru" />
           {error && <p className="text-bad text-[13px] mt-3.5">{error}</p>}
-          <Button className="mt-5" disabled={busy}>
-            {busy ? "Создаём…" : "Создать проект"}
-          </Button>
+          <div className="flex gap-2 mt-5">
+            <Button disabled={busy}>{busy ? "Создаём…" : "Создать проект"}</Button>
+            <Button type="button" variant="secondary" onClick={() => router.push("/admin")}>
+              Отмена
+            </Button>
+          </div>
         </form>
       </Card>
     </main>

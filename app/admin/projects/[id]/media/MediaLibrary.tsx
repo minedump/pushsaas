@@ -294,7 +294,7 @@ export default function MediaLibrary({
           <button
             type="button"
             onClick={() => updateSearch("")}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-ink-faint hover:text-ink cursor-pointer"
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-ink-faint hover:text-ink transition-colors cursor-pointer"
             aria-label="Очистить поиск"
           >
             <IconX size={15} stroke={2} />
@@ -396,7 +396,7 @@ export default function MediaLibrary({
         <Modal onClose={() => setPreviewAsset(null)} className="max-w-2xl max-h-[85vh] flex flex-col">
           <div className="flex items-center justify-between gap-3 pb-4 mb-4 border-b border-border shrink-0">
             <h3 className="text-base font-semibold m-0 truncate">{previewAsset.name}</h3>
-            <button type="button" onClick={() => setPreviewAsset(null)} className="p-1 text-ink-faint hover:text-ink cursor-pointer shrink-0" title="Закрыть">
+            <button type="button" onClick={() => setPreviewAsset(null)} className="p-1 text-ink-faint hover:text-ink transition-colors cursor-pointer shrink-0" title="Закрыть">
               <IconX size={18} stroke={1.8} />
             </button>
           </div>
@@ -474,7 +474,7 @@ function MoveModal({
         <h3 className="text-base font-semibold m-0">
           Переместить {count} изображени{count === 1 ? "е" : "я"}
         </h3>
-        <button type="button" onClick={onClose} className="p-1 text-ink-faint hover:text-ink cursor-pointer" title="Закрыть">
+        <button type="button" onClick={onClose} className="p-1 text-ink-faint hover:text-ink transition-colors cursor-pointer" title="Закрыть">
           <IconX size={18} stroke={1.8} />
         </button>
       </div>
@@ -518,7 +518,7 @@ function FolderEditModal({
     <Modal onClose={onClose}>
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-base font-semibold m-0">Папка</h3>
-        <button type="button" onClick={onClose} className="p-1 text-ink-faint hover:text-ink cursor-pointer" title="Закрыть">
+        <button type="button" onClick={onClose} className="p-1 text-ink-faint hover:text-ink transition-colors cursor-pointer" title="Закрыть">
           <IconX size={18} stroke={1.8} />
         </button>
       </div>
