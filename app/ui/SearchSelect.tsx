@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { IconChevronDown } from "@tabler/icons-react";
 import { cn } from "./cn";
 import type { ComboOption } from "./CustomSelect";
@@ -16,6 +17,10 @@ import type { ComboOption } from "./CustomSelect";
 // подставляет её текст. Замена нативному <input list="…"><datalist> —
 // тот же смысл (текст + подсказки), но в едином со всем проектом стиле
 // выпадающего списка, а не системном виде datalist.
+//
+// Список рендерится порталом в document.body с position:fixed — как у
+// CustomSelect (см. его комментарий): поле часто стоит внутри модалки/карточки
+// с overflow, обычный absolute-потомок список бы обрезал.
 export function SearchSelect({
   value,
   onChange,
@@ -35,16 +40,30 @@ export function SearchSelect({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const selected = options.find((o) => o.value === value);
+
+  function updatePosition() {
+    const el = rootRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setPos({ top: rect.bottom + 6, left: rect.left, width: rect.width });
+  }
+
+  useLayoutEffect(() => {
+    if (open) updatePosition();
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
     function onPointerDown(e: MouseEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setQuery("");
-      }
+      const t = e.target as Node;
+      if (rootRef.current?.contains(t)) return;
+      if (listRef.current?.contains(t)) return;
+      setOpen(false);
+      setQuery("");
     }
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
@@ -52,11 +71,18 @@ export function SearchSelect({
         setQuery("");
       }
     }
+    function onReposition() {
+      updatePosition();
+    }
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("scroll", onReposition, true);
+    window.addEventListener("resize", onReposition);
     return () => {
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("scroll", onReposition, true);
+      window.removeEventListener("resize", onReposition);
     };
   }, [open]);
 
@@ -94,38 +120,42 @@ export function SearchSelect({
         />
       </div>
 
-      {open && (
-        <ul
-          role="listbox"
-          className="absolute left-0 right-0 z-30 mt-1.5 max-h-72 overflow-auto rounded-lg border border-border bg-surface shadow-lg py-1"
-          style={{ animation: "ui-pop .12s ease-out" }}
-        >
-          {filtered.length === 0 && <li className="px-3 py-2 text-sm text-ink-faint">{emptyText}</li>}
-          {filtered.map((o) => (
-            <li key={o.value} role="option" aria-selected={o.value === value} aria-disabled={o.disabled}>
-              <button
-                type="button"
-                disabled={o.disabled}
-                onClick={() => {
-                  onChange(o.value);
-                  setOpen(false);
-                  setQuery("");
-                }}
-                className={cn(
-                  "flex items-center justify-between gap-2 w-full text-left text-sm px-3 py-2 transition-colors",
-                  o.disabled
-                    ? "text-ink-faint opacity-50 cursor-not-allowed"
-                    : o.value === value
-                    ? "bg-accent-tint text-accent font-semibold cursor-pointer"
-                    : "text-ink hover:bg-surface-2 cursor-pointer"
-                )}
-              >
-                <span className="truncate">{o.label}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      {open &&
+        pos &&
+        createPortal(
+          <ul
+            ref={listRef}
+            role="listbox"
+            className="fixed z-[200] max-h-72 overflow-auto rounded-lg border border-border bg-surface shadow-lg py-1"
+            style={{ top: pos.top, left: pos.left, width: pos.width, animation: "ui-pop .12s ease-out" }}
+          >
+            {filtered.length === 0 && <li className="px-3 py-2 text-sm text-ink-faint">{emptyText}</li>}
+            {filtered.map((o) => (
+              <li key={o.value} role="option" aria-selected={o.value === value} aria-disabled={o.disabled}>
+                <button
+                  type="button"
+                  disabled={o.disabled}
+                  onClick={() => {
+                    onChange(o.value);
+                    setOpen(false);
+                    setQuery("");
+                  }}
+                  className={cn(
+                    "flex items-center justify-between gap-2 w-full text-left text-sm px-3 py-2 transition-colors",
+                    o.disabled
+                      ? "text-ink-faint opacity-50 cursor-not-allowed"
+                      : o.value === value
+                      ? "bg-accent-tint text-accent font-semibold cursor-pointer"
+                      : "text-ink hover:bg-surface-2 cursor-pointer"
+                  )}
+                >
+                  <span className="truncate">{o.label}</span>
+                </button>
+              </li>
+            ))}
+          </ul>,
+          document.body
+        )}
     </div>
   );
 }

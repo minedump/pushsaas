@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Input } from "./Input";
 
 // Полностью свой пикер цвета — без <input type="color">, чей вид (нативный
@@ -8,6 +9,10 @@ import { Input } from "./Input";
 // вместе с пресетами: он рисуется браузером поверх всего и перехватывает
 // клик целиком. SV-квадрат + полоса оттенка — тот же принцип, что у любого
 // стандартного color-picker'а (HSV), плюс пресеты-кружки.
+//
+// Поповер рендерится порталом в document.body с position:fixed — поле часто
+// стоит внутри модалки настроек стилей (см. AuthSettings), а обычный
+// absolute-потомок обрезался бы её рамкой (см. CustomSelect).
 
 function clamp01(n: number): number {
   return Math.min(1, Math.max(0, n));
@@ -166,16 +171,41 @@ export function ColorField({
   presets?: string[];
 }) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
   const normalized = /^#[0-9a-fA-F]{6}$/.test(value) ? value.toLowerCase() : "#2c4a66";
+
+  function updatePosition() {
+    const el = rootRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setPos({ top: rect.bottom + 6, left: rect.left });
+  }
+
+  useLayoutEffect(() => {
+    if (open) updatePosition();
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
     function onOutside(e: MouseEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (rootRef.current?.contains(t)) return;
+      if (popRef.current?.contains(t)) return;
+      setOpen(false);
+    }
+    function onReposition() {
+      updatePosition();
     }
     document.addEventListener("mousedown", onOutside);
-    return () => document.removeEventListener("mousedown", onOutside);
+    window.addEventListener("scroll", onReposition, true);
+    window.addEventListener("resize", onReposition);
+    return () => {
+      document.removeEventListener("mousedown", onOutside);
+      window.removeEventListener("scroll", onReposition, true);
+      window.removeEventListener("resize", onReposition);
+    };
   }, [open]);
 
   return (
@@ -191,33 +221,40 @@ export function ColorField({
         />
         <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder="#2c4a66" className="font-mono" />
       </div>
-      {open && (
-        // z-index выше WIDGET_Z_INDEX (999999) — превью виджета на этой же
-        // странице рисует свою плавающую кнопку/плашку с этим z-index, попап
-        // пикера должен оставаться поверх него, а не наоборот.
-        <div className="absolute z-[1000000] top-full left-0 mt-1.5 flex flex-col gap-3 bg-surface border border-border rounded-lg shadow-lg p-3 w-max">
-          <CustomColorPicker hex={normalized} onChange={onChange} />
-          {presets && presets.length > 0 && (
-            <div className="flex gap-1.5 items-center flex-nowrap">
-              {presets.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => {
-                    onChange(c);
-                    setOpen(false);
-                  }}
-                  className={`w-5 h-5 rounded-full cursor-pointer transition-transform hover:scale-110 ${
-                    normalized === c.toLowerCase() ? "ring-2 ring-accent ring-offset-1" : "border border-border"
-                  }`}
-                  style={{ backgroundColor: c }}
-                  aria-label={`Цвет ${c}`}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {open &&
+        pos &&
+        createPortal(
+          // z-index выше WIDGET_Z_INDEX (999999) — превью виджета на этой же
+          // странице рисует свою плавающую кнопку/плашку с этим z-index, попап
+          // пикера должен оставаться поверх него, а не наоборот.
+          <div
+            ref={popRef}
+            className="fixed z-[1000000] flex flex-col gap-3 bg-surface border border-border rounded-lg shadow-lg p-3 w-max"
+            style={{ top: pos.top, left: pos.left, animation: "ui-pop .12s ease-out" }}
+          >
+            <CustomColorPicker hex={normalized} onChange={onChange} />
+            {presets && presets.length > 0 && (
+              <div className="flex gap-1.5 items-center flex-nowrap">
+                {presets.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => {
+                      onChange(c);
+                      setOpen(false);
+                    }}
+                    className={`w-5 h-5 rounded-full cursor-pointer transition-transform hover:scale-110 ${
+                      normalized === c.toLowerCase() ? "ring-2 ring-accent ring-offset-1" : "border border-border"
+                    }`}
+                    style={{ backgroundColor: c }}
+                    aria-label={`Цвет ${c}`}
+                  />
+                ))}
+              </div>
+            )}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
