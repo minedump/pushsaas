@@ -270,7 +270,7 @@ export default function SubscriberProfile({
                   </thead>
                   <tbody>
                     {siteEvents.map((e) => (
-                      <tr key={e.id} className="border-t border-border first:border-t-0">
+                      <tr key={e.id} className="border-t border-border first:border-t-0 row-hover">
                         <Td className="whitespace-nowrap">
                           <Badge tone="accent">{e.label}</Badge>
                         </Td>
@@ -301,12 +301,12 @@ export default function SubscriberProfile({
                       <Th>Статус</Th>
                       <Th>Реакция</Th>
                       <Th>Когда</Th>
-                      <Th> </Th>
+                      <Th>Действия</Th>
                     </tr>
                   </thead>
                   <tbody>
                   {recipients.map((r) => (
-                    <tr key={`${r.channel}-${r.id}`} className="border-t border-border first:border-t-0">
+                    <tr key={`${r.channel}-${r.id}`} className="border-t border-border first:border-t-0 row-hover">
                       <Td className="truncate max-w-[220px]">{r.campaigns?.title || "—"}</Td>
                       <Td className="whitespace-nowrap">
                         <Badge tone="accent">{channelLabel[r.channel] || r.channel}</Badge>
@@ -371,7 +371,7 @@ export default function SubscriberProfile({
                 </thead>
                 <tbody>
                 {orders.map((o) => (
-                  <tr key={o.id} className="border-t border-border first:border-t-0">
+                  <tr key={o.id} className="border-t border-border first:border-t-0 row-hover">
                     <Td className="whitespace-nowrap">{o.order_number || "—"}</Td>
                     <Td className="text-ink-muted truncate max-w-[220px]">{o.campaigns?.title || "—"}</Td>
                     <Td>{o.is_paid && <Badge tone="good">оплачен</Badge>}</Td>
@@ -410,7 +410,7 @@ export default function SubscriberProfile({
                   </thead>
                   <tbody>
                   {history.map((h) => (
-                    <tr key={h.key} className="border-t border-border first:border-t-0">
+                    <tr key={h.key} className="border-t border-border first:border-t-0 row-hover">
                       {h.kind === "channel" ? (
                         <>
                           <Td className="whitespace-nowrap">

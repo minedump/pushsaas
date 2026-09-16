@@ -28,17 +28,19 @@ export default function ChangePassword() {
 
   return (
     <Card className="mt-3">
-      <form onSubmit={submit}>
-        <Label>Новый пароль</Label>
-        <PasswordInput
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          minLength={6}
-          required
-          className="w-full"
-        />
+      <form onSubmit={submit} className="flex flex-col gap-3">
+        <div>
+          <Label>Новый пароль</Label>
+          <PasswordInput
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            minLength={6}
+            required
+            className="w-full"
+          />
+        </div>
 
-        <div className="mt-4">
+        <div>
           <Label>Подтвердите пароль</Label>
           <PasswordInput
             value={confirm}
@@ -49,9 +51,7 @@ export default function ChangePassword() {
           />
         </div>
 
-        <Button className="mt-4" disabled={busy}>
-          {busy ? "…" : "Обновить"}
-        </Button>
+        <Button disabled={busy}>{busy ? "…" : "Обновить"}</Button>
       </form>
     </Card>
   );

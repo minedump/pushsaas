@@ -14,7 +14,7 @@ import {
   IconTagPlus,
   IconTagMinus,
 } from "@tabler/icons-react";
-import { BulkActionsMenu, Button, Checkbox, Input, Pagination, SortableTh, TagEditor, useDialogs, type SortDir } from "@/app/ui";
+import { Badge, BulkActionsMenu, Button, Checkbox, Input, Pagination, SortableTh, useDialogs, type SortDir } from "@/app/ui";
 import { CustomSelect, type ComboOption } from "@/app/ui/CustomSelect";
 import { cn } from "@/app/ui/cn";
 
@@ -97,23 +97,6 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
       return false;
     }
     return true;
-  }
-
-  // Теги живут на identities (см. миграцию 0037) — один контакт может иметь
-  // несколько устройств, у всех должны обновиться одинаковые теги.
-  async function updateTags(identityId: string, tags: string[]) {
-    const prev = rows;
-    setRows((rs) => rs.map((r) => (r.identityId === identityId ? { ...r, tags } : r)));
-    const res = await fetch("/api/admin/subscribers", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, identityId, action: "tags", tags }),
-    });
-    if (!res.ok) {
-      const j = await res.json().catch(() => ({}));
-      toast(j.error || "Не удалось сохранить", "bad");
-      setRows(prev); // откат при ошибке
-    }
   }
 
   // Клик по бейджу конкретной платформы — приостановка/возобновление ИМЕННО
@@ -371,22 +354,22 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
               <Th>Каналы</Th>
               <Th>Теги</Th>
               <SortableTh label="Создан" sortKey="created_at" active={sortKey === "created_at"} dir={sortDir} onClick={onSortClick} />
-              <Th> </Th>
+              <Th>Действия</Th>
             </tr>
           </thead>
           <tbody>
             {paged.map((r) => {
               return (
-                <tr key={r.id} className="border-t border-border">
+                <tr key={r.id} className="border-t border-border row-hover">
                   <Td>{r.identityId && <Checkbox checked={selectedIds.has(r.identityId)} onChange={() => toggleSelect(r.identityId!)} />}</Td>
                   <Td className="max-w-40">
                     {r.identityId ? (
                       <Link
                         href={`/admin/projects/${projectId}/subscribers/${r.identityId}`}
-                        className="inline-flex items-center gap-1 max-w-full text-ink hover:text-accent hover:underline"
+                        className="inline-flex items-center gap-1 max-w-full font-semibold text-ink hover:underline"
                       >
                         <span className="min-w-0 truncate">{r.name || "Без имени"}</span>
-                        <IconChevronRight size={13} stroke={2} className="text-ink-faint shrink-0" />
+                        <IconChevronRight size={13} stroke={2} className="shrink-0" />
                       </Link>
                     ) : (
                       r.name || <span className="text-ink-faint">—</span>
@@ -419,15 +402,21 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
                     </div>
                   </Td>
                   <Td>
-                    {r.identityId ? (
-                      <TagEditor tags={r.tags} onChange={(t) => updateTags(r.identityId!, t)} />
+                    {r.tags.length ? (
+                      <div className="flex gap-1 flex-wrap">
+                        {r.tags.map((t) => (
+                          <Badge key={t} tone="accent">
+                            {t}
+                          </Badge>
+                        ))}
+                      </div>
                     ) : (
-                      <span className="text-ink-faint text-xs" title="Теги привязаны к контакту — недоступны анонимному устройству без привязанного контакта">
+                      <span className="text-ink-faint text-xs" title={r.identityId ? undefined : "Теги привязаны к контакту — недоступны анонимному устройству без привязанного контакта"}>
                         —
                       </span>
                     )}
                   </Td>
-                  <Td className="text-ink-faint whitespace-nowrap">{new Date(r.created_at).toLocaleDateString("ru-RU")}</Td>
+                  <Td className="whitespace-nowrap">{new Date(r.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}</Td>
                   <Td className="text-right">
                     {r.identityId && (
                       <div className="flex justify-end gap-1">
@@ -441,7 +430,7 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
                         <button
                           type="button"
                           onClick={() => removeContact(r)}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-bad transition-colors hover:bg-surface-2 cursor-pointer"
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-bad transition-colors hover:bg-bad-tint cursor-pointer"
                           title="Удалить"
                         >
                           <IconTrash size={15} stroke={1.8} />

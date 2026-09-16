@@ -133,12 +133,12 @@ export default function ApiKeys({
               <tr className="bg-surface-2 text-left">
                 <Th>Название</Th>
                 <Th>Каналы</Th>
-                <Th> </Th>
+                <Th>Действия</Th>
               </tr>
             </thead>
             <tbody>
               {initial.map((k) => (
-                <tr key={k.id} className="border-t border-border">
+                <tr key={k.id} className="border-t border-border row-hover">
                   <Td>{k.name}</Td>
                   <Td className="text-ink-muted text-[12.5px]">
                     {[k.sms_provider && `SMS: ${PROVIDER_LABEL[k.sms_provider] || k.sms_provider}`, k.email_provider && `Email: ${PROVIDER_LABEL[k.email_provider] || k.email_provider}`]

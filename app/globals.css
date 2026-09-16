@@ -245,3 +245,15 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .tooltip-bubble { transition: none; }
 }
+
+/* Строки таблиц данных (Campaigns/Subscribers/Templates/Clients/Log/…):
+   каждая строка получает явную заливку surface (без неё прозрачная ячейка
+   просвечивает фон страницы — на paper, а не на белом), hover — не сплошной
+   surface-2 (тот же тон, что у шапки таблицы — слишком контрастный скачок
+   на строке), а промежуточный тон между surface и surface-2. */
+.row-hover {
+  background-color: var(--surface);
+}
+.row-hover:hover {
+  background-color: color-mix(in srgb, var(--surface-2) 30%, var(--surface));
+}

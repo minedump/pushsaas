@@ -284,7 +284,7 @@ export default async function AnalyticsPage({
                   const s = widgetStats[w.key];
                   const ctr = s.shown ? Math.round((s.clicked / s.shown) * 100) : 0;
                   return (
-                    <tr key={w.key} className="border-t border-border">
+                    <tr key={w.key} className="border-t border-border row-hover">
                       <td className="py-2">{w.label}</td>
                       <td className="py-2 text-right tabular-nums">{s.shown}</td>
                       <td className="py-2 text-right tabular-nums">{s.clicked}</td>

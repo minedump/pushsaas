@@ -35,14 +35,17 @@ export default function NewProjectForm() {
       <h1 className="text-2xl font-semibold">Новый проект</h1>
 
       <Card className="mt-5">
-        <form onSubmit={submit}>
-          <Label>Название</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} required placeholder="Мой магазин" />
-          <div className="h-4" />
-          <Label>Домен сайта</Label>
-          <Input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="myshop.ru" />
-          {error && <p className="text-bad text-[13px] mt-3.5">{error}</p>}
-          <div className="flex gap-2 mt-5">
+        <form onSubmit={submit} className="flex flex-col gap-3">
+          <div>
+            <Label>Название</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} required placeholder="Мой магазин" />
+          </div>
+          <div>
+            <Label>Домен сайта</Label>
+            <Input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="myshop.ru" />
+          </div>
+          {error && <p className="text-bad text-[13px] m-0">{error}</p>}
+          <div className="flex gap-2">
             <Button disabled={busy}>{busy ? "Создаём…" : "Создать проект"}</Button>
             <Button type="button" variant="secondary" onClick={() => router.push("/admin")}>
               Отмена

@@ -401,38 +401,38 @@ export default function TemplatesManager({
                   <SortableTh label="ID" sortKey="id" active={sortKey === "id"} dir={sortDir} onClick={onSortClick} />
                   <SortableTh label="Создан" sortKey="created_at" active={sortKey === "created_at"} dir={sortDir} onClick={onSortClick} />
                   <SortableTh label="Автор" sortKey="created_by" active={sortKey === "created_by"} dir={sortDir} onClick={onSortClick} />
-                  <Th> </Th>
+                  <Th>Действия</Th>
                 </tr>
               </thead>
               <tbody>
                 {paged.map((t) => (
-                  <tr key={t.id} className={`border-t border-border ${selected.has(t.id) ? "bg-accent-tint/40" : ""}`}>
+                  <tr key={t.id} className={`border-t border-border ${selected.has(t.id) ? "bg-accent-tint/40" : "row-hover"}`}>
                     <Td>
                       <Checkbox checked={selected.has(t.id)} onChange={() => toggleSelect(t.id)} />
                     </Td>
                     <Td className="max-w-[220px]">
                       <Link
                         href={`/admin/projects/${projectId}/templates/${t.id}/edit`}
-                        className="inline-flex items-center gap-1 max-w-full text-ink hover:text-accent hover:underline"
+                        className="inline-flex items-center gap-1 max-w-full font-semibold text-ink hover:underline"
                       >
                         <span className="min-w-0 truncate">{t.name}</span>
-                        <IconChevronRight size={13} stroke={2} className="text-ink-faint shrink-0" />
+                        <IconChevronRight size={13} stroke={2} className="shrink-0" />
                       </Link>
                     </Td>
-                    <Td className="text-ink-muted">
+                    <Td>
                       <button
                         type="button"
                         onClick={() => selectChannel(t.channel)}
-                        className="cursor-pointer hover:text-accent hover:underline"
+                        className="cursor-pointer hover:underline"
                       >
                         {CHANNEL_LABEL[t.channel]}
                       </button>
                     </Td>
-                    <Td className="text-ink-muted">
+                    <Td>
                       <button
                         type="button"
                         onClick={() => selectFolder(t.folder_id || "none")}
-                        className="cursor-pointer hover:text-accent hover:underline"
+                        className="cursor-pointer hover:underline"
                       >
                         {folderName(t.folder_id) || "—"}
                       </button>
@@ -440,7 +440,7 @@ export default function TemplatesManager({
                     <Td className="whitespace-nowrap">
                       <IdCopy id={t.id} />
                     </Td>
-                    <Td className="text-ink-faint whitespace-nowrap">
+                    <Td className="whitespace-nowrap">
                       {new Date(t.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}
                     </Td>
                     <Td className="max-w-[160px]" title={t.created_by_email || undefined}>
@@ -488,7 +488,7 @@ export default function TemplatesManager({
                         <button
                           type="button"
                           onClick={() => remove(t.id)}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-bad transition-colors hover:bg-surface-2 cursor-pointer"
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-bad transition-colors hover:bg-bad-tint cursor-pointer"
                           title="Удалить"
                         >
                           <IconTrash size={15} stroke={1.8} />

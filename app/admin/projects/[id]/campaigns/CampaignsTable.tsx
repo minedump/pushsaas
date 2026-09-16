@@ -289,7 +289,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
               <SortableTh label="Выручка" sortKey="revenue" active={sortKey === "revenue"} dir={sortDir} onClick={onSortClick} right />
               <SortableTh label="Оплачено" sortKey="paid" active={sortKey === "paid"} dir={sortDir} onClick={onSortClick} right />
               <SortableTh label="Дата" sortKey="created_at" active={sortKey === "created_at"} dir={sortDir} onClick={onSortClick} />
-              <Th> </Th>
+              <Th right>Действия</Th>
             </tr>
           </thead>
           <tbody>
@@ -307,7 +307,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
               const titleOverride = c.campaignId ? titleOverrides[c.campaignId] : undefined;
               const displayTitle = titleOverride !== undefined ? titleOverride || c.title : c.internal_title || c.title;
               return (
-                <tr key={c.id} className="border-t border-border group">
+                <tr key={c.id} className="border-t border-border row-hover group">
                   <Td>
                     <InlineTitle
                       value={displayTitle}
@@ -322,35 +322,35 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
                     {c.templateId ? (
                       <Link
                         href={`/admin/projects/${projectId}/templates/${c.templateId}/edit`}
-                        className="inline-flex items-center gap-1 max-w-[160px] text-ink hover:text-accent hover:underline"
+                        className="inline-flex items-center gap-1 max-w-[160px] font-semibold text-ink hover:underline"
                       >
                         <span className="min-w-0 truncate">{c.templateName || "Шаблон"}</span>
-                        <IconChevronRight size={13} stroke={2} className="text-ink-faint shrink-0" />
+                        <IconChevronRight size={13} stroke={2} className="shrink-0" />
                       </Link>
                     ) : (
                       <span className="text-ink-faint">—</span>
                     )}
                   </Td>
-                  <Td className="text-ink-muted whitespace-nowrap">
+                  <Td className="whitespace-nowrap">
                     <button
                       type="button"
                       onClick={() => {
                         setTypeFilter(c.type);
                         setPage(1);
                       }}
-                      className="cursor-pointer hover:text-accent hover:underline"
+                      className="cursor-pointer hover:underline"
                     >
                       {TYPE_LABEL[c.type]}
                     </button>
                   </Td>
-                  <Td className="text-ink-muted whitespace-nowrap">
+                  <Td className="whitespace-nowrap">
                     <button
                       type="button"
                       onClick={() => {
                         setInitiatorFilter(c.initiator);
                         setPage(1);
                       }}
-                      className="cursor-pointer hover:text-accent hover:underline"
+                      className="cursor-pointer hover:underline"
                     >
                       {INITIATOR_LABEL[c.initiator] || c.initiator}
                     </button>
@@ -367,7 +367,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
                   <Td right>{hasStats ? c.orders : "—"}</Td>
                   <Td right>{hasStats ? `${c.revenue.toLocaleString("ru-RU")} ₽` : "—"}</Td>
                   <Td right>{hasStats ? `${c.paid.toLocaleString("ru-RU")} ₽` : "—"}</Td>
-                  <Td className="text-ink-faint whitespace-nowrap">{new Date(c.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}</Td>
+                  <Td className="whitespace-nowrap">{new Date(c.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}</Td>
                   <Td className="text-right">
                     <div className="flex justify-end gap-1">
                       {c.campaignId && (
@@ -403,7 +403,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
                             type="button"
                             disabled={busyId === c.campaignId}
                             onClick={() => deleteDraft(c.campaignId!, c.status)}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-bad transition-colors hover:bg-surface-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-bad transition-colors hover:bg-bad-tint cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                             title={c.status === "draft" ? "Удалить черновик" : "Отменить"}
                           >
                             <IconTrash size={15} stroke={1.8} />

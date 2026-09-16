@@ -1764,7 +1764,8 @@ export default function AutomationsManager({
           <SegmentTagsInput value={w.segmentTags} onChange={(tags) => setW({ ...w, segmentTags: tags })} options={segmentOptions} />
           <div className="h-3" />
           <SendWindowFields value={w} onChange={(sw) => setW({ ...w, ...sw })} projectTimezone={projectTimezone} />
-          <div className="flex items-center gap-2 mt-4">
+          <div className="h-3" />
+          <div className="flex items-center gap-2">
             <Button disabled={w.cascade && !Object.keys(w.channelTemplates).length}>Создать</Button>
             <Button type="button" variant="secondary" onClick={() => setPreviewCreate(true)} disabled={!wPreviewTemplate}>
               <IconEye size={15} stroke={1.8} />

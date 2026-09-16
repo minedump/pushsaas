@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { IconGift, IconLogin2, IconPlayerPauseFilled, IconPlayerPlayFilled, IconSearch, IconX } from "@tabler/icons-react";
+import { IconChevronRight, IconGift, IconLogin2, IconPlayerPauseFilled, IconPlayerPlayFilled, IconSearch, IconX } from "@tabler/icons-react";
 import { createClient } from "@/lib/supabase/client";
 import { Badge, Button, Input, Pagination, useDialogs } from "@/app/ui";
 import { CustomSelect } from "@/app/ui/CustomSelect";
@@ -129,9 +129,15 @@ export default function ClientsTable({ rows, tariffs }: { rows: Row[]; tariffs: 
           </thead>
           <tbody>
             {paged.map((r) => (
-              <tr key={r.id} className={`border-t border-border ${busy === r.id ? "opacity-50" : ""}`}>
+              <tr key={r.id} className={`border-t border-border row-hover ${busy === r.id ? "opacity-50" : ""}`}>
                 <Td>
-                  <div className="font-semibold">{r.name}</div>
+                  <Link
+                    href={`/admin/projects/${r.id}`}
+                    className="inline-flex items-center gap-1 max-w-full font-semibold text-ink hover:underline"
+                  >
+                    <span className="min-w-0 truncate">{r.name}</span>
+                    <IconChevronRight size={13} stroke={2} className="shrink-0" />
+                  </Link>
                   <div className="text-ink-faint text-xs">{r.domain}</div>
                 </Td>
                 <Td className="text-ink-muted">
@@ -145,7 +151,8 @@ export default function ClientsTable({ rows, tariffs }: { rows: Row[]; tariffs: 
                     options={tariffs.map((t) => ({ value: t.id, label: t.name }))}
                     placeholder="Без тарифа"
                     ariaLabel={`Тариф проекта ${r.name}`}
-                    className="w-[160px]"
+                    size="sm"
+                    className="w-[140px]"
                   />
                 </Td>
                 <Td right>{r.subscribers}</Td>
@@ -203,7 +210,7 @@ export default function ClientsTable({ rows, tariffs }: { rows: Row[]; tariffs: 
 }
 
 const Th = ({ children, right }: { children: React.ReactNode; right?: boolean }) => (
-  <th className={`px-3.5 py-2.5 text-[11px] text-ink-faint font-normal whitespace-nowrap ${right ? "text-right" : "text-left"}`}>
+  <th className={`px-3.5 py-2.5 text-[11px] text-ink-muted font-normal whitespace-nowrap ${right ? "text-right" : "text-left"}`}>
     {children}
   </th>
 );

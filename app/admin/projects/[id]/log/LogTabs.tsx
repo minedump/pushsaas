@@ -117,7 +117,7 @@ function ErrorsTab({ rows, projectId }: { rows: ErrorRow[]; projectId: string })
           </thead>
           <tbody>
             {paged.map((r) => (
-              <tr key={r.id} className="border-t border-border">
+              <tr key={r.id} className="border-t border-border row-hover">
                 <Td className="truncate max-w-[220px]">{r.title}</Td>
                 <Td>
                   <Badge tone="accent">{CHANNEL_LABEL[r.channel] || r.channel}</Badge>
@@ -126,7 +126,7 @@ function ErrorsTab({ rows, projectId }: { rows: ErrorRow[]; projectId: string })
                   {r.templateId ? (
                     <Link
                       href={`/admin/projects/${projectId}/templates/${r.templateId}/edit`}
-                      className="inline-flex items-center gap-1 max-w-[160px] text-ink hover:text-accent hover:underline"
+                      className="inline-flex items-center gap-1 max-w-[160px] font-semibold text-ink hover:underline"
                     >
                       <span className="min-w-0 truncate">{r.templateName || "Шаблон"}</span>
                       <IconChevronRight size={13} stroke={2} className="text-ink-faint shrink-0" />
@@ -142,7 +142,7 @@ function ErrorsTab({ rows, projectId }: { rows: ErrorRow[]; projectId: string })
                     {STATUS_LABEL[r.status] || r.status}
                   </Badge>
                 </Td>
-                <Td className="text-ink-faint whitespace-nowrap">{new Date(r.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}</Td>
+                <Td className="whitespace-nowrap">{new Date(r.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}</Td>
               </tr>
             ))}
           </tbody>
@@ -171,7 +171,7 @@ function LoginsTab({ rows }: { rows: LoginRow[] }) {
           </thead>
           <tbody>
             {paged.map((r) => (
-              <tr key={r.id} className="border-t border-border">
+              <tr key={r.id} className="border-t border-border row-hover">
                 <Td>
                   <Badge tone="accent">{CHANNEL_LABEL[r.channel] || r.channel}</Badge>
                 </Td>
@@ -182,7 +182,7 @@ function LoginsTab({ rows }: { rows: LoginRow[] }) {
                     {LOGIN_STATUS_LABEL[r.status] || r.status}
                   </Badge>
                 </Td>
-                <Td className="text-ink-faint whitespace-nowrap">{new Date(r.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}</Td>
+                <Td className="whitespace-nowrap">{new Date(r.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}</Td>
               </tr>
             ))}
           </tbody>
@@ -206,19 +206,19 @@ function ApiTab({ rows }: { rows: ApiCallRow[] }) {
               <Th>Эндпоинт</Th>
               <Th>Статус</Th>
               <Th>Дата</Th>
-              <Th>{null}</Th>
+              <Th>Действия</Th>
             </tr>
           </thead>
           <tbody>
             {paged.map((r) => (
-              <tr key={r.id} className="border-t border-border">
+              <tr key={r.id} className="border-t border-border row-hover">
                 <Td className="font-mono">{ENDPOINT_LABEL[r.endpoint] || r.endpoint}</Td>
                 <Td>
                   <Badge tone={r.ok ? "good" : "bad"} dot>
                     {r.statusCode ?? (r.ok ? "успех" : "ошибка")}
                   </Badge>
                 </Td>
-                <Td className="text-ink-faint whitespace-nowrap">{new Date(r.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}</Td>
+                <Td className="whitespace-nowrap">{new Date(r.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}</Td>
                 <Td right>
                   <button
                     type="button"

@@ -83,7 +83,7 @@ export default function NewSubscriberForm({ projectId }: { projectId: string }) 
           <TagEditor tags={tags} onChange={setTags} />
         </div>
 
-        <div className="flex gap-2 mt-2">
+        <div className="flex gap-2">
           <Button disabled={busy}>{busy ? "Сохраняем…" : "Добавить"}</Button>
           <Button type="button" variant="secondary" onClick={() => router.push(`/admin/projects/${projectId}/subscribers`)}>
             Отмена

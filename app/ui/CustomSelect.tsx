@@ -7,6 +7,23 @@ import { cn } from "./cn";
 
 export type ComboOption = { value: string; label: string; disabled?: boolean };
 
+type Size = "sm" | "md";
+
+// sm — для селекта прямо в ячейке таблицы (например тариф в ClientsTable):
+// строка не резиновая, обычный md-триггер (py-2, text-sm) там визуально
+// тяжелее самой ячейки. Список опций в портале уменьшен вместе с триггером —
+// иначе триггер выглядит компактным, а раскрывшийся список — нет.
+const triggerSizes: Record<Size, string> = {
+  sm: "pl-2.5 pr-2 py-1.5 text-xs rounded-md",
+  md: "pl-3 pr-2.5 py-2 text-sm rounded-lg",
+};
+const chevronSizes: Record<Size, number> = { sm: 13, md: 16 };
+const checkSizes: Record<Size, number> = { sm: 13, md: 15 };
+const listItemSizes: Record<Size, string> = {
+  sm: "px-2.5 py-1.5 text-xs",
+  md: "px-3 py-2 text-sm",
+};
+
 // Настоящий выпадающий список (кнопка + позиционированный div), а не
 // стилизованный нативный <select> — у нативного список опций рисует сама ОС
 // и его нельзя оформить кросс-браузерно (см. Select.tsx, там как раз этот
@@ -26,6 +43,7 @@ export function CustomSelect({
   className,
   ariaLabel,
   footer,
+  size = "md",
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -37,6 +55,7 @@ export function CustomSelect({
   // выбираемая опция, а произвольное действие, поэтому передаётся как
   // готовый узел (ссылка/кнопка), а не как ComboOption.
   footer?: React.ReactNode;
+  size?: Size;
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -93,14 +112,15 @@ export function CustomSelect({
         aria-label={ariaLabel}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "group flex items-center justify-between gap-2 w-full text-sm pl-3 pr-2.5 py-2 rounded-lg border border-border bg-surface text-ink cursor-pointer transition-colors",
+          "group flex items-center justify-between gap-2 w-full border border-border bg-surface text-ink cursor-pointer transition-colors",
+          triggerSizes[size],
           "hover:border-accent-line focus:outline-none focus:ring-2 focus:ring-accent-line",
           open && "border-accent-line ring-2 ring-accent-line"
         )}
       >
         <span className={cn("truncate", !selected && "text-ink-faint")}>{selected ? selected.label : placeholder}</span>
         <IconChevronDown
-          size={16}
+          size={chevronSizes[size]}
           stroke={2}
           className={cn("shrink-0 text-ink-faint transition-[transform,color] group-hover:text-ink", open && "rotate-180")}
         />
@@ -115,7 +135,7 @@ export function CustomSelect({
             className="fixed z-[200] max-h-72 overflow-auto rounded-lg border border-border bg-surface shadow-lg py-1"
             style={{ top: pos.top, left: pos.left, width: pos.width, animation: "ui-pop .12s ease-out" }}
           >
-            {options.length === 0 && <li className="px-3 py-2 text-sm text-ink-faint">Нет вариантов</li>}
+            {options.length === 0 && <li className={cn("text-ink-faint", listItemSizes[size])}>Нет вариантов</li>}
             {options.map((o) => (
               <li key={o.value} role="option" aria-selected={o.value === value} aria-disabled={o.disabled}>
                 <button
@@ -126,7 +146,8 @@ export function CustomSelect({
                     setOpen(false);
                   }}
                   className={cn(
-                    "flex items-center justify-between gap-2 w-full text-left text-sm px-3 py-2 transition-colors",
+                    "flex items-center justify-between gap-2 w-full text-left transition-colors",
+                    listItemSizes[size],
                     o.disabled
                       ? "text-ink-faint opacity-50 cursor-not-allowed"
                       : o.value === value
@@ -135,7 +156,7 @@ export function CustomSelect({
                   )}
                 >
                   <span className="truncate">{o.label}</span>
-                  {o.value === value && <IconCheck size={15} stroke={2.2} className="shrink-0" />}
+                  {o.value === value && <IconCheck size={checkSizes[size]} stroke={2.2} className="shrink-0" />}
                 </button>
               </li>
             ))}

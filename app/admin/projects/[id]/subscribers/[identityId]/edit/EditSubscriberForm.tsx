@@ -169,7 +169,7 @@ export default function EditSubscriberForm({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 mt-2">
+        <div className="flex items-center gap-2">
           <Button disabled={busy}>{busy ? "Сохраняем…" : "Сохранить"}</Button>
           <Button type="button" variant="secondary" onClick={() => router.push(`/admin/projects/${projectId}/subscribers`)}>
             Отмена

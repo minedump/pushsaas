@@ -84,44 +84,54 @@ function LoginForm() {
       </div>
 
       <Card>
-        <form onSubmit={submit}>
-          {/* Тот же размер, что у заголовка модалки (Modal.tsx: `text-base
-              font-semibold m-0`) — эта форма визуально то же окно с полями,
-              просто без затемнения вокруг, поэтому и заголовок того же ранга. */}
-          <h1 className="text-base font-semibold m-0 mb-4">{mode === "signin" ? "Вход в панель управления" : "Регистрация"}</h1>
+        {/* Тот же размер, что у заголовка модалки (Modal.tsx: `text-base
+            font-semibold m-0`) — эта форма визуально то же окно с полями,
+            просто без затемнения вокруг, поэтому и заголовок того же ранга.
+            Отступ до первого поля (mb-3, 12px) — тот же, что у заголовка
+            карточки в ProjectSettings ("Данные проекта") — единое правило
+            расстояний внутри формы, не разное на каждой странице. */}
+        <h1 className="text-base font-semibold m-0 mb-3">{mode === "signin" ? "Вход в панель управления" : "Регистрация"}</h1>
+        {/* gap-3 (12px) на самой форме — единственное правило расстояний
+            между полями и до кнопки, ни один ребёнок не получает свой
+            отдельный mt/mb поверх него (тот же приём, что в NewCampaignForm/
+            NewTemplateForm/ProjectSettings/ManifestSetup — самых больших
+            формах проекта). */}
+        <form onSubmit={submit} className="flex flex-col gap-3">
           {mode === "signup" && (
-            <>
+            <div>
               <Label>Имя</Label>
               <Input value={name} onChange={(e) => setName(e.target.value)} required autoComplete="name" />
-              <div className="h-3.5" />
-            </>
+            </div>
           )}
-          <Label>Email</Label>
-          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
-          <div className="h-3.5" />
-          <Label>Пароль</Label>
-          <Input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={6}
-            autoComplete={mode === "signin" ? "current-password" : "new-password"}
-          />
+          <div>
+            <Label>Email</Label>
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
+          </div>
+          <div>
+            <Label>Пароль</Label>
+            <Input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
+              autoComplete={mode === "signin" ? "current-password" : "new-password"}
+            />
+          </div>
 
           {mode === "signup" && (
-            <div className="flex flex-col gap-2.5 mt-4">
+            <div className="flex flex-col gap-2.5">
               <Checkbox
                 checked={consentPersonalData}
                 onChange={setConsentPersonalData}
                 label={
                   <span className="text-ink-muted">
                     Согласен с{" "}
-                    <a href="/legal/privacy" target="_blank" className="text-accent hover:underline">
+                    <a href="/legal/privacy" target="_blank" className="text-accent underline">
                       политикой конфиденциальности
                     </a>{" "}
                     и даю{" "}
-                    <a href="/legal/personal-data" target="_blank" className="text-accent hover:underline">
+                    <a href="/legal/personal-data" target="_blank" className="text-accent underline">
                       согласие на обработку персональных данных
                     </a>
                   </span>
@@ -135,8 +145,8 @@ function LoginForm() {
             </div>
           )}
 
-          {error && <p className="text-bad text-[13px] mt-3.5">{error}</p>}
-          <Button className="w-full mt-5" disabled={busy}>
+          {error && <p className="text-bad text-[13px] m-0">{error}</p>}
+          <Button className="w-full" disabled={busy}>
             {busy ? "…" : mode === "signin" ? "Войти" : "Зарегистрироваться"}
           </Button>
         </form>
