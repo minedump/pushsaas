@@ -78,16 +78,17 @@ function LoginForm() {
           компактный 16px/20px — тот, что использует шапка панели
           (AdminShell.tsx). Здесь эта строка играет роль заголовка страницы,
           поэтому крупнее уместнее. */}
-      <div className="flex items-center gap-2 font-bold text-2xl text-ink mb-1">
+      <div className="flex items-center gap-2 font-bold text-2xl text-ink mb-7">
         <IconBell size={28} stroke={1.8} className="text-accent" />
         SENDERA
       </div>
-      <p className="text-ink-muted mt-0 mb-7">
-        {mode === "signin" ? "Вход в панель управления" : "Регистрация"}
-      </p>
 
       <Card>
         <form onSubmit={submit}>
+          {/* Тот же размер, что у заголовка модалки (Modal.tsx: `text-base
+              font-semibold m-0`) — эта форма визуально то же окно с полями,
+              просто без затемнения вокруг, поэтому и заголовок того же ранга. */}
+          <h1 className="text-base font-semibold m-0 mb-4">{mode === "signin" ? "Вход в панель управления" : "Регистрация"}</h1>
           {mode === "signup" && (
             <>
               <Label>Имя</Label>
