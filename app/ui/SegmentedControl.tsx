@@ -17,14 +17,14 @@ export function SegmentedControl<T extends string>({
   className?: string;
 }) {
   return (
-    <div className={cn("inline-flex items-center gap-1 p-1 rounded-lg bg-surface-2 border border-border", className)}>
+    <div className={cn("inline-flex items-center gap-1 p-1 rounded-xl bg-surface-2 border border-border", className)}>
       {options.map((o) => (
         <button
           key={o.value}
           type="button"
           onClick={() => onChange(o.value)}
           className={cn(
-            "px-3 h-7 shrink-0 rounded-md text-[13px] font-medium cursor-pointer transition-colors",
+            "px-3 h-7 shrink-0 rounded-lg text-[13px] font-medium cursor-pointer transition-colors",
             o.value === value ? "bg-accent text-white shadow-sm" : "text-ink-muted hover:text-ink hover:bg-surface"
           )}
         >

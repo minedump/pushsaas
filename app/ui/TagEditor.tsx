@@ -12,7 +12,7 @@ export function TagEditor({ tags, onChange }: { tags: string[]; onChange: (t: st
     setInput("");
   }
   return (
-    <div className="flex flex-wrap gap-1.5 items-center">
+    <div className="w-full flex flex-wrap items-center gap-1.5 min-h-[38px] rounded-xl border border-border bg-surface px-2.5 py-1.5 focus-within:outline-none focus-within:ring-2 focus-within:ring-accent-line">
       {tags.map((t) => (
         <Badge key={t} tone="accent">
           <span className="inline-block -translate-y-px">{t}</span>
@@ -37,7 +37,7 @@ export function TagEditor({ tags, onChange }: { tags: string[]; onChange: (t: st
         }}
         onBlur={add}
         placeholder="+ тег"
-        className="border border-dashed border-border rounded-full px-2 py-0.5 text-xs bg-transparent text-ink w-[70px] focus:outline-none focus:border-accent"
+        className="flex-1 min-w-[70px] border-0 outline-none bg-transparent text-sm text-ink placeholder:text-ink-faint"
       />
     </div>
   );

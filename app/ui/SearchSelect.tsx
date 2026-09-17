@@ -106,7 +106,7 @@ export function SearchSelect({
           }}
           placeholder={selected ? selected.label : placeholder}
           className={cn(
-            "w-full text-sm pl-3 pr-8 py-2 rounded-lg border border-border bg-surface text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-accent-line",
+            "w-full text-sm pl-3 pr-8 py-2 rounded-xl border border-border bg-surface text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-accent-line",
             allowCustom ? "cursor-text" : "cursor-pointer"
           )}
         />
@@ -126,7 +126,7 @@ export function SearchSelect({
           <ul
             ref={listRef}
             role="listbox"
-            className="fixed z-[200] max-h-72 overflow-auto rounded-lg border border-border bg-surface shadow-lg py-1"
+            className="fixed z-[200] max-h-72 overflow-auto pretty-scroll rounded-xl border border-border bg-surface shadow-lg p-1"
             style={{ top: pos.top, left: pos.left, width: pos.width, animation: "ui-pop .12s ease-out" }}
           >
             {filtered.length === 0 && <li className="px-3 py-2 text-sm text-ink-faint">{emptyText}</li>}
@@ -141,7 +141,7 @@ export function SearchSelect({
                     setQuery("");
                   }}
                   className={cn(
-                    "flex items-center justify-between gap-2 w-full text-left text-sm px-3 py-2 transition-colors",
+                    "flex items-center justify-between gap-2 w-full text-left text-sm px-3 py-2 rounded-lg transition-colors",
                     o.disabled
                       ? "text-ink-faint opacity-50 cursor-not-allowed"
                       : o.value === value

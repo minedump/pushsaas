@@ -49,7 +49,7 @@ export function SegmentTagsInput({
     <div ref={rootRef} className="relative">
       <div
         className={cn(
-          "flex flex-wrap items-center gap-1.5 w-full min-h-[38px] px-2.5 py-1.5 rounded-lg border border-border bg-surface transition-colors",
+          "flex flex-wrap items-center gap-1.5 w-full min-h-[38px] px-2.5 py-1.5 rounded-xl border border-border bg-surface transition-colors",
           disabled ? "opacity-60" : "focus-within:border-accent-line focus-within:ring-2 focus-within:ring-accent-line"
         )}
       >
@@ -91,7 +91,7 @@ export function SegmentTagsInput({
       {open && !disabled && suggestions.length > 0 && (
         <ul
           role="listbox"
-          className="absolute left-0 right-0 z-30 mt-1.5 max-h-56 overflow-auto rounded-lg border border-border bg-surface shadow-lg py-1"
+          className="absolute left-0 right-0 z-30 mt-1.5 max-h-56 overflow-auto pretty-scroll rounded-xl border border-border bg-surface shadow-lg p-1"
           style={{ animation: "ui-pop .12s ease-out" }}
         >
           {suggestions.map((o) => (
@@ -100,7 +100,7 @@ export function SegmentTagsInput({
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => addTag(o)}
-                className="flex items-center w-full text-left text-sm px-3 py-2 cursor-pointer text-ink transition-colors hover:bg-surface-2"
+                className="flex items-center w-full text-left text-sm px-3 py-2 rounded-lg cursor-pointer text-ink transition-colors hover:bg-surface-2"
               >
                 {o}
               </button>

@@ -14,14 +14,15 @@ type Size = "sm" | "md";
 // тяжелее самой ячейки. Список опций в портале уменьшен вместе с триггером —
 // иначе триггер выглядит компактным, а раскрывшийся список — нет.
 const triggerSizes: Record<Size, string> = {
-  sm: "pl-2.5 pr-2 py-1.5 text-xs rounded-md",
-  md: "pl-3 pr-2.5 py-2 text-sm rounded-lg",
+  sm: "pl-2.5 pr-2 py-1.5 text-xs rounded-lg",
+  md: "pl-3 pr-2.5 py-2 text-sm rounded-xl",
 };
+const listRadii: Record<Size, string> = { sm: "rounded-lg", md: "rounded-xl" };
 const chevronSizes: Record<Size, number> = { sm: 13, md: 16 };
 const checkSizes: Record<Size, number> = { sm: 13, md: 15 };
 const listItemSizes: Record<Size, string> = {
-  sm: "px-2.5 py-1.5 text-xs",
-  md: "px-3 py-2 text-sm",
+  sm: "px-2.5 py-1.5 text-xs rounded-md",
+  md: "px-3 py-2 text-sm rounded-lg",
 };
 
 // Настоящий выпадающий список (кнопка + позиционированный div), а не
@@ -132,7 +133,7 @@ export function CustomSelect({
           <ul
             ref={listRef}
             role="listbox"
-            className="fixed z-[200] max-h-72 overflow-auto rounded-lg border border-border bg-surface shadow-lg py-1"
+            className={cn("fixed z-[200] max-h-72 overflow-auto pretty-scroll border border-border bg-surface shadow-lg p-1", listRadii[size])}
             style={{ top: pos.top, left: pos.left, width: pos.width, animation: "ui-pop .12s ease-out" }}
           >
             {options.length === 0 && <li className={cn("text-ink-faint", listItemSizes[size])}>Нет вариантов</li>}

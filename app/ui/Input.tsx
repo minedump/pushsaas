@@ -5,7 +5,7 @@ import { IconLock, IconEye, IconEyeOff, IconInfoCircle } from "@tabler/icons-rea
 import { cn } from "./cn";
 
 const base =
-  "w-full text-sm px-3 py-2 rounded-lg border border-border bg-surface text-ink " +
+  "w-full text-sm px-3 py-2 rounded-xl border border-border bg-surface text-ink " +
   "placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-accent-line focus:ring-offset-0 " +
   "disabled:opacity-60 disabled:cursor-not-allowed";
 

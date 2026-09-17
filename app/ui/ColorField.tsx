@@ -136,7 +136,7 @@ function CustomColorPicker({ hex, onChange }: { hex: string; onChange: (hex: str
       <div
         ref={sv.ref}
         onPointerDown={sv.onPointerDown}
-        className="relative w-full h-[130px] rounded-lg cursor-crosshair touch-none"
+        className="relative w-full h-[130px] rounded-xl cursor-crosshair touch-none"
         style={{
           background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, ${pureHue})`,
         }}
@@ -214,7 +214,7 @@ export function ColorField({
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="w-9 h-9 shrink-0 rounded-lg border border-border shadow-inner cursor-pointer"
+          className="w-9 h-9 shrink-0 rounded-full border border-border shadow-inner cursor-pointer"
           style={{ backgroundColor: normalized }}
           aria-label="Выбрать цвет"
           title="Выбрать цвет"
@@ -229,7 +229,7 @@ export function ColorField({
           // пикера должен оставаться поверх него, а не наоборот.
           <div
             ref={popRef}
-            className="fixed z-[1000000] flex flex-col gap-3 bg-surface border border-border rounded-lg shadow-lg p-3 w-max"
+            className="fixed z-[1000000] flex flex-col gap-3 bg-surface border border-border rounded-xl shadow-lg p-3 w-max"
             style={{ top: pos.top, left: pos.left, animation: "ui-pop .12s ease-out" }}
           >
             <CustomColorPicker hex={normalized} onChange={onChange} />

@@ -169,7 +169,7 @@ export default function AdminShell({
                 ariaLabel="Текущий проект"
                 className="w-[220px]"
                 footer={
-                  <a href="/admin/projects/new" className="flex items-center gap-2 w-full text-left text-sm px-3 py-2 text-ink transition-colors hover:bg-surface-2 cursor-pointer no-underline">
+                  <a href="/admin/projects/new" className="flex items-center gap-2 w-full text-left text-sm px-3 py-2 rounded-lg text-ink transition-colors hover:bg-surface-2 cursor-pointer no-underline">
                     <IconPlus size={15} stroke={2} />
                     Создать проект
                   </a>
@@ -185,7 +185,7 @@ export default function AdminShell({
             <button
               onClick={logout}
               title="Выход"
-              className="grid place-items-center w-[38px] h-[38px] rounded-lg border border-border text-ink bg-surface transition-colors hover:bg-surface-2 cursor-pointer"
+              className="grid place-items-center w-[38px] h-[38px] rounded-xl btn-shift btn-shift-secondary border border-border text-ink cursor-pointer"
             >
               <IconLogout size={18} stroke={1.8} />
             </button>
@@ -309,7 +309,7 @@ function ProjectSwitcherIcon({
         title={current?.name || "Все проекты"}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "grid place-items-center w-[38px] h-[38px] rounded-lg border border-border text-ink bg-surface hover:bg-surface-2 cursor-pointer transition-colors",
+          "grid place-items-center w-[38px] h-[38px] rounded-xl btn-shift btn-shift-secondary border border-border text-ink cursor-pointer",
           open && "border-accent-line ring-2 ring-accent-line"
         )}
       >
@@ -319,7 +319,7 @@ function ProjectSwitcherIcon({
       {open && (
         <ul
           role="listbox"
-          className="absolute right-0 z-30 mt-1.5 w-56 max-h-72 overflow-auto pretty-scroll rounded-lg border border-border bg-surface shadow-lg py-1"
+          className="absolute right-0 z-30 mt-1.5 w-56 max-h-72 overflow-auto pretty-scroll rounded-xl border border-border bg-surface shadow-lg p-1"
           style={{ animation: "ui-pop .12s ease-out" }}
         >
           {[{ id: ALL_PROJECTS, name: "Все проекты" }, ...projects].map((p) => (
@@ -331,7 +331,7 @@ function ProjectSwitcherIcon({
                   setOpen(false);
                 }}
                 className={cn(
-                  "flex items-center justify-between gap-2 w-full text-left text-sm px-3 py-2 transition-colors cursor-pointer",
+                  "flex items-center justify-between gap-2 w-full text-left text-sm px-3 py-2 rounded-lg transition-colors cursor-pointer",
                   p.id === (currentProjectId || ALL_PROJECTS) ? "bg-accent-tint text-accent font-semibold" : "text-ink hover:bg-surface-2"
                 )}
               >
@@ -344,7 +344,7 @@ function ProjectSwitcherIcon({
           <li>
             <a
               href="/admin/projects/new"
-              className="flex items-center gap-2 w-full text-left text-sm px-3 py-2 text-ink transition-colors hover:bg-surface-2 cursor-pointer no-underline"
+              className="flex items-center gap-2 w-full text-left text-sm px-3 py-2 rounded-lg text-ink transition-colors hover:bg-surface-2 cursor-pointer no-underline"
             >
               <IconPlus size={15} stroke={2} />
               Создать проект
@@ -387,7 +387,7 @@ function ThemeToggle() {
     <button
       onClick={toggle}
       title={mounted ? (isDark ? "Светлая тема" : "Тёмная тема") : undefined}
-      className="grid place-items-center w-[38px] h-[38px] rounded-lg border border-border text-ink bg-surface transition-colors hover:bg-surface-2 cursor-pointer"
+      className="grid place-items-center w-[38px] h-[38px] rounded-xl btn-shift btn-shift-secondary border border-border text-ink cursor-pointer"
     >
       {isDark ? <IconSun size={18} stroke={1.8} /> : <IconMoon size={18} stroke={1.8} />}
     </button>

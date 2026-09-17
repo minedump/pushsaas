@@ -19,8 +19,8 @@ const variants: Record<Variant, string> = {
   ghost: "btn-shift btn-shift-ghost text-ink-muted border border-transparent",
 };
 const sizes: Record<Size, string> = {
-  sm: "px-2.5 py-1.5 text-xs rounded-md gap-1.5",
-  md: "px-4 py-2 text-sm rounded-lg gap-2",
+  sm: "px-2.5 py-1.5 text-xs rounded-lg gap-1.5",
+  md: "px-4 py-2 text-sm rounded-xl gap-2",
 };
 const dangerIconSize: Record<Size, number> = { sm: 14, md: 16 };
 
