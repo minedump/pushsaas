@@ -180,7 +180,7 @@ export default async function AnalyticsPage({
       <AnalyticsPeriodSwitcher period={period} defaultFrom={toISODate(since)} defaultTo={toISODate(until)} />
 
       {/* top tiles */}
-      <div className="flex gap-3 mt-10 flex-wrap">
+      <div className="flex gap-3 mt-4 sm:mt-8 flex-wrap">
         <Tile label="Отправлено" value={totalSent} />
         <Tile label="CTR по рассылкам" value={`${ctr}%`} />
         <Tile label="Выручка" value={`${revenue.toLocaleString("ru-RU")} ₽`} />
@@ -189,20 +189,20 @@ export default async function AnalyticsPage({
 
       {/* delivered/clicked per recent campaign */}
       {chart.length > 0 && (
-        <Card className="mt-10">
+        <Card className="mt-4 sm:mt-8">
           <div className="text-[13px] text-ink-muted mb-3">Отправки и клики по последним рассылкам</div>
           <BarChart data={chart} max={maxChartVal} />
         </Card>
       )}
 
       {/* growth chart */}
-      <Card className="mt-10">
+      <Card className="mt-4 sm:mt-8">
         <div className="text-[13px] text-ink-muted mb-3">Рост подписчиков по каналам — новые за день</div>
         <GrowthChart data={days} max={maxDay} />
       </Card>
 
       {/* best send time */}
-      <Card className="mt-10">
+      <Card className="mt-4 sm:mt-8">
         <div className="text-[13px] text-ink-muted mb-1">Лучшее время для отправки</div>
         <p className="text-[12px] text-ink-faint mt-0 mb-3">
           По факту вовлечённости уже доставленных рассылок (клики{bestTimes.hasEmail ? ", для email ещё и открытия" : ""}) — часовой пояс
@@ -238,7 +238,7 @@ export default async function AnalyticsPage({
       </Card>
 
       {/* top campaigns */}
-      <Card className="mt-10">
+      <Card className="mt-4 sm:mt-8">
         <div className="text-[13px] text-ink-muted mb-3">Лучшие рассылки по CTR</div>
         {topByCtr.length === 0 ? (
           <div className="text-ink-faint text-sm">Пока нет отправленных рассылок</div>
@@ -258,7 +258,7 @@ export default async function AnalyticsPage({
       </Card>
 
       {/* widget funnel */}
-      <Card className="mt-10">
+      <Card className="mt-4 sm:mt-8">
         <div className="text-[13px] text-ink-muted mb-3">Виджеты подписки</div>
         {widgetStats.button.shown === 0 && widgetStats.prompt.shown === 0 ? (
           <div className="text-ink-faint text-sm">Пока пусто — появится после первых показов кнопки/плашки.</div>

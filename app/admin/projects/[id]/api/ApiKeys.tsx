@@ -75,7 +75,7 @@ export default function ApiKeys({
   }
 
   return (
-    <div className={`mt-10 ${busy ? "opacity-60" : ""}`}>
+    <div className={`mt-4 sm:mt-8 ${busy ? "opacity-60" : ""}`}>
       {fresh && (
         <Card className="border-good bg-good-tint">
           <div className="text-[13px] font-semibold mb-1.5">Ключ создан — скопируйте сейчас, больше он не покажется:</div>

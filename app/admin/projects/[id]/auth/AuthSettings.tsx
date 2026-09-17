@@ -388,7 +388,7 @@ export default function AuthSettings({
 
   if (!initial) {
     return (
-      <Card className="mt-10">
+      <Card className="mt-4 sm:mt-8">
         <p className="text-sm text-ink-muted m-0">
           Нажмите кнопку — мы создадим OIDC-конфигурацию (client_id, ключ подписи, секрет) и покажем значения для
           вставки в админку InSales.
@@ -414,7 +414,7 @@ export default function AuthSettings({
   return (
     <div className={busy ? "opacity-60" : ""}>
       {freshSecret && (
-        <Card className="mt-10 border-good bg-good-tint">
+        <Card className="mt-4 sm:mt-8 border-good bg-good-tint">
           <div className="text-[13px] font-semibold mb-1.5">
             Секрет создан — скопируйте в InSales сейчас, больше он не покажется:
           </div>
@@ -422,7 +422,7 @@ export default function AuthSettings({
         </Card>
       )}
 
-      <h2 className="text-base font-semibold mt-10">Каскад отправки кода</h2>
+      <h2 className="text-base font-semibold mt-4 sm:mt-8">Каскад отправки кода</h2>
       <div className="mt-3 flex flex-col gap-1.5">
         {order.map((key) => (
           <ChannelRow
@@ -443,7 +443,7 @@ export default function AuthSettings({
         ))}
       </div>
 
-      <h2 className="text-base font-semibold mt-10">Настройки</h2>
+      <h2 className="text-base font-semibold mt-4 sm:mt-8">Настройки</h2>
 
       <IntegrationCard title="Статус входа" configured={isEnabled}>
         <div className="flex items-center justify-between gap-3">
@@ -571,7 +571,7 @@ export default function AuthSettings({
         <CopyBox text={embedSnippet} />
       </IntegrationCard>
 
-      <h2 className="text-base font-semibold mt-10">Оформление страницы входа</h2>
+      <h2 className="text-base font-semibold mt-4 sm:mt-8">Оформление страницы входа</h2>
       <p className="text-sm text-ink-muted mt-1">Внешний вид кнопки и поля ввода на странице входа (телефон/почта/код).</p>
       <div className="mt-3 flex flex-col gap-4">
         <Card className={`flex flex-col gap-3 ${busyLoginStyle ? "opacity-60" : ""}`}>
@@ -656,7 +656,7 @@ export default function AuthSettings({
       </div>
 
       {!projectDomain && (
-        <Card className="mt-10 border-warn bg-warn-tint">
+        <Card className="mt-4 sm:mt-8 border-warn bg-warn-tint">
           <p className="text-[13px] m-0">
             У проекта не указан домен сайта — привязка устройств к телефону (бесплатные push-коды) не будет работать,
             коды пойдут через Telegram/SMS. Укажите домен в настройках проекта.

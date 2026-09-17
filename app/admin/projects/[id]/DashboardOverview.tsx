@@ -36,24 +36,24 @@ export default function DashboardOverview({
         value={period}
         onChange={setPeriod}
         options={(["today", "week", "month"] as Period[]).map((k) => ({ value: k, label: PERIOD_LABEL[k] }))}
-        className="mt-10"
+        className="mt-4 sm:mt-8"
       />
 
-      <div className="text-[13px] text-ink-muted mt-10 mb-2">Отправлено</div>
+      <div className="text-[13px] text-ink-muted mt-4 sm:mt-8 mb-2">Отправлено</div>
       <div className="flex gap-3 flex-wrap">
         <Tile label="Push" value={s.push} />
         <Tile label="SMS" value={s.sms} />
         <Tile label="Email" value={s.email} />
       </div>
 
-      <div className="text-[13px] text-ink-muted mt-10 mb-2">Активные подписчики</div>
+      <div className="text-[13px] text-ink-muted mt-4 sm:mt-8 mb-2">Активные подписчики</div>
       <div className="flex gap-3 flex-wrap">
         <Tile label="Push" value={a.push} />
         <Tile label="SMS" value={a.sms} />
         <Tile label="Email" value={a.email} />
       </div>
 
-      <div className="text-[13px] text-ink-muted mt-10 mb-2">Push по платформам</div>
+      <div className="text-[13px] text-ink-muted mt-4 sm:mt-8 mb-2">Push по платформам</div>
       <div className="flex gap-3 flex-wrap">
         <Tile label="iPhone (iOS)" value={p.ios} />
         <Tile label="Android" value={p.android} />

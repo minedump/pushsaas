@@ -293,7 +293,7 @@ export default async function ApiPage({ params }: { params: Promise<{ id: string
 
       <ApiKeys projectId={id} initial={keys ?? []} providerOptions={providerOptions} />
 
-      <section className="mt-10">
+      <section className="mt-4 sm:mt-8">
         <h2 className="text-lg font-semibold mb-1">Эндпоинты</h2>
 
         <ButtonLink href="/api/v1/docs" variant="secondary" size="sm" className="mt-1 mb-3 w-fit" download="sendera-api.md">

@@ -129,7 +129,7 @@ export default async function LogPage({ params }: { params: Promise<{ id: string
     <main className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-semibold">Журнал</h1>
 
-      <div className="mt-10">
+      <div className="mt-4 sm:mt-8">
         <LogTabs projectId={id} errorRows={errorRows} loginRows={loginRows} apiCallRows={apiCallRows} />
       </div>
     </main>

@@ -84,7 +84,7 @@ export default function TariffsManager({ initial }: { initial: Tariff[] }) {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   return (
-    <div className={`mt-10 ${busy ? "opacity-60" : ""}`}>
+    <div className={`mt-4 sm:mt-8 ${busy ? "opacity-60" : ""}`}>
       {initial.map((t) => (
         <TariffRow
           key={t.id}
@@ -98,7 +98,7 @@ export default function TariffsManager({ initial }: { initial: Tariff[] }) {
         />
       ))}
 
-      <Card className="mt-10">
+      <Card className="mt-4 sm:mt-8">
         <form onSubmit={create}>
           <div className="font-semibold mb-3">Новый тариф</div>
           <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>

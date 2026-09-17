@@ -47,7 +47,7 @@ export default function AttributionSettings({
   }
 
   return (
-    <section className="mt-10">
+    <section className="mt-4 sm:mt-8">
       <h2 className="text-lg font-semibold mb-1">Атрибуция заказов к рассылкам</h2>
       <p className="text-[13px] text-ink-muted mt-0 mb-3">
         Добавьте вебхук ниже в настройках магазина — и заказы, оформленные после перехода по рассылке, начнут

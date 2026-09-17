@@ -185,7 +185,7 @@ export default async function SubscribersPage({ params }: { params: Promise<{ id
         </div>
       </div>
 
-      <div className="mt-10">
+      <div className="mt-4 sm:mt-8">
         {rows.length === 0 ? (
           <Card className="text-ink-muted">
             Пока нет подписчиков. Они появятся, когда посетители нажмут кнопку «🔔 Уведомления» на сайте, или

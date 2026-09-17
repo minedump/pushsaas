@@ -14,7 +14,7 @@ export default async function ProfilePage() {
     <main className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-semibold">Профиль</h1>
 
-      <Card className="mt-10">
+      <Card className="mt-4 sm:mt-8">
         <h2 className="text-base font-semibold m-0 mb-3">Личные данные</h2>
         <EditName initialName={profile?.full_name ?? null} email={user?.email ?? ""} />
         <div className="text-xs text-ink-muted mb-1.5 mt-4">Роль</div>

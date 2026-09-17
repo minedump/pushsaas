@@ -185,7 +185,7 @@ export default function ProjectSettings({
 
   return (
     <>
-      <section className="mt-10">
+      <section className="mt-4 sm:mt-8">
         <h2 className="text-lg font-semibold mb-1">Общие настройки</h2>
         <p className="text-[13px] text-ink-muted mt-0 mb-3">Название, аналитика и часовой пояс проекта.</p>
 
@@ -269,7 +269,7 @@ export default function ProjectSettings({
         </Card>
       </section>
 
-      <section className="mt-10">
+      <section className="mt-4 sm:mt-8">
         <h2 className="text-lg font-semibold mb-1">Товарный фид</h2>
         <p className="text-[13px] text-ink-muted mt-0 mb-3">
           Подключите товарный фид, чтобы подставлять название, цену и картинку товара прямо в текст рассылок.

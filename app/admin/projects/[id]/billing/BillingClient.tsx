@@ -108,7 +108,7 @@ export default function BillingClient({
   const canPay = Boolean(publicId) && ready;
 
   return (
-    <div className="mt-10">
+    <div className="mt-4 sm:mt-8">
       <Card>
         <div className="flex justify-between items-start flex-wrap gap-3">
           <div>
@@ -135,7 +135,7 @@ export default function BillingClient({
         )}
       </Card>
 
-      <h2 className="text-base font-semibold mt-10">Тарифы</h2>
+      <h2 className="text-base font-semibold mt-4 sm:mt-8">Тарифы</h2>
       <div className="grid gap-3 mt-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
         {tariffs.map((t) => {
           const isCurrent = t.id === project.tariff_id;
@@ -162,7 +162,7 @@ export default function BillingClient({
         })}
       </div>
 
-      <h2 className="text-base font-semibold mt-10">
+      <h2 className="text-base font-semibold mt-4 sm:mt-8">
         Разовые пакеты <span className="text-xs text-ink-faint font-normal">(не сгорают)</span>
       </h2>
       <div className="grid gap-3 mt-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>

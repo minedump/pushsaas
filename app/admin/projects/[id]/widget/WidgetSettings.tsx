@@ -143,7 +143,7 @@ export default function WidgetSettings({
     <>
       <SenderaApiDocs />
 
-      <h2 className="text-base font-semibold mt-10">Плавающая кнопка подписки</h2>
+      <h2 className="text-base font-semibold mt-4 sm:mt-8">Плавающая кнопка подписки</h2>
       <p className="text-sm text-ink-muted mt-1">Кнопка в углу экрана вызывающая окно подписки на уведомления.</p>
       <div className="mt-3 flex flex-col gap-4">
         <Card className={`flex flex-col gap-3 ${busyButton ? "opacity-60" : ""}`}>
@@ -214,7 +214,7 @@ export default function WidgetSettings({
         </div>
       </div>
 
-      <h2 className="text-base font-semibold mt-10">Плашка перед системным запросом</h2>
+      <h2 className="text-base font-semibold mt-4 sm:mt-8">Плашка перед системным запросом</h2>
       <p className="text-sm text-ink-muted mt-1">
         Плашка со своим текстом и кнопками «Разрешить»/«Не сейчас» — выезжает сверху на телефоне, всплывает в левом
         верхнем углу на компьютере, прямо перед настоящим системным диалогом браузера.
