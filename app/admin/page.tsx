@@ -26,7 +26,7 @@ export default async function AdminHome() {
         </ButtonLink>
       </div>
 
-      <div className="mt-7">
+      <div className="mt-10">
         {!projects?.length && (
           <Card className="mt-3 text-ink-muted">Пока нет проектов. Нажмите «Создать проект», чтобы начать собирать подписчиков.</Card>
         )}

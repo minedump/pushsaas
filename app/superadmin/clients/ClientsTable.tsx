@@ -94,7 +94,7 @@ export default function ClientsTable({ rows, tariffs }: { rows: Row[]; tariffs: 
 
   return (
     <div>
-      <div className="relative mt-4">
+      <div className="relative mt-10">
         <IconSearch size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint pointer-events-none" />
         <Input
           value={query}

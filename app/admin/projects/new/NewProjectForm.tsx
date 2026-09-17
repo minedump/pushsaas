@@ -34,7 +34,7 @@ export default function NewProjectForm() {
     <main className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-semibold">Новый проект</h1>
 
-      <Card className="mt-5">
+      <Card className="mt-10">
         <form onSubmit={submit} className="flex flex-col gap-3">
           <div>
             <Label>Название</Label>

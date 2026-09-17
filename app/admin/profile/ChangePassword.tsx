@@ -27,7 +27,7 @@ export default function ChangePassword() {
   }
 
   return (
-    <Card className="mt-8">
+    <Card className="mt-10">
       <h2 className="text-base font-semibold m-0 mb-3">Сменить пароль</h2>
       <form onSubmit={submit} className="flex flex-col gap-3">
         <div>

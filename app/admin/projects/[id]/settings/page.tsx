@@ -73,7 +73,7 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
     <main className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-semibold m-0">Настройки</h1>
 
-      <section className="mt-5">
+      <section className="mt-10">
         <h2 className="text-lg font-semibold">Подключение</h2>
 
         <SetupStep

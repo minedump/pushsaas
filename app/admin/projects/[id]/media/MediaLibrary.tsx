@@ -240,7 +240,7 @@ export default function MediaLibrary({
       </div>
 
       {/* Папки */}
-      <div className="flex items-center gap-1.5 flex-wrap mt-5 mb-4">
+      <div className="flex items-center gap-1.5 flex-wrap mt-10 mb-4">
         <FilterChip active={folderFilter === "all"} onClick={() => selectFolder("all")}>
           Все папки ({initialAssets.length})
         </FilterChip>

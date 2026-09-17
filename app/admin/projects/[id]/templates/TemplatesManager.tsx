@@ -304,7 +304,7 @@ export default function TemplatesManager({
       </div>
 
       {/* Папки */}
-      <div className="flex items-center gap-1.5 flex-wrap mt-7 mb-3">
+      <div className="flex items-center gap-1.5 flex-wrap mt-10 mb-3">
         <FilterChip active={folderFilter === "all"} onClick={() => selectFolder("all")}>
           Все папки ({initialTemplates.length})
         </FilterChip>

@@ -1442,7 +1442,7 @@ export default function AutomationsManager({
   }
 
   return (
-    <div className={`mt-4 ${busy ? "opacity-60" : ""}`}>
+    <div className={`mt-10 ${busy ? "opacity-60" : ""}`}>
       <SegmentedControl
         value={tab}
         onChange={setTab}
@@ -1463,7 +1463,7 @@ export default function AutomationsManager({
             — среди каналов, заданных в самой карточке, побеждает первый активный отсюда (сверху). Обычные (не каскадные) карточки этот
             порядок не учитывают — у них канал и провайдер задаются прямо в карточке.
           </p>
-          <div className="flex flex-col gap-1.5 mt-3 mb-8">
+          <div className="flex flex-col gap-1.5 mt-3 mb-10">
             {pOrder.map((ch) => {
               const providerOpts = configuredProvidersFor(ch);
               const provider = cProvider[ch] && providerOpts.some((o) => o.id === cProvider[ch]) ? cProvider[ch] : providerOpts[0]?.id;

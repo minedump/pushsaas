@@ -28,16 +28,16 @@ export default function EditName({ initialName, email }: { initialName: string |
   }
 
   return (
-    <form onSubmit={save}>
-      <Label>Имя</Label>
-      <Input value={name} onChange={(e) => setName(e.target.value)} required className="w-full" />
-      <div className="mt-4">
+    <form onSubmit={save} className="flex flex-col gap-3">
+      <div>
+        <Label>Имя</Label>
+        <Input value={name} onChange={(e) => setName(e.target.value)} required className="w-full" />
+      </div>
+      <div>
         <Label>Email</Label>
         <Input value={email} disabled className="w-full" />
       </div>
-      <Button disabled={busy} className="mt-4">
-        {busy ? "…" : "Сохранить"}
-      </Button>
+      <Button disabled={busy}>{busy ? "…" : "Сохранить"}</Button>
     </form>
   );
 }

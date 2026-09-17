@@ -75,7 +75,7 @@ export default function ApiKeys({
   }
 
   return (
-    <div className={`mt-4 ${busy ? "opacity-60" : ""}`}>
+    <div className={`mt-10 ${busy ? "opacity-60" : ""}`}>
       {fresh && (
         <Card className="border-good bg-good-tint">
           <div className="text-[13px] font-semibold mb-1.5">Ключ создан — скопируйте сейчас, больше он не покажется:</div>
@@ -124,7 +124,7 @@ export default function ApiKeys({
         </form>
       </Card>
 
-      <div className="mt-4 border border-border rounded-xl overflow-hidden">
+      <div className="mt-3 border border-border rounded-xl overflow-hidden">
         {initial.length === 0 ? (
           <div className="p-4 text-ink-muted text-sm">Ключей пока нет.</div>
         ) : (

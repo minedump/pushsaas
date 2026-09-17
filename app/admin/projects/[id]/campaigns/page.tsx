@@ -226,7 +226,7 @@ export default async function CampaignsPage({ params }: { params: Promise<{ id: 
         </ButtonLink>
       </div>
 
-      <div className="mt-7">
+      <div className="mt-10">
         {rows.length === 0 ? (
           <Card className="text-ink-muted">Пока не было рассылок.</Card>
         ) : (
