@@ -14,8 +14,8 @@ export default async function ProfilePage() {
     <main className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-semibold">Профиль</h1>
 
-      <h2 className="text-base font-semibold mt-8">Личные данные</h2>
-      <Card className="mt-3">
+      <Card className="mt-8">
+        <h2 className="text-base font-semibold m-0 mb-3">Личные данные</h2>
         <EditName initialName={profile?.full_name ?? null} email={user?.email ?? ""} />
         <div className="text-xs text-ink-muted mb-1.5 mt-4">Роль</div>
         <Badge tone={profile?.role === "admin" ? "warn" : "good"} dot>
@@ -23,7 +23,6 @@ export default async function ProfilePage() {
         </Badge>
       </Card>
 
-      <h2 className="text-base font-semibold mt-8">Сменить пароль</h2>
       <ChangePassword />
     </main>
   );

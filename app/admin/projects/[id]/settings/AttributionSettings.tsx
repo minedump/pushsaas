@@ -55,7 +55,7 @@ export default function AttributionSettings({
       </p>
 
       <Card>
-        <div className="text-[13.5px] font-semibold mb-3">Вебхук атрибуции</div>
+        <div className="text-base font-semibold mb-3">Вебхук атрибуции</div>
         <CopyBox text={webhookUrl} />
 
         <div className="mt-3 grid gap-3 sm:grid-cols-2">

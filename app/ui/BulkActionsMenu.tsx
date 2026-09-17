@@ -23,7 +23,7 @@ export function BulkActionsMenu({
   disabled,
   label = "Действия",
 }: {
-  items: { label: string; icon: React.ReactNode; onClick: () => void }[];
+  items: { label: string; icon: React.ReactNode; onClick: () => void; danger?: boolean }[];
   disabled?: boolean;
   label?: string;
 }) {
@@ -93,7 +93,10 @@ export function BulkActionsMenu({
                     setOpen(false);
                     item.onClick();
                   }}
-                  className="flex items-center gap-2 w-full text-left text-sm px-3 py-2 text-ink hover:bg-surface-2 transition-colors cursor-pointer"
+                  className={cn(
+                    "flex items-center gap-2 w-full text-left text-sm px-3 py-2 transition-colors cursor-pointer",
+                    item.danger ? "text-bad hover:bg-bad-tint" : "text-ink hover:bg-surface-2"
+                  )}
                 >
                   {item.icon}
                   {item.label}

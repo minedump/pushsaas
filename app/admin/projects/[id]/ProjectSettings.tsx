@@ -190,7 +190,7 @@ export default function ProjectSettings({
         <p className="text-[13px] text-ink-muted mt-0 mb-3">Название, аналитика и часовой пояс проекта.</p>
 
         <Card className={busy ? "opacity-60" : ""}>
-          <div className="text-[13.5px] font-semibold mb-3">Данные проекта</div>
+          <div className="text-base font-semibold mb-3">Данные проекта</div>
           <form onSubmit={save} className="flex flex-col gap-3">
             <div>
               <label htmlFor="proj-name" className="text-[13px] text-ink-muted block mb-1">
@@ -235,7 +235,7 @@ export default function ProjectSettings({
         </Card>
 
         <Card className={`mt-3 ${logoBusy ? "opacity-60" : ""}`}>
-          <div className="text-[13.5px] font-semibold mb-1">Логотип</div>
+          <div className="text-base font-semibold mb-1">Логотип</div>
           <p className="text-[13px] text-ink-muted mt-0 mb-3">Загрузите логотип проекта.</p>
           <div className="flex items-center gap-4 flex-wrap">
             <label className="flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-border rounded-xl w-28 h-28 cursor-pointer hover:border-accent transition-colors shrink-0">
@@ -276,7 +276,7 @@ export default function ProjectSettings({
         </p>
 
         <Card className={feedBusy ? "opacity-60" : ""}>
-          <div className="text-[13.5px] font-semibold mb-3">Ссылка на фид</div>
+          <div className="text-base font-semibold mb-3">Ссылка на фид</div>
           <label htmlFor="feed-url" className="text-[13px] text-ink-muted block mb-1">
             URL фида
           </label>

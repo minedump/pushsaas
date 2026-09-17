@@ -464,20 +464,26 @@ function DeviceBadge({ device, onClick }: { device: Device; onClick: () => void 
   const label = platformLabel[device.platform] || device.platform;
   const disabled = !device.is_active;
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      title={disabled ? "Устройство отвалилось — нечем возобновлять" : device.paused ? `Возобновить ${label}` : `Приостановить ${label}`}
+    <span
+      title={disabled ? "Устройство отвалилось — нечем возобновлять" : undefined}
       className={cn(
-        "inline-flex items-center gap-1 font-mono text-[11px] px-2 py-0.5 rounded-full whitespace-nowrap border-none transition-colors",
+        "inline-flex items-center gap-1 font-mono text-[11px] pl-1.5 pr-2.5 py-0.5 rounded-full whitespace-nowrap",
         !disabled && !device.paused ? "bg-good-tint text-good" : "bg-surface-2 text-ink-muted",
-        disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer hover:opacity-80"
+        disabled && "opacity-40"
       )}
     >
-      {!disabled && (device.paused ? <IconPlayerPlayFilled size={10} /> : <IconPlayerPauseFilled size={10} />)}
+      {!disabled && (
+        <button
+          type="button"
+          onClick={onClick}
+          title={device.paused ? `Возобновить ${label}` : `Приостановить ${label}`}
+          className="flex items-center p-0.5 rounded-full opacity-70 hover:opacity-100 hover:bg-black/10 transition-colors cursor-pointer"
+        >
+          {device.paused ? <IconPlayerPlayFilled size={10} /> : <IconPlayerPauseFilled size={10} />}
+        </button>
+      )}
       {label}
-    </button>
+    </span>
   );
 }
 
@@ -486,18 +492,22 @@ function DeviceBadge({ device, onClick }: { device: Device; onClick: () => void 
 // вызывающим кодом, если у канала нет контакта (телефона/email).
 function ChannelBadge({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={active ? `Отключить ${label}` : `Включить ${label}`}
+    <span
       className={cn(
-        "inline-flex items-center gap-1 font-mono text-[11px] px-2 py-0.5 rounded-full whitespace-nowrap border-none transition-colors cursor-pointer hover:opacity-80",
+        "inline-flex items-center gap-1 font-mono text-[11px] pl-1.5 pr-2.5 py-0.5 rounded-full whitespace-nowrap",
         active ? "bg-good-tint text-good" : "bg-surface-2 text-ink-muted"
       )}
     >
-      {active ? <IconPlayerPauseFilled size={10} /> : <IconPlayerPlayFilled size={10} />}
+      <button
+        type="button"
+        onClick={onClick}
+        title={active ? `Отключить ${label}` : `Включить ${label}`}
+        className="flex items-center p-0.5 rounded-full opacity-70 hover:opacity-100 hover:bg-black/10 transition-colors cursor-pointer"
+      >
+        {active ? <IconPlayerPauseFilled size={10} /> : <IconPlayerPlayFilled size={10} />}
+      </button>
       {label}
-    </button>
+    </span>
   );
 }
 
