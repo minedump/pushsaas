@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authenticateApiKeyFull } from "@/lib/apikey";
+import { authenticateApiKeyFull, hasScope } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logApiCall } from "@/lib/apiLog";
 
@@ -11,6 +11,7 @@ import { logApiCall } from "@/lib/apiLog";
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const key = await authenticateApiKeyFull(req);
   if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  if (!hasScope(key, "campaigns")) return NextResponse.json({ error: "api key missing scope: campaigns" }, { status: 403 });
   const { projectId } = key;
   const { id: campaignId } = await params;
 

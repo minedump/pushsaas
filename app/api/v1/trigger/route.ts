@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authenticateApiKey } from "@/lib/apikey";
+import { authenticateApiKey, hasScope } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createAndDispatch, createAndDispatchChannel, sendWelcomeNow, resolveCascadeChannel } from "@/lib/sender";
 import { enrichIdentityFields, resolveIdentitiesForProduct } from "@/lib/identity";
@@ -184,8 +184,10 @@ async function sendCascadeBroadcast(
 //   segment=<tag>             broadcast segment; also segment_path (config) / body.segmentTags
 //   dedupe=<path>[,<path>]     idempotency override (else built from config)
 export async function POST(req: Request) {
-  const projectId = await authenticateApiKey(req);
-  if (!projectId) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  const apiKey = await authenticateApiKey(req);
+  if (!apiKey) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  if (!hasScope(apiKey, "automations")) return NextResponse.json({ error: "api key missing scope: automations" }, { status: 403 });
+  const { projectId } = apiKey;
 
   const url = new URL(req.url);
   const q = url.searchParams;

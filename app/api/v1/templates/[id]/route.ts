@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authenticateApiKey } from "@/lib/apikey";
+import { authenticateApiKey, hasScope } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logApiCall } from "@/lib/apiLog";
 
@@ -29,8 +29,10 @@ function toTemplate(t: any) {
 
 // GET /api/v1/templates/{id} — полное содержимое одного шаблона.
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const projectId = await authenticateApiKey(req);
-  if (!projectId) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  const key = await authenticateApiKey(req);
+  if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  if (!hasScope(key, "templates")) return NextResponse.json({ error: "api key missing scope: templates" }, { status: 403 });
+  const { projectId } = key;
   const { id } = await params;
 
   const admin = createAdminClient();
@@ -45,8 +47,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 // нового) — та же форма тела, минус channel (канал шаблона неизменен после
 // создания). Частичное обновление — поле не передано, значит не трогаем.
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const projectId = await authenticateApiKey(req);
-  if (!projectId) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  const key = await authenticateApiKey(req);
+  if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  if (!hasScope(key, "templates")) return NextResponse.json({ error: "api key missing scope: templates" }, { status: 403 });
+  const { projectId } = key;
   const { id } = await params;
 
   const admin = createAdminClient();

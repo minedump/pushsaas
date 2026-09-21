@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authenticateApiKey } from "@/lib/apikey";
+import { authenticateApiKey, hasScope } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveAutomationTemplates, normalizeStatusChecks, toAutomation, AUTOMATION_SELECT } from "@/lib/automations";
 import { validateSchedule, computeNextFireAt } from "@/lib/recurring";
@@ -8,8 +8,10 @@ import { logApiCall } from "@/lib/apiLog";
 // GET /api/v1/automations/{id} — полная карточка одной автоматизации, та же
 // форма, что и элемент списка GET /api/v1/automations.
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const projectId = await authenticateApiKey(req);
-  if (!projectId) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  const apiKey = await authenticateApiKey(req);
+  if (!apiKey) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  if (!hasScope(apiKey, "automations")) return NextResponse.json({ error: "api key missing scope: automations" }, { status: 403 });
+  const { projectId } = apiKey;
   const { id } = await params;
 
   const admin = createAdminClient();
@@ -23,8 +25,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 // нет отдельного шага отмены; custom — вебхук перестаёт находить её и вернёт
 // 404 при следующем вызове).
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const projectId = await authenticateApiKey(req);
-  if (!projectId) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  const apiKey = await authenticateApiKey(req);
+  if (!apiKey) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  if (!hasScope(apiKey, "automations")) return NextResponse.json({ error: "api key missing scope: automations" }, { status: 403 });
+  const { projectId } = apiKey;
   const { id } = await params;
 
   const admin = createAdminClient();
@@ -40,8 +44,10 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
 // частичное обновление (поле не передано в теле — не трогаем сохранённое).
 // type менять нельзя — правьте соответствующие типу поля, см. GET /api/v1/docs.
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const projectId = await authenticateApiKey(req);
-  if (!projectId) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  const apiKey = await authenticateApiKey(req);
+  if (!apiKey) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  if (!hasScope(apiKey, "automations")) return NextResponse.json({ error: "api key missing scope: automations" }, { status: 403 });
+  const { projectId } = apiKey;
   const { id } = await params;
 
   const admin = createAdminClient();

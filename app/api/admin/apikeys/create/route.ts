@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { generateApiKey } from "@/lib/apikey";
+import { generateApiKey, API_SCOPES, type ApiScope } from "@/lib/apikey";
 import { friendlyError } from "@/lib/errors";
 
 export async function POST(req: Request) {
-  const { projectId, name, smsProvider, emailProvider } = await req.json().catch(() => ({}));
+  const { projectId, name, smsProvider, emailProvider, scopes } = await req.json().catch(() => ({}));
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
+
+  // Не доверяем присланному списку вслепую — только известные разделы;
+  // пусто/мусор = ни одного раздела, а не "выдать всё по умолчанию".
+  const allowedScopes = new Set(API_SCOPES.map((s) => s.id));
+  const cleanScopes: ApiScope[] = Array.isArray(scopes) ? scopes.filter((s): s is ApiScope => allowedScopes.has(s)) : [];
 
   const access = await assertProjectAccess(projectId);
   if (!access.ok) return NextResponse.json({ error: "Нет доступа" }, { status: access.status });
@@ -43,6 +48,7 @@ export async function POST(req: Request) {
     key_hash: hash,
     sms_provider: smsOk ? smsProvider : null,
     email_provider: emailOk ? emailProvider : null,
+    scopes: cleanScopes,
   });
   if (error) return NextResponse.json({ error: friendlyError(error) }, { status: 500 });
 

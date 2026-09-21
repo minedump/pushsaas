@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authenticateApiKey } from "@/lib/apikey";
+import { authenticateApiKey, hasScope } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { upsertContact } from "@/lib/identity";
 import { normalizePhone } from "@/lib/phone";
@@ -38,8 +38,10 @@ function toSubscriber(row: {
 // limit — по умолчанию 50, максимум 200. Счётчик активных push-подписок
 // (устройств), отдельно от этого списка — GET /api/v1/subscribers/push-stats.
 export async function GET(req: Request) {
-  const projectId = await authenticateApiKey(req);
-  if (!projectId) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  const key = await authenticateApiKey(req);
+  if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  if (!hasScope(key, "subscribers")) return NextResponse.json({ error: "api key missing scope: subscribers" }, { status: 403 });
+  const { projectId } = key;
 
   const q = new URL(req.url).searchParams;
   const limit = Math.min(Math.max(Number(q.get("limit")) || 50, 1), 200);
@@ -72,8 +74,10 @@ export async function GET(req: Request) {
 // вход доказывает владение номером, но не согласие на рассылки. true
 // включает канал, false — выключает (отписка).
 export async function POST(req: Request) {
-  const projectId = await authenticateApiKey(req);
-  if (!projectId) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  const key = await authenticateApiKey(req);
+  if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  if (!hasScope(key, "subscribers")) return NextResponse.json({ error: "api key missing scope: subscribers" }, { status: 403 });
+  const { projectId } = key;
 
   const body = await req.json().catch(() => ({}));
   const { phone, email, name, insalesClientId, tags, attributes, smsActive, emailActive } = body as {

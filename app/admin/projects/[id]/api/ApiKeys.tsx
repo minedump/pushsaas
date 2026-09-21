@@ -4,8 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconKey } from "@tabler/icons-react";
 import { createClient } from "@/lib/supabase/client";
-import { Button, Card, Input, Label, useDialogs } from "@/app/ui";
+import { Badge, Button, Card, Checkbox, Input, Label, useDialogs } from "@/app/ui";
 import { CustomSelect } from "@/app/ui/CustomSelect";
+import { API_SCOPES, type ApiScope } from "@/lib/apiScopes";
 
 type Key = {
   id: string;
@@ -14,11 +15,13 @@ type Key = {
   created_at: string;
   sms_provider?: string | null;
   email_provider?: string | null;
+  scopes?: string[] | null;
 };
 
 type ProviderOption = { value: string; label: string };
 
 const PROVIDER_LABEL: Record<string, string> = { bytehand: "Bytehand", smsc: "SMSC.ru", haskimail: "Haskimail" };
+const SCOPE_LABEL: Record<string, string> = Object.fromEntries(API_SCOPES.map((s) => [s.id, s.label]));
 
 export default function ApiKeys({
   projectId,
@@ -35,8 +38,13 @@ export default function ApiKeys({
   const [name, setName] = useState("");
   const [smsProvider, setSmsProvider] = useState("");
   const [emailProvider, setEmailProvider] = useState("");
+  const [scopes, setScopes] = useState<ApiScope[]>(API_SCOPES.map((s) => s.id));
   const [busy, setBusy] = useState(false);
   const [fresh, setFresh] = useState<string | null>(null);
+
+  function toggleScope(id: ApiScope, on: boolean) {
+    setScopes((prev) => (on ? [...prev, id] : prev.filter((s) => s !== id)));
+  }
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
@@ -45,7 +53,7 @@ export default function ApiKeys({
     const res = await fetch("/api/admin/apikeys/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, name, smsProvider: smsProvider || undefined, emailProvider: emailProvider || undefined }),
+      body: JSON.stringify({ projectId, name, smsProvider: smsProvider || undefined, emailProvider: emailProvider || undefined, scopes }),
     });
     const json = await res.json();
     setBusy(false);
@@ -57,6 +65,7 @@ export default function ApiKeys({
     setName("");
     setSmsProvider("");
     setEmailProvider("");
+    setScopes(API_SCOPES.map((s) => s.id));
     router.refresh();
   }
 
@@ -87,6 +96,15 @@ export default function ApiKeys({
         <form onSubmit={create}>
           <Label>Название ключа</Label>
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="напр. Бекенд сайта" />
+
+          <div className="mt-3">
+            <Label>Доступные разделы</Label>
+            <div className="flex flex-wrap gap-x-4 gap-y-2">
+              {API_SCOPES.map((s) => (
+                <Checkbox key={s.id} checked={scopes.includes(s.id)} onChange={(v) => toggleScope(s.id, v)} label={s.label} />
+              ))}
+            </div>
+          </div>
 
           {(providerOptions.sms.length > 0 || providerOptions.email.length > 0) && (
             <div className="flex gap-3 mt-3">
@@ -132,6 +150,7 @@ export default function ApiKeys({
             <thead>
               <tr className="bg-surface-2 text-left">
                 <Th>Название</Th>
+                <Th>Разделы</Th>
                 <Th>Каналы</Th>
                 <Th>Действия</Th>
               </tr>
@@ -140,6 +159,21 @@ export default function ApiKeys({
               {initial.map((k) => (
                 <tr key={k.id} className="border-t border-border row-hover">
                   <Td>{k.name}</Td>
+                  <Td>
+                    {k.scopes == null ? (
+                      <span className="text-ink-muted text-[12.5px]">Все разделы</span>
+                    ) : k.scopes.length === 0 ? (
+                      <Badge tone="bad">нет доступа</Badge>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {k.scopes.map((s) => (
+                          <Badge key={s} tone="accent">
+                            {SCOPE_LABEL[s] || s}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </Td>
                   <Td className="text-ink-muted text-[12.5px]">
                     {[k.sms_provider && `SMS: ${PROVIDER_LABEL[k.sms_provider] || k.sms_provider}`, k.email_provider && `Email: ${PROVIDER_LABEL[k.email_provider] || k.email_provider}`]
                       .filter(Boolean)

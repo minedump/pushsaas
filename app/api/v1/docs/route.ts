@@ -97,6 +97,10 @@ ${API_INTRO.authNote}
 
 ${API_INTRO.authMethods.map((m) => `- \`${m}\``).join("\n")}
 
+## Права ключа
+
+${API_INTRO.scopesNote}
+
 ## Шаблонизация — Liquid, только двойные фигурные скобки
 
 ${API_INTRO.liquidNote}

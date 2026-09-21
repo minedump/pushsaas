@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authenticateApiKey } from "@/lib/apikey";
+import { authenticateApiKey, hasScope } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logApiCall } from "@/lib/apiLog";
 
@@ -8,8 +8,10 @@ import { logApiCall } from "@/lib/apiLog";
 // /api/v1/campaigns как templateId. ?channel=push|sms|email фильтрует по каналу.
 // Полное содержимое одного шаблона — GET /api/v1/templates/{id}.
 export async function GET(req: Request) {
-  const projectId = await authenticateApiKey(req);
-  if (!projectId) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  const key = await authenticateApiKey(req);
+  if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  if (!hasScope(key, "templates")) return NextResponse.json({ error: "api key missing scope: templates" }, { status: 403 });
+  const { projectId } = key;
 
   const channel = new URL(req.url).searchParams.get("channel");
 
@@ -36,8 +38,10 @@ export async function GET(req: Request) {
 // GET /api/v1/docs, раздел «Шаблонизация») — переопределяется разовым
 // templateData при отправке, если он передан.
 export async function POST(req: Request) {
-  const projectId = await authenticateApiKey(req);
-  if (!projectId) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  const key = await authenticateApiKey(req);
+  if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  if (!hasScope(key, "templates")) return NextResponse.json({ error: "api key missing scope: templates" }, { status: 403 });
+  const { projectId } = key;
 
   const body = await req.json().catch(() => ({}));
   const { name, channel, folderId, context, subject, html, title, body: pushBody, url, icon, image, badge, actions } = body as {

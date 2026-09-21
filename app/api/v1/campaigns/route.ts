@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authenticateApiKeyFull } from "@/lib/apikey";
+import { authenticateApiKeyFull, hasScope } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createAndDispatch, createAndDispatchChannel } from "@/lib/sender";
 import { phonesToSubscriberIds, emailsToSubscriberIds } from "@/lib/identity";
@@ -16,6 +16,7 @@ import { logApiCall } from "@/lib/apiLog";
 export async function GET(req: Request) {
   const key = await authenticateApiKeyFull(req);
   if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  if (!hasScope(key, "campaigns")) return NextResponse.json({ error: "api key missing scope: campaigns" }, { status: 403 });
 
   const q = new URL(req.url).searchParams;
   const status = q.get("status");
@@ -85,6 +86,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const key = await authenticateApiKeyFull(req);
   if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  if (!hasScope(key, "campaigns")) return NextResponse.json({ error: "api key missing scope: campaigns" }, { status: 403 });
   const { projectId } = key;
 
   const body = await req.json().catch(() => ({}));

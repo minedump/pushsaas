@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authenticateApiKeyFull } from "@/lib/apikey";
+import { authenticateApiKeyFull, hasScope } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePushTemplate, resolveChannelTemplate, mergeTemplateContext, splitTemplateData, type PushAction } from "@/lib/sender";
 import { hasUnsubscribeTag } from "@/lib/unsubscribe";
@@ -59,6 +59,7 @@ function toCampaign(c: any) {
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const key = await authenticateApiKeyFull(req);
   if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  if (!hasScope(key, "campaigns")) return NextResponse.json({ error: "api key missing scope: campaigns" }, { status: 403 });
   const { id: campaignId } = await params;
 
   const admin = createAdminClient();
@@ -73,6 +74,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const key = await authenticateApiKeyFull(req);
   if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  if (!hasScope(key, "campaigns")) return NextResponse.json({ error: "api key missing scope: campaigns" }, { status: 403 });
   const { projectId } = key;
   const { id: campaignId } = await params;
 
@@ -100,6 +102,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const key = await authenticateApiKeyFull(req);
   if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  if (!hasScope(key, "campaigns")) return NextResponse.json({ error: "api key missing scope: campaigns" }, { status: 403 });
   const { projectId } = key;
   const { id: campaignId } = await params;
 

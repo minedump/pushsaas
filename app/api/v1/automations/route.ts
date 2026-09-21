@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authenticateApiKey } from "@/lib/apikey";
+import { authenticateApiKey, hasScope } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveAutomationTemplates, normalizeStatusChecks, toAutomation, AUTOMATION_SELECT } from "@/lib/automations";
 import { validateSchedule, computeNextFireAt } from "@/lib/recurring";
@@ -11,8 +11,10 @@ import { logApiCall } from "@/lib/apiLog";
 // ?type=welcome|event|custom|recurring, ?channel=push|sms|email,
 // ?enabled=true|false — необязательные фильтры.
 export async function GET(req: Request) {
-  const projectId = await authenticateApiKey(req);
-  if (!projectId) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  const apiKey = await authenticateApiKey(req);
+  if (!apiKey) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  if (!hasScope(apiKey, "automations")) return NextResponse.json({ error: "api key missing scope: automations" }, { status: 403 });
+  const { projectId } = apiKey;
 
   const q = new URL(req.url).searchParams;
   const type = q.get("type");
@@ -48,8 +50,10 @@ export async function GET(req: Request) {
 // им ссылка отписки не нужна, и получателя не фильтрует его согласие на
 // маркетинг по каналу.
 export async function POST(req: Request) {
-  const projectId = await authenticateApiKey(req);
-  if (!projectId) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  const apiKey = await authenticateApiKey(req);
+  if (!apiKey) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  if (!hasScope(apiKey, "automations")) return NextResponse.json({ error: "api key missing scope: automations" }, { status: 403 });
+  const { projectId } = apiKey;
 
   const body = await req.json().catch(() => ({}));
   const {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { authenticateApiKey } from "@/lib/apikey";
+import { authenticateApiKey, hasScope } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { updateContact } from "@/lib/identity";
 import { logApiCall } from "@/lib/apiLog";
@@ -32,8 +32,10 @@ function toSubscriber(row: {
 
 // GET /api/v1/subscribers/{id}   (Authorization: Bearer wpk_... | X-Api-Key: wpk_...)
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const projectId = await authenticateApiKey(req);
-  if (!projectId) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  const key = await authenticateApiKey(req);
+  if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  if (!hasScope(key, "subscribers")) return NextResponse.json({ error: "api key missing scope: subscribers" }, { status: 403 });
+  const { projectId } = key;
   const { id } = await params;
 
   const admin = createAdminClient();
@@ -55,8 +57,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 // прежними, но передать оба пустыми одновременно нельзя (подписчик должен
 // быть идентифицируем хотя бы одним из двух).
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const projectId = await authenticateApiKey(req);
-  if (!projectId) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  const key = await authenticateApiKey(req);
+  if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
+  if (!hasScope(key, "subscribers")) return NextResponse.json({ error: "api key missing scope: subscribers" }, { status: 403 });
+  const { projectId } = key;
   const { id } = await params;
 
   const admin = createAdminClient();

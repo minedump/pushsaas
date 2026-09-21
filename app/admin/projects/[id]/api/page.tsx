@@ -272,10 +272,10 @@ export default async function ApiPage({ params }: { params: Promise<{ id: string
   };
 
   // best-effort: sms_provider/email_provider — колонки миграции 0019,
-  // отсутствие не должно ронять список ключей.
+  // scopes — миграция 0095, отсутствие не должно ронять список ключей.
   const { data: keysFull, error: keysErr } = await supabase
     .from("api_keys")
-    .select("id, name, key_prefix, is_active, last_used_at, created_at, sms_provider, email_provider")
+    .select("id, name, key_prefix, is_active, last_used_at, created_at, sms_provider, email_provider, scopes")
     .eq("project_id", id)
     .order("created_at", { ascending: false });
   const { data: keysBasic } = keysErr
