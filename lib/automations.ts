@@ -23,7 +23,7 @@ export function normalizeStatusChecks(input: unknown): StatusCheck[] {
 type Admin = ReturnType<typeof createAdminClient>;
 
 export const AUTOMATION_SELECT =
-  "id, type, name, is_enabled, channel, cascade, channel_templates, template_id, provider, platforms, segment_tags, respects_priority, delay_minutes, config, spacing_enabled, spacing_minutes, send_window_enabled, send_days, send_time_from, send_time_to, send_window_subscriber_tz, is_transactional, next_fire_at, last_fired_at, created_at";
+  "id, type, name, comment, is_enabled, channel, cascade, channel_templates, template_id, provider, platforms, segment_tags, respects_priority, delay_minutes, config, spacing_enabled, spacing_minutes, send_window_enabled, send_days, send_time_from, send_time_to, send_window_subscriber_tz, is_transactional, next_fire_at, last_fired_at, created_at";
 
 // Общий маппер snake_case (БД) -> camelCase (публичный API), с раскладкой
 // config в именованные поля по типу — та же форма и в списке, и в карточке
@@ -35,6 +35,7 @@ export function toAutomation(a: any) {
     id: a.id,
     type: a.type,
     name: a.name,
+    comment: a.comment || null,
     isEnabled: a.is_enabled,
     channel: a.channel,
     cascade: a.cascade,

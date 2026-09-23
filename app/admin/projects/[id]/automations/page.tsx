@@ -16,7 +16,7 @@ export default async function AutomationsPage({ params }: { params: Promise<{ id
     supabase
       .from("automations")
       .select(
-        "id, type, channel, is_enabled, delay_minutes, template_id, provider, segment_tags, name, title, body, click_url, platforms, config, spacing_enabled, spacing_minutes, send_window_enabled, send_days, send_time_from, send_time_to, send_window_subscriber_tz, cascade, channel_templates, is_transactional, next_fire_at"
+        "id, type, channel, is_enabled, delay_minutes, template_id, provider, segment_tags, name, comment, title, body, click_url, platforms, config, spacing_enabled, spacing_minutes, send_window_enabled, send_days, send_time_from, send_time_to, send_window_subscriber_tz, cascade, channel_templates, is_transactional, next_fire_at"
       )
       .eq("project_id", id)
       .order("created_at"),

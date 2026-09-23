@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconArrowRight, IconPlus, IconGripVertical, IconPencil, IconEye, IconX } from "@tabler/icons-react";
 import { createClient } from "@/lib/supabase/client";
-import { Badge, Button, Card, Input, Label, SearchSelect, SegmentedControl, Toggle, useDialogs } from "@/app/ui";
+import { Badge, Button, Card, Input, Label, SearchSelect, SegmentedControl, Textarea, Toggle, useDialogs } from "@/app/ui";
 import { CustomSelect } from "@/app/ui/CustomSelect";
 import { friendlyError } from "@/lib/errors";
 import { IdCopy } from "../IdCopy";
@@ -60,6 +60,7 @@ type Automation = {
   send_time_to?: string | null;
   send_window_subscriber_tz?: boolean | null;
   name?: string | null;
+  comment?: string | null;
   title: string | null;
   body: string | null;
   click_url: string | null;
@@ -242,6 +243,7 @@ export default function AutomationsManager({
   const [previewCreate, setPreviewCreate] = useState(false);
   const [w, setW] = useState<{
     name: string;
+    comment: string;
     channel: Channel;
     provider: string;
     amount: number;
@@ -262,6 +264,7 @@ export default function AutomationsManager({
     msgTransactional: boolean;
   }>({
     name: "",
+    comment: "",
     channel: "push",
     provider: "",
     amount: 0,
@@ -311,6 +314,7 @@ export default function AutomationsManager({
       project_id: projectId,
       type: "welcome",
       name: w.name.trim(),
+      comment: w.comment.trim() || null,
       channel: w.channel,
       provider: !w.cascade && w.provider ? w.provider : null,
       is_enabled: true,
@@ -336,6 +340,7 @@ export default function AutomationsManager({
     }
     setW({
       name: "",
+      comment: "",
       channel: "push",
       provider: "",
       amount: 0,
@@ -366,6 +371,7 @@ export default function AutomationsManager({
   const [previewEdit, setPreviewEdit] = useState(false);
   const [ew, setEw] = useState<{
     name: string;
+    comment: string;
     channel: Channel;
     provider: string;
     amount: number;
@@ -387,6 +393,7 @@ export default function AutomationsManager({
     msgTransactional: boolean;
   }>({
     name: "",
+    comment: "",
     channel: "push",
     provider: "",
     amount: 0,
@@ -424,6 +431,7 @@ export default function AutomationsManager({
     const [spacingAmount, spacingUnit] = minutesToAmountUnit(a.spacing_minutes || 60);
     setEw({
       name: a.name || "",
+      comment: a.comment || "",
       channel: (a.channel || "push") as Channel,
       provider: a.provider || "",
       amount,
@@ -458,6 +466,7 @@ export default function AutomationsManager({
       .from("automations")
       .update({
         name: ew.name.trim(),
+        comment: ew.comment.trim() || null,
         channel: ew.channel,
         provider: !ew.cascade && ew.provider ? ew.provider : null,
         delay_minutes: Math.max(0, ew.amount * ew.unit),
@@ -505,6 +514,7 @@ export default function AutomationsManager({
     unit: 1,
     cancel: "order_placed",
     name: "",
+    comment: "",
     channel: "push" as Channel,
     provider: "",
     templateId: "",
@@ -549,6 +559,7 @@ export default function AutomationsManager({
       type: "event",
       is_enabled: true,
       name: ev.name.trim(),
+      comment: ev.comment.trim() || null,
       channel: ev.channel,
       provider: !ev.cascade && ev.provider ? ev.provider : null,
       template_id: ev.cascade ? null : ev.templateId,
@@ -600,6 +611,7 @@ export default function AutomationsManager({
       unit,
       cancel: (a.config?.cancel_events || []).join(", "),
       name: a.name || "",
+      comment: a.comment || "",
       channel: (a.channel || "push") as Channel,
       provider: a.provider || "",
       templateId: a.template_id || "",
@@ -632,6 +644,7 @@ export default function AutomationsManager({
       .from("automations")
       .update({
         name: eev.name.trim(),
+        comment: eev.comment.trim() || null,
         channel: eev.channel,
         provider: !eev.cascade && eev.provider ? eev.provider : null,
         template_id: eev.cascade ? null : eev.templateId,
@@ -679,6 +692,7 @@ export default function AutomationsManager({
   const CUSTOM_DEFAULTS = {
     key: "",
     name: "",
+    comment: "",
     mode: "phone" as "phone" | "segment" | "fanout",
     phonePath: "client.phone",
     emailPath: "",
@@ -748,6 +762,7 @@ export default function AutomationsManager({
     }
     return {
       name: v.name.trim() || null,
+      comment: v.comment.trim() || null,
       channel: v.cascade ? null : v.channel,
       provider: !v.cascade && v.provider ? v.provider : null,
       template_id: v.cascade ? null : v.templateId,
@@ -809,6 +824,7 @@ export default function AutomationsManager({
     setCust({
       key: a.config?.key || "",
       name: a.name || "",
+      comment: a.comment || "",
       mode: a.config?.list_fanout ? "fanout" : a.config?.transactional ? "phone" : "segment",
       phonePath: a.config?.phone_path || "",
       emailPath: a.config?.email_path || "",
@@ -936,6 +952,9 @@ export default function AutomationsManager({
       <>
         <Label>Название <span className="text-bad">*</span></Label>
         <Input value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} placeholder="Не показывается получателю" required />
+        <div className="h-3" />
+        <Label>Комментарий</Label>
+        <Textarea value={v.comment} onChange={(e) => setV({ ...v, comment: e.target.value })} placeholder="Заметка для себя — не показывается получателю" rows={2} />
         <div className="h-3" />
         <Label>Ключ (латиницей, для ссылки вебхука) <span className="text-bad">*</span></Label>
         <Input value={v.key} required onChange={(e) => setV({ ...v, key: e.target.value })} placeholder="order_shipped" />
@@ -1116,6 +1135,7 @@ export default function AutomationsManager({
   // app/api/cron/run-recurring) ----------
   const RECURRING_DEFAULTS = {
     name: "",
+    comment: "",
     channel: "push" as Channel,
     provider: "",
     templateId: "",
@@ -1155,6 +1175,7 @@ export default function AutomationsManager({
     const schedule = scheduleFromDraft(v);
     return {
       name: v.name.trim() || null,
+      comment: v.comment.trim() || null,
       channel: v.cascade ? null : v.channel,
       provider: !v.cascade && v.provider ? v.provider : null,
       template_id: v.cascade ? null : v.templateId,
@@ -1233,6 +1254,7 @@ export default function AutomationsManager({
     setErec({
       ...RECURRING_DEFAULTS,
       name: a.name || "",
+      comment: a.comment || "",
       channel: (a.channel || "push") as Channel,
       provider: a.provider || "",
       templateId: a.template_id || "",
@@ -1298,6 +1320,9 @@ export default function AutomationsManager({
           Название <span className="text-bad">*</span>
         </Label>
         <Input value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} placeholder="Не показывается получателю" required />
+        <div className="h-3" />
+        <Label>Комментарий</Label>
+        <Textarea value={v.comment} onChange={(e) => setV({ ...v, comment: e.target.value })} placeholder="Заметка для себя — не показывается получателю" rows={2} />
         <div className="h-3" />
         <Toggle checked={v.cascade} onChange={(checked) => setV({ ...v, cascade: checked })} label="Каскадная отправка" />
         <div className="h-3" />
@@ -1530,6 +1555,9 @@ export default function AutomationsManager({
               <Label>Название <span className="text-bad">*</span></Label>
               <Input value={ew.name} onChange={(e) => setEw({ ...ew, name: e.target.value })} placeholder="Не показывается получателю" required />
               <div className="h-3" />
+              <Label>Комментарий</Label>
+              <Textarea value={ew.comment} onChange={(e) => setEw({ ...ew, comment: e.target.value })} placeholder="Заметка для себя — не показывается получателю" rows={2} />
+              <div className="h-3" />
               <Toggle checked={ew.cascade} onChange={(v) => setEw({ ...ew, cascade: v })} label="Каскадная отправка" />
               <div className="h-3" />
               {ew.cascade ? (
@@ -1686,6 +1714,9 @@ export default function AutomationsManager({
           <Label>Название <span className="text-bad">*</span></Label>
           <Input value={w.name} onChange={(e) => setW({ ...w, name: e.target.value })} placeholder="Не показывается получателю" required />
           <div className="h-3" />
+          <Label>Комментарий</Label>
+          <Textarea value={w.comment} onChange={(e) => setW({ ...w, comment: e.target.value })} placeholder="Заметка для себя — не показывается получателю" rows={2} />
+          <div className="h-3" />
           <Toggle checked={w.cascade} onChange={(v) => setW({ ...w, cascade: v })} label="Каскадная отправка" />
           <div className="h-3" />
           {w.cascade ? (
@@ -1816,6 +1847,9 @@ export default function AutomationsManager({
               </div>
               <Label>Название <span className="text-bad">*</span></Label>
               <Input value={eev.name} onChange={(e) => setEev({ ...eev, name: e.target.value })} placeholder="Не показывается получателю" required />
+              <div className="h-3" />
+              <Label>Комментарий</Label>
+              <Textarea value={eev.comment} onChange={(e) => setEev({ ...eev, comment: e.target.value })} placeholder="Заметка для себя — не показывается получателю" rows={2} />
               <div className="h-3" />
               <Toggle checked={eev.cascade} onChange={(v) => setEev({ ...eev, cascade: v })} label="Каскадная отправка" />
               <div className="h-3" />
@@ -2002,6 +2036,9 @@ export default function AutomationsManager({
           <div className="font-semibold mb-3">Новая событийная автоматизация</div>
           <Label>Название <span className="text-bad">*</span></Label>
           <Input value={ev.name} onChange={(e) => setEv({ ...ev, name: e.target.value })} placeholder="Не показывается получателю" required />
+          <div className="h-3" />
+          <Label>Комментарий</Label>
+          <Textarea value={ev.comment} onChange={(e) => setEv({ ...ev, comment: e.target.value })} placeholder="Заметка для себя — не показывается получателю" rows={2} />
           <div className="h-3" />
           <Toggle checked={ev.cascade} onChange={(v) => setEv({ ...ev, cascade: v })} label="Каскадная отправка" />
           <div className="h-3" />
