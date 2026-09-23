@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureProjectAccessible } from "@/lib/guards";
+import { ButtonLink } from "@/app/ui";
+import { IconDownload } from "@tabler/icons-react";
 import AutomationsManager from "./AutomationsManager";
 
 export default async function AutomationsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -63,7 +65,13 @@ export default async function AutomationsPage({ params }: { params: Promise<{ id
 
   return (
     <main className="max-w-4xl mx-auto">
-      <h1 className="text-2xl font-semibold">Автоматизации</h1>
+      <div className="flex justify-between items-center flex-wrap gap-2">
+        <h1 className="text-2xl font-semibold">Автоматизации</h1>
+        <ButtonLink href={`/api/admin/automation-report?projectId=${id}`}>
+          <IconDownload size={16} stroke={2} />
+          Скачать отчёт
+        </ButtonLink>
+      </div>
       <AutomationsManager
         projectId={id}
         appUrl={appUrl}
