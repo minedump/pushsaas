@@ -5,8 +5,14 @@ import { resolvePath } from "@/lib/jsonpath";
 import { upsertContact } from "@/lib/identity";
 import { logApiCall } from "@/lib/apiLog";
 
-// POST /api/v1/attribute — order-attribution intake (last-click). Separate from
-// /api/v1/trigger on purpose: this endpoint records revenue, it never sends a push.
+// POST /api/v1/attribute — order intake (last-click attribution, when a
+// cookie matches a live campaign, PLUS the merchant's full order stream —
+// every call is recorded in order_attributions, with campaign_id left null
+// when there's no attribution match. That full stream is what RFM tagging
+// (see app/api/cron/recompute-rfm) aggregates per identity — attribution-only
+// recording would have silently dropped every order that didn't come from a
+// click on our own campaign. Separate from /api/v1/trigger on purpose: this
+// endpoint records revenue, it never sends a push.
 // Auth is a DEDICATED per-project token (project_secrets.attribution_token,
 // see lib/attribution.ts), not an api_keys row — narrow-scope webhook secret,
 // auto-generated once at project creation, always visible in Настройки, not
@@ -57,34 +63,27 @@ export async function POST(req: Request) {
 
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 
+  // Attribution match — best effort, no longer gates whether the order gets
+  // recorded at all (see header comment): a matched click sets campaignId,
+  // anything else still falls through with campaignId left null so the
+  // merchant's full order stream is captured, not just clicks we attributed.
+  let campaignId: string | null = null;
   const cookieName = project.attribution_cookie_name || "pss_attr";
   const cookieVal = String(resolvePath(body, `cookies.${cookieName}`) ?? "");
   const dot = cookieVal.lastIndexOf(".");
-  if (dot < 0) return NextResponse.json({ ok: true, skipped: "no attribution cookie in payload" });
-
-  const campaignId = cookieVal.slice(0, dot);
-  const clickedAt = Number(cookieVal.slice(dot + 1));
-  if (!campaignId || !Number.isFinite(clickedAt)) {
-    const responseBody = { ok: true, skipped: "malformed cookie" };
-    await logApiCall(admin, projectId, "attribute", 200, body, responseBody);
-    return NextResponse.json(responseBody);
-  }
-
-  const windowMs = (project.attribution_window_days || 7) * 86_400_000;
-  if (Date.now() - clickedAt > windowMs) {
-    return NextResponse.json({ ok: true, skipped: "outside attribution window" });
-  }
-
-  const { data: campaign } = await admin
-    .from("campaigns")
-    .select("id")
-    .eq("id", campaignId)
-    .eq("project_id", projectId)
-    .maybeSingle();
-  if (!campaign) {
-    const responseBody = { ok: true, skipped: "campaign not found" };
-    await logApiCall(admin, projectId, "attribute", 200, body, responseBody);
-    return NextResponse.json(responseBody);
+  if (dot >= 0) {
+    const candidateCampaignId = cookieVal.slice(0, dot);
+    const clickedAt = Number(cookieVal.slice(dot + 1));
+    const windowMs = (project.attribution_window_days || 7) * 86_400_000;
+    if (candidateCampaignId && Number.isFinite(clickedAt) && Date.now() - clickedAt <= windowMs) {
+      const { data: campaign } = await admin
+        .from("campaigns")
+        .select("id")
+        .eq("id", candidateCampaignId)
+        .eq("project_id", projectId)
+        .maybeSingle();
+      campaignId = campaign?.id ?? null;
+    }
   }
 
   const orderNumber = String(resolvePath(body, "number") ?? "");
@@ -111,6 +110,14 @@ export async function POST(req: Request) {
     }
   }
 
+  // Ни клика по рассылке, ни резолвленного контакта — заказ анонимный для
+  // нас, писать не к чему (как и раньше в таком случае).
+  if (!campaignId && !identityId) {
+    const responseBody = { ok: true, skipped: "no attribution and no contact" };
+    await logApiCall(admin, projectId, "attribute", 200, body, responseBody);
+    return NextResponse.json(responseBody);
+  }
+
   // upsert, не insert — InSales обычно шлёт отдельные вебхуки на создание И
   // на смену статуса заказа, мерчант может законно навесить оба на этот же
   // адрес (см. Настройки); без дедупа по (project_id, order_number) выручка
@@ -118,14 +125,14 @@ export async function POST(req: Request) {
   await admin.from("order_attributions").upsert(
     {
       project_id: projectId,
-      campaign_id: campaign.id,
+      campaign_id: campaignId,
       subscriber_id: subscriberId,
       identity_id: identityId,
       order_number: orderNumber || null,
       revenue,
       is_paid: isPaid,
       paid_amount: paidAmount,
-      raw_cookie: cookieVal,
+      raw_cookie: cookieVal || null,
     },
     { onConflict: "project_id,order_number" }
   );
