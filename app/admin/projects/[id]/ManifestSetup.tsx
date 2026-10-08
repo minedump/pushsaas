@@ -103,7 +103,7 @@ export default function ManifestSetup({
                 <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Мой магазин" required maxLength={60} />
               </div>
               <div>
-                <label className="text-[13px] text-ink-muted block mb-1">Короткое название (подпись под иконкой)</label>
+                <label className="text-[13px] text-ink-muted block mb-1">Короткое название</label>
                 <Input value={shortName} onChange={(e) => setShortName(e.target.value)} placeholder="Магазин" required maxLength={15} />
               </div>
             </div>
@@ -141,11 +141,16 @@ export default function ManifestSetup({
               </p>
             </div>
 
-            <div>
+            <div className="flex gap-2">
               <Button disabled={busy}>
                 <IconPalette size={16} stroke={1.8} />
                 Сгенерировать манифест и иконки
               </Button>
+              {result && (
+                <Button type="button" variant="secondary" disabled={busy} onClick={() => setShowForm(false)}>
+                  Отмена
+                </Button>
+              )}
             </div>
           </form>
         </Card>
@@ -220,9 +225,7 @@ export default function ManifestSetup({
           <CodeBlock code={result.headSnippet} />
           <p className="text-[12.5px] text-ink-faint">
             Если в шаблоне уже есть старый <code className="font-mono">&lt;link rel=&quot;manifest&quot;&gt;</code> или{" "}
-            <code className="font-mono">apple-touch-icon</code> — замените их, дублировать нельзя.{" "}
-            <code className="font-mono">display: standalone</code> уже включён в манифест — без него пуши на iPhone не
-            работают.
+            <code className="font-mono">apple-touch-icon</code> — замените их, дублировать нельзя.
           </p>
         </div>
       )}

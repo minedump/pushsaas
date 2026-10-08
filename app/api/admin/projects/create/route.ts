@@ -37,6 +37,9 @@ export async function POST(req: Request) {
     .select("id")
     .single();
 
+  if (error?.code === "23505") {
+    return NextResponse.json({ error: "У вас уже есть проект с этим доменом" }, { status: 409 });
+  }
   if (error || !project) {
     return NextResponse.json({ error: error?.message || "Не удалось создать проект" }, { status: 500 });
   }

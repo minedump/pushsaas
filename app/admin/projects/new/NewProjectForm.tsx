@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Input, Label, Card } from "@/app/ui";
 
@@ -10,9 +10,15 @@ export default function NewProjectForm() {
   const [domain, setDomain] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    // `disabled={busy}` only takes effect after a render, so two submit
+    // events landing in the same tick (e.g. a double click) can both pass
+    // it — this ref blocks re-entrancy synchronously, before either await.
+    if (submitting.current) return;
+    submitting.current = true;
     setBusy(true);
     setError(null);
     const res = await fetch("/api/admin/projects/create", {
@@ -23,6 +29,7 @@ export default function NewProjectForm() {
     const json = await res.json();
     setBusy(false);
     if (!res.ok) {
+      submitting.current = false;
       setError(json.error || "Ошибка");
       return;
     }
