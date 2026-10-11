@@ -45,10 +45,15 @@ export default async function ProjectAccessPage({ params }: { params: Promise<{ 
     createdAt: m.created_at,
   }));
 
+  // Передать проект может владелец (и администратор платформы).
+  const { data: myProfile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+  const canTransfer = project.owner_id === user.id || myProfile?.role === "admin";
+
   return (
     <AccessManager
       projectId={project.id}
       currentUserId={user.id}
+      canTransfer={canTransfer}
       owner={owner}
       initialMembers={members}
     />

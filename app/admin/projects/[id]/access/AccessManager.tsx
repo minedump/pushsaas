@@ -14,11 +14,13 @@ function fmtDate(iso: string) {
 export default function AccessManager({
   projectId,
   currentUserId,
+  canTransfer,
   owner,
   initialMembers,
 }: {
   projectId: string;
   currentUserId: string;
+  canTransfer: boolean;
   owner: Person;
   initialMembers: Member[];
 }) {
@@ -81,12 +83,31 @@ export default function AccessManager({
     router.refresh();
   }
 
+  async function transfer(m: Member) {
+    if (busy) return;
+    const ok = await confirm({
+      title: "Передать проект?",
+      message: `${m.name || m.email} станет владельцем проекта. Прежний владелец останется Админом. Тариф и привязанная карта остаются в проекте.`,
+      confirmText: "Передать проект",
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy(true);
+    const res = await fetch("/api/admin/projects/members/transfer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, userId: m.userId }),
+    });
+    const json = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) return toast(json.error || "Не удалось передать проект", "bad");
+    // полная перезагрузка: меняются роли, кнопки и список проектов в шапке
+    window.location.reload();
+  }
+
   return (
     <main className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-semibold m-0">Доступ</h1>
-      <p className="text-sm text-ink-muted mt-2 mb-0">
-        Владелец и Админы видят и меняют в проекте всё. Удалить проект может только владелец.
-      </p>
 
       <Card className="mt-4 sm:mt-8">
         <div className="text-base font-semibold mb-1">Выдать доступ</div>
@@ -106,7 +127,7 @@ export default function AccessManager({
             />
             {error && <p className="text-bad text-[13px] mt-1.5 mb-0">{error}</p>}
           </div>
-          <Button disabled={busy}>Выдать доступ как Админу</Button>
+          <Button disabled={busy}>Выдать доступ</Button>
         </form>
       </Card>
 
@@ -132,6 +153,11 @@ export default function AccessManager({
                 </div>
               </div>
               <span className="text-[12.5px] font-semibold px-2.5 py-0.5 rounded-full bg-surface-2 text-ink-muted">Админ</span>
+              {canTransfer && (
+                <Button variant="secondary" size="sm" type="button" disabled={busy} onClick={() => transfer(m)}>
+                  Сделать владельцем
+                </Button>
+              )}
               <Button variant="secondary" size="sm" type="button" disabled={busy} onClick={() => remove(m)}>
                 {m.userId === currentUserId ? "Покинуть проект" : "Забрать доступ"}
               </Button>
