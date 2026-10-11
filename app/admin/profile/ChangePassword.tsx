@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button, Card, Label, PasswordInput, useDialogs } from "@/app/ui";
 import { friendlyError } from "@/lib/errors";
+import { checkPassword, PASSWORD_HINT, PASSWORD_MIN_LENGTH } from "@/lib/password";
 
 export default function ChangePassword() {
   const supabase = createClient();
@@ -15,6 +16,8 @@ export default function ChangePassword() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (password !== confirm) return toast("Пароли не совпадают", "bad");
+    const weak = checkPassword(password);
+    if (weak) return toast(weak, "bad");
     setBusy(true);
     const { error } = await supabase.auth.updateUser({ password });
     setBusy(false);
@@ -35,10 +38,11 @@ export default function ChangePassword() {
           <PasswordInput
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            minLength={6}
+            minLength={PASSWORD_MIN_LENGTH}
             required
             className="w-full"
           />
+          <p className="text-[12.5px] text-ink-faint mt-1.5 mb-0">{PASSWORD_HINT}</p>
         </div>
 
         <div>
@@ -46,7 +50,7 @@ export default function ChangePassword() {
           <PasswordInput
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
-            minLength={6}
+            minLength={PASSWORD_MIN_LENGTH}
             required
             className="w-full"
           />

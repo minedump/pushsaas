@@ -105,6 +105,12 @@ services:
       # тот же режим, что сейчас на облачном Supabase-проекте (автоподтверждение)
       GOTRUE_DISABLE_SIGNUP: "false"
       GOTRUE_MAILER_AUTOCONFIRM: "true"
+      # Правила пароля на стороне сервера (обойти прямым запросом нельзя). Те же,
+      # что в lib/password.ts: от 10 символов, строчная и заглавная буквы
+      # (латиница или кириллица) и цифра. Сверка с базами утечек не включена:
+      # у этой сети нет выхода в интернет.
+      GOTRUE_PASSWORD_MIN_LENGTH: "10"
+      GOTRUE_PASSWORD_REQUIRED_CHARACTERS: "abcdefghijklmnopqrstuvwxyzабвгдеёжзийклмнопрстуфхцчшщъыьэюя:ABCDEFGHIJKLMNOPQRSTUVWXYZАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ:0123456789"
       GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
       GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
       GOTRUE_RATE_LIMIT_EMAIL_SENT: "100"

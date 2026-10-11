@@ -18,7 +18,7 @@ const KNOWN_CODES: Record<string, string> = {
   email_exists: "Пользователь с таким email уже зарегистрирован",
   user_not_found: "Пользователь с таким email не найден",
   email_not_confirmed: "Email не подтверждён",
-  weak_password: "Пароль слишком простой — минимум 6 символов",
+  weak_password: "Пароль слишком простой: нужно минимум 10 символов, строчная и заглавная буквы и цифра",
   same_password: "Новый пароль совпадает со старым",
   validation_failed: "Проверьте правильность email",
   email_address_invalid: "Некорректный формат email",

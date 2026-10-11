@@ -6,6 +6,7 @@ import { IconBell } from "@tabler/icons-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button, Checkbox, Input, Label, Card } from "@/app/ui";
 import { friendlyError } from "@/lib/errors";
+import { checkPassword, PASSWORD_HINT, PASSWORD_MIN_LENGTH } from "@/lib/password";
 
 export default function LoginPage() {
   return (
@@ -34,6 +35,13 @@ function LoginForm() {
     if (mode === "signup" && !name.trim()) {
       setError("Укажите имя");
       return;
+    }
+    if (mode === "signup") {
+      const weak = checkPassword(password, email);
+      if (weak) {
+        setError(weak);
+        return;
+      }
     }
     if (mode === "signup" && !consentPersonalData) {
       setError("Нужно согласие на обработку персональных данных и политику конфиденциальности");
@@ -114,9 +122,10 @@ function LoginForm() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={mode === "signup" ? PASSWORD_MIN_LENGTH : undefined}
               autoComplete={mode === "signin" ? "current-password" : "new-password"}
             />
+            {mode === "signup" && <p className="text-[12.5px] text-ink-faint mt-1.5 mb-0">{PASSWORD_HINT}</p>}
           </div>
 
           {mode === "signup" && (
