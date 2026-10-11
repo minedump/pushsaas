@@ -40,6 +40,7 @@ export default function ProjectSettings({
   feedItemCount,
   feedError,
   initialLogoUrl,
+  canDelete,
 }: {
   projectId: string;
   initialName: string;
@@ -51,6 +52,7 @@ export default function ProjectSettings({
   feedItemCount: number;
   feedError: string | null;
   initialLogoUrl: string | null;
+  canDelete: boolean;
 }) {
   const supabase = createClient();
   const router = useRouter();
@@ -227,9 +229,11 @@ export default function ProjectSettings({
             </div>
             <div className="flex items-center justify-between">
               <Button>Сохранить</Button>
-              <Button variant="danger" type="button" onClick={remove}>
-                Удалить проект
-              </Button>
+              {canDelete && (
+                <Button variant="danger" type="button" onClick={remove}>
+                  Удалить проект
+                </Button>
+              )}
             </div>
           </form>
         </Card>

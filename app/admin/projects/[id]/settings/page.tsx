@@ -18,12 +18,20 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
   const { data: project } = await supabase
     .from("projects")
     .select(
-      "id, name, domain, is_active, ym_counter_id, timezone, product_feed_url, product_feed_updated_at, product_feed_item_count, product_feed_error, logo_url"
+      "id, name, domain, is_active, owner_id, ym_counter_id, timezone, product_feed_url, product_feed_updated_at, product_feed_item_count, product_feed_error, logo_url"
     )
     .eq("id", id)
     .maybeSingle();
   if (!project) notFound();
   await ensureProjectAccessible(project.id, project.is_active);
+
+  // Удалить проект может владелец и администратор платформы; Админу проекта
+  // кнопка не показывается (роут удаления проверяет то же самое).
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data: myProfile } = await supabase.from("profiles").select("role").eq("id", user?.id ?? "").maybeSingle();
+  const canDelete = !!user && (project.owner_id === user.id || myProfile?.role === "admin");
 
   const app = process.env.NEXT_PUBLIC_APP_URL || "";
   const snippet = `<script src="${app}/embed/${project.id}.js" async></script>`;
@@ -158,6 +166,7 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
         feedItemCount={project.product_feed_item_count || 0}
         feedError={project.product_feed_error}
         initialLogoUrl={project.logo_url}
+        canDelete={canDelete}
       />
 
       {attributionToken && (

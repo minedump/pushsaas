@@ -28,6 +28,7 @@ import {
   IconHistory,
   IconCheck,
   IconPhoto,
+  IconKey,
   type TablerIcon,
 } from "@tabler/icons-react";
 import { createClient } from "@/lib/supabase/client";
@@ -221,6 +222,7 @@ export default function AdminShell({
                       <SidebarButton href={p("/auth")} label="Авторизация" active={pathname.endsWith("/auth")} icon={IconLogin2} />
                       <SidebarButton href={p("/connections")} label="Подключения" active={pathname.endsWith("/connections")} icon={IconPlugConnected} />
                       <SidebarButton href={p("/settings")} label="Настройки" active={pathname.endsWith("/settings")} icon={IconSettings} />
+                      <SidebarButton href={p("/access")} label="Доступ" active={pathname.endsWith("/access")} icon={IconKey} />
                       <SidebarButton href={p("/api")} label="API" active={pathname.endsWith("/api")} icon={IconCode} />
                       <SidebarButton href={p("/log")} label="Журнал" active={pathname.endsWith("/log")} icon={IconHistory} />
                     </>
