@@ -4,7 +4,7 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { IconBell } from "@tabler/icons-react";
 import { createClient } from "@/lib/supabase/client";
-import { Button, Checkbox, Input, Label, Card } from "@/app/ui";
+import { Button, Checkbox, Input, Label, Card, PasswordInput } from "@/app/ui";
 import { friendlyError } from "@/lib/errors";
 import { checkPassword, PASSWORD_HINT, PASSWORD_MIN_LENGTH } from "@/lib/password";
 
@@ -25,6 +25,7 @@ function LoginForm() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [consentPersonalData, setConsentPersonalData] = useState(false);
   const [consentMarketing, setConsentMarketing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +41,10 @@ function LoginForm() {
       const weak = checkPassword(password, email);
       if (weak) {
         setError(weak);
+        return;
+      }
+      if (password !== confirm) {
+        setError("Пароли не совпадают");
         return;
       }
     }
@@ -117,8 +122,7 @@ function LoginForm() {
           </div>
           <div>
             <Label>Пароль</Label>
-            <Input
-              type="password"
+            <PasswordInput
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -127,6 +131,19 @@ function LoginForm() {
             />
             {mode === "signup" && <p className="text-[12.5px] text-ink-faint mt-1.5 mb-0">{PASSWORD_HINT}</p>}
           </div>
+
+          {mode === "signup" && (
+            <div>
+              <Label>Повторите пароль</Label>
+              <PasswordInput
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+                required
+                minLength={PASSWORD_MIN_LENGTH}
+                autoComplete="new-password"
+              />
+            </div>
+          )}
 
           {mode === "signup" && (
             <div className="flex flex-col gap-2.5">
@@ -169,6 +186,7 @@ function LoginForm() {
           onClick={(e) => {
             e.preventDefault();
             setMode(mode === "signin" ? "signup" : "signin");
+            setConfirm("");
             setError(null);
           }}
         >
