@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { IconKey } from "@tabler/icons-react";
+import { IconKey, IconTrash } from "@tabler/icons-react";
 import { createClient } from "@/lib/supabase/client";
 import { Badge, Button, Card, Checkbox, Input, Label, useDialogs } from "@/app/ui";
 import { CustomSelect } from "@/app/ui/CustomSelect";
@@ -180,9 +180,17 @@ export default function ApiKeys({
                       .join(" · ") || "Каналы не выбраны"}
                   </Td>
                   <Td className="text-right">
-                    <Button variant="danger" size="sm" onClick={() => remove(k.id)}>
-                      Удалить
-                    </Button>
+                    <div className="flex justify-end gap-1">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => remove(k.id)}
+                        className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-bad transition-colors hover:bg-bad-tint cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Удалить"
+                      >
+                        <IconTrash size={15} stroke={1.8} />
+                      </button>
+                    </div>
                   </Td>
                 </tr>
               ))}
