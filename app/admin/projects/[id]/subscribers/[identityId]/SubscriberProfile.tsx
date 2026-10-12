@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { IconChevronLeft, IconPencil, IconEraser, IconEye, IconBraces, IconX } from "@tabler/icons-react";
 import { Badge, Button, ButtonLink, Card, Modal, useDialogs } from "@/app/ui";
 import { MessagePreviewModal, type PreviewContent } from "../../MessagePreviewModal";
+import { useProjectTz } from "../../ProjectTimeProvider";
+import { formatDateTime } from "@/lib/datetime";
 
 type Identity = {
   id: string;
@@ -57,8 +59,8 @@ function displayField(field: string): string {
   return fieldLabel[field] || field;
 }
 
-function fmt(d: string) {
-  return new Date(d).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" });
+function fmt(d: string, tz: string) {
+  return formatDateTime(d, tz);
 }
 
 type HistoryEntry =
@@ -87,6 +89,7 @@ export default function SubscriberProfile({
   siteEvents: SiteEventRow[];
   historyLimit: number;
 }) {
+  const tz = useProjectTz();
   const router = useRouter();
   const { confirm, toast } = useDialogs();
   const [previewRow, setPreviewRow] = useState<RecipientRow | null>(null);
@@ -275,7 +278,7 @@ export default function SubscriberProfile({
                           <Badge tone="accent">{e.label}</Badge>
                         </Td>
                         <Td className="text-ink-muted truncate max-w-[280px]">{e.detail || "—"}</Td>
-                        <Td className="text-ink-faint whitespace-nowrap">{fmt(e.created_at)}</Td>
+                        <Td className="text-ink-faint whitespace-nowrap">{fmt(e.created_at, tz)}</Td>
                       </tr>
                     ))}
                   </tbody>
@@ -320,7 +323,7 @@ export default function SubscriberProfile({
                         )}
                         {r.opened_at && !r.clicked_at && <Badge tone="neutral">открыто</Badge>}
                       </Td>
-                      <Td className="text-ink-faint whitespace-nowrap">{fmt(r.created_at)}</Td>
+                      <Td className="text-ink-faint whitespace-nowrap">{fmt(r.created_at, tz)}</Td>
                       <Td className="text-right whitespace-nowrap">
                         <div className="flex justify-end gap-1">
                           <button
@@ -376,7 +379,7 @@ export default function SubscriberProfile({
                     <Td className="text-ink-muted truncate max-w-[220px]">{o.campaigns?.title || "—"}</Td>
                     <Td>{o.is_paid && <Badge tone="good">оплачен</Badge>}</Td>
                     <Td className="text-right tabular-nums">{Number(o.revenue).toLocaleString("ru-RU")} ₽</Td>
-                    <Td className="text-ink-faint whitespace-nowrap">{fmt(o.created_at)}</Td>
+                    <Td className="text-ink-faint whitespace-nowrap">{fmt(o.created_at, tz)}</Td>
                   </tr>
                 ))}
                 </tbody>
@@ -448,7 +451,7 @@ export default function SubscriberProfile({
                           </Td>
                         </>
                       )}
-                      <Td className="text-ink-faint whitespace-nowrap">{fmt(h.created_at)}</Td>
+                      <Td className="text-ink-faint whitespace-nowrap">{fmt(h.created_at, tz)}</Td>
                     </tr>
                   ))}
                   </tbody>

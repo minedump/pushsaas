@@ -4,6 +4,8 @@ import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import { IconChevronDown, IconChevronRight } from "@tabler/icons-react";
 import { Badge, CustomSelect, Pagination } from "@/app/ui";
+import { useProjectTz } from "../ProjectTimeProvider";
+import { formatDateTime } from "@/lib/datetime";
 
 // Журнал действий пользователей (таблица audit_log, миграция 0103): кто что
 // создал, изменил, удалил и какие настройки сменил. Хранится 3 месяца.
@@ -220,9 +222,8 @@ function hasDetails(r: ActionRow): boolean {
   return Object.keys(r.changes).length > 0;
 }
 
-const fmtDate = (d: string) => new Date(d).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" });
-
 export default function ActionsTab({ projectId, rows }: { projectId: string; rows: ActionRow[] }) {
+  const tz = useProjectTz();
   const [actor, setActor] = useState("all");
   const [entity, setEntity] = useState("all");
   const [action, setAction] = useState("all");
@@ -297,7 +298,7 @@ export default function ActionsTab({ projectId, rows }: { projectId: string; row
                   return (
                     <Fragment key={r.id}>
                       <tr className="border-t border-border row-hover">
-                        <Td className="whitespace-nowrap text-ink-muted">{fmtDate(r.created_at)}</Td>
+                        <Td className="whitespace-nowrap text-ink-muted">{formatDateTime(r.created_at, tz)}</Td>
                         <Td className="max-w-[200px] truncate" title={r.actorEmail || undefined}>
                           {actorLabel(r)}
                           {r.source === "api" && r.actorName && <span className="text-ink-faint"> · API</span>}

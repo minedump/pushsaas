@@ -17,6 +17,8 @@ import { EventTrackingDocs } from "./EventTrackingDocs";
 import { TriggerWebhookDocs } from "./TriggerWebhookDocs";
 import { hasUnsubscribeTag } from "@/lib/unsubscribeTag";
 import { computeNextFireAt, type RecurringSchedule } from "@/lib/recurring";
+import { useProjectTz } from "../ProjectTimeProvider";
+import { formatDateTime } from "@/lib/datetime";
 
 type Channel = "push" | "sms" | "email";
 const channelLabel: Record<Channel, string> = { push: "Push", sms: "SMS", email: "Email" };
@@ -139,6 +141,7 @@ export default function AutomationsManager({
   segmentOptions: string[];
   projectTimezone: string;
 }) {
+  const tz = useProjectTz();
   const supabase = createClient();
   const router = useRouter();
   const { confirm, toast } = useDialogs();
@@ -2332,7 +2335,7 @@ export default function AutomationsManager({
                 <div className="font-semibold mt-2">{a.name || "Без названия"}</div>
                 {a.next_fire_at && (
                   <div className="text-ink-faint text-[12px] mt-1">
-                    Следующая отправка: {new Date(a.next_fire_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}
+                    Следующая отправка: {formatDateTime(a.next_fire_at, tz)}
                   </div>
                 )}
               </div>

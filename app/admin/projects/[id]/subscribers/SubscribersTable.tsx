@@ -17,6 +17,8 @@ import {
 import { Badge, BulkActionsMenu, Button, Checkbox, Input, Pagination, SortableTh, useDialogs, type SortDir } from "@/app/ui";
 import { CustomSelect, type ComboOption } from "@/app/ui/CustomSelect";
 import { cn } from "@/app/ui/cn";
+import { useProjectTz } from "../ProjectTimeProvider";
+import { formatDateTime } from "@/lib/datetime";
 
 const PAGE_SIZE = 25;
 
@@ -54,6 +56,7 @@ const platformLabel: Record<string, string> = { ios: "iPhone", android: "Android
 type SortKey = "name" | "phone" | "email" | "insalesClientId" | "created_at";
 
 export default function SubscribersTable({ projectId, initial }: { projectId: string; initial: Row[] }) {
+  const tz = useProjectTz();
   const { confirm, prompt, toast } = useDialogs();
   const router = useRouter();
   const [rows, setRows] = useState<Row[]>(initial);
@@ -416,7 +419,7 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
                       </span>
                     )}
                   </Td>
-                  <Td className="whitespace-nowrap">{new Date(r.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}</Td>
+                  <Td className="whitespace-nowrap">{formatDateTime(r.created_at, tz)}</Td>
                   <Td className="text-right">
                     {r.identityId && (
                       <div className="flex justify-end gap-1">

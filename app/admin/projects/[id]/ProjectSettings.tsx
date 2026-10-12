@@ -8,6 +8,8 @@ import { Button, Card, Input, useDialogs } from "@/app/ui";
 import { friendlyError } from "@/lib/errors";
 import { CustomSelect } from "@/app/ui/CustomSelect";
 import { FeedStructureDocs } from "./FeedStructureDocs";
+import { useProjectTz } from "./ProjectTimeProvider";
+import { formatDateTime } from "@/lib/datetime";
 
 // Часовые пояса РФ/СНГ — базовый список для проектов на русскоязычном рынке
 // (см. lib/sendWindow.ts — используется как дефолт окна отправки welcome-
@@ -54,6 +56,7 @@ export default function ProjectSettings({
   initialLogoUrl: string | null;
   canDelete: boolean;
 }) {
+  const tz = useProjectTz();
   const supabase = createClient();
   const router = useRouter();
   const { confirm, toast } = useDialogs();
@@ -311,7 +314,7 @@ export default function ProjectSettings({
               {feedError ? (
                 <span className="text-bad">Ошибка: {feedError}</span>
               ) : feedUpdatedAt ? (
-                `Товаров в кеше: ${feedItemCount} · обновлено ${new Date(feedUpdatedAt).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}`
+                `Товаров в кеше: ${feedItemCount} · обновлено ${formatDateTime(feedUpdatedAt, tz)}`
               ) : (
                 "Ещё не обновлялся — нажмите «Обновить»."
               )}

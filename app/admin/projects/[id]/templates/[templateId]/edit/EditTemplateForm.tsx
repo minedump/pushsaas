@@ -12,6 +12,7 @@ import { MessagePreviewModal, type PreviewContent } from "../../../MessagePrevie
 import { ContextField } from "../../../ContextField";
 import { ContextDocs } from "../../ContextDocs";
 import { smsSegments } from "@/lib/smsSegments";
+import { useProjectTz } from "../../../ProjectTimeProvider";
 
 type Channel = "push" | "sms" | "email";
 type Folder = { id: string; name: string };
@@ -53,6 +54,7 @@ export default function EditTemplateForm({
   editedBy: string | null;
   editedAt: string | null;
 }) {
+  const tz = useProjectTz();
   const supabase = createClient();
   const router = useRouter();
   const { toast, confirm } = useDialogs();
@@ -160,14 +162,14 @@ export default function EditTemplateForm({
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <Badge tone="accent">{CHANNEL_LABEL[channel]}</Badge>
             <span className="text-[12px] text-ink-faint">
-              {formatAuthor(createdByName, createdByEmail)} · {formatShortDate(createdAt)}
+              {formatAuthor(createdByName, createdByEmail)} · {formatShortDate(createdAt, tz)}
             </span>
             <IdCopy id={template.id} />
           </div>
 
           {editedBy && (
             <p className="text-[12px] text-ink-faint m-0 -mt-1">
-              Изменил: {editedBy} · {formatShortDate(editedAt!)}
+              Изменил: {editedBy} · {formatShortDate(editedAt!, tz)}
             </p>
           )}
 

@@ -7,6 +7,8 @@ import { IconChevronRight, IconDownload, IconSearch, IconX, IconSend, IconTrash,
 import { Badge, Button, Input, Pagination, SortableTh, useDialogs, type SortDir } from "@/app/ui";
 import { CustomSelect, type ComboOption } from "@/app/ui/CustomSelect";
 import { createClient } from "@/lib/supabase/client";
+import { useProjectTz } from "../ProjectTimeProvider";
+import { formatDateTime } from "@/lib/datetime";
 
 const PAGE_SIZE = 25;
 
@@ -94,6 +96,7 @@ const INITIATOR_OPTIONS: ComboOption[] = [
 ];
 
 export default function CampaignsTable({ rows, projectId }: { rows: Row[]; projectId: string }) {
+  const tz = useProjectTz();
   const [page, setPage] = useState(1);
   const [typeFilter, setTypeFilter] = useState("all");
   const [initiatorFilter, setInitiatorFilter] = useState("all");
@@ -367,7 +370,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
                   <Td right>{hasStats ? c.orders : "—"}</Td>
                   <Td right>{hasStats ? `${c.revenue.toLocaleString("ru-RU")} ₽` : "—"}</Td>
                   <Td right>{hasStats ? `${c.paid.toLocaleString("ru-RU")} ₽` : "—"}</Td>
-                  <Td className="whitespace-nowrap">{new Date(c.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}</Td>
+                  <Td className="whitespace-nowrap">{formatDateTime(c.created_at, tz)}</Td>
                   <Td className="text-right">
                     <div className="flex justify-end gap-1">
                       {c.campaignId && (

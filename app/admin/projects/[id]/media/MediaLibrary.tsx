@@ -17,6 +17,8 @@ import { createClient } from "@/lib/supabase/client";
 import { Button, Checkbox, CustomSelect, Input, Label, Modal, useDialogs } from "@/app/ui";
 import { friendlyError } from "@/lib/errors";
 import { formatAuthor, formatShortDate } from "../formatAuthor";
+import { useProjectTz } from "../ProjectTimeProvider";
+import { formatDateTime } from "@/lib/datetime";
 
 type Folder = { id: string; name: string };
 type Asset = {
@@ -42,10 +44,6 @@ function fmtSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
 }
 
-function fmtDate(d: string): string {
-  return new Date(d).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" });
-}
-
 // Галерея изображений проекта (миграция 0081/0082) — свободная загрузка
 // картинок для использования в HTML писем/шаблонов вручную (просто
 // копируешь публичную ссылку), без привязки к конкретной рассылке. Папки и
@@ -60,6 +58,7 @@ export default function MediaLibrary({
   initialAssets: Asset[];
   initialFolders: Folder[];
 }) {
+  const tz = useProjectTz();
   const supabase = createClient();
   const router = useRouter();
   const { confirm, prompt, toast } = useDialogs();
@@ -375,7 +374,7 @@ export default function MediaLibrary({
                     {a.name}
                   </div>
                   <div className="text-[11px] text-ink-faint truncate">
-                    {fmtDate(a.created_at)} · {fmtSize(a.size)}
+                    {formatDateTime(a.created_at, tz)} · {fmtSize(a.size)}
                   </div>
                 </div>
               </div>
@@ -412,7 +411,7 @@ export default function MediaLibrary({
                 {folderName(previewAsset.folder_id) && ` · ${folderName(previewAsset.folder_id)}`}
               </div>
               <div>
-                {formatAuthor(previewAsset.created_by_name, previewAsset.created_by_email)} · {formatShortDate(previewAsset.created_at)}
+                {formatAuthor(previewAsset.created_by_name, previewAsset.created_by_email)} · {formatShortDate(previewAsset.created_at, tz)}
               </div>
             </div>
             <div className="flex items-center gap-2 mt-3">

@@ -21,6 +21,8 @@ import { friendlyError } from "@/lib/errors";
 import { MessagePreviewModal } from "../MessagePreviewModal";
 import { IdCopy } from "../IdCopy";
 import { formatShortDate } from "../formatAuthor";
+import { useProjectTz } from "../ProjectTimeProvider";
+import { formatDateTime } from "@/lib/datetime";
 
 const PAGE_SIZE = 25;
 
@@ -67,6 +69,7 @@ export default function TemplatesManager({
   initialTemplates: Template[];
   initialFolders: Folder[];
 }) {
+  const tz = useProjectTz();
   const supabase = createClient();
   const router = useRouter();
   const { confirm, prompt, toast } = useDialogs();
@@ -445,7 +448,7 @@ export default function TemplatesManager({
                       <IdCopy id={t.id} />
                     </Td>
                     <Td className="whitespace-nowrap">
-                      {new Date(t.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}
+                      {formatDateTime(t.created_at, tz)}
                     </Td>
                     <Td className="max-w-[160px]" title={t.created_by_email || undefined}>
                       {t.created_by_name ? (
@@ -461,7 +464,7 @@ export default function TemplatesManager({
                       {t.edited_by ? (
                         <div className="min-w-0">
                           <div className="text-ink-muted truncate">{t.edited_by}</div>
-                          <div className="text-[11px] text-ink-faint">{t.edited_at ? formatShortDate(t.edited_at) : ""}</div>
+                          <div className="text-[11px] text-ink-faint">{t.edited_at ? formatShortDate(t.edited_at, tz) : ""}</div>
                         </div>
                       ) : (
                         <span className="text-ink-faint">—</span>

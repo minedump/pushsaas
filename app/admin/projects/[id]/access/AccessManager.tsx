@@ -3,13 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, Input, useDialogs } from "@/app/ui";
+import { useProjectTz } from "../ProjectTimeProvider";
+import { formatDate } from "@/lib/datetime";
 
 type Person = { userId: string; email: string; name: string | null };
 type Member = Person & { createdAt: string };
-
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
-}
 
 export default function AccessManager({
   projectId,
@@ -24,6 +22,7 @@ export default function AccessManager({
   owner: Person;
   initialMembers: Member[];
 }) {
+  const tz = useProjectTz();
   const router = useRouter();
   const { confirm, toast } = useDialogs();
   const [members, setMembers] = useState(initialMembers);
@@ -149,7 +148,7 @@ export default function AccessManager({
                   {m.userId === currentUserId && <span className="text-ink-faint font-normal"> (вы)</span>}
                 </div>
                 <div className="text-[13px] text-ink-muted truncate">
-                  {m.name ? `${m.email} · ` : ""}с {fmtDate(m.createdAt)}
+                  {m.name ? `${m.email} · ` : ""}с {formatDate(m.createdAt, tz)}
                 </div>
               </div>
               <span className="text-[12.5px] font-semibold px-2.5 py-0.5 rounded-full bg-surface-2 text-ink-muted">Админ</span>

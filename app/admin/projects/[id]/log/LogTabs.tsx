@@ -5,6 +5,8 @@ import Link from "next/link";
 import { IconChevronRight, IconBraces, IconX } from "@tabler/icons-react";
 import { Badge, Button, Modal, Pagination, SegmentedControl } from "@/app/ui";
 import ActionsTab, { type ActionRow } from "./ActionsTab";
+import { useProjectTz } from "../ProjectTimeProvider";
+import { formatDateTime } from "@/lib/datetime";
 
 const PAGE_SIZE = 25;
 
@@ -103,6 +105,7 @@ export default function LogTabs({
 }
 
 function ErrorsTab({ rows, projectId }: { rows: ErrorRow[]; projectId: string }) {
+  const tz = useProjectTz();
   const { paged, pager } = usePager(rows);
   if (!rows.length) return <Empty text="Ошибок нет — все рассылки прошли штатно." />;
   return (
@@ -147,7 +150,7 @@ function ErrorsTab({ rows, projectId }: { rows: ErrorRow[]; projectId: string })
                     {STATUS_LABEL[r.status] || r.status}
                   </Badge>
                 </Td>
-                <Td className="whitespace-nowrap">{new Date(r.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}</Td>
+                <Td className="whitespace-nowrap">{formatDateTime(r.created_at, tz)}</Td>
               </tr>
             ))}
           </tbody>
@@ -159,6 +162,7 @@ function ErrorsTab({ rows, projectId }: { rows: ErrorRow[]; projectId: string })
 }
 
 function LoginsTab({ rows }: { rows: LoginRow[] }) {
+  const tz = useProjectTz();
   const { paged, pager } = usePager(rows);
   if (!rows.length) return <Empty text="Пока пусто — здесь появятся попытки входа по коду." />;
   return (
@@ -187,7 +191,7 @@ function LoginsTab({ rows }: { rows: LoginRow[] }) {
                     {LOGIN_STATUS_LABEL[r.status] || r.status}
                   </Badge>
                 </Td>
-                <Td className="whitespace-nowrap">{new Date(r.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}</Td>
+                <Td className="whitespace-nowrap">{formatDateTime(r.created_at, tz)}</Td>
               </tr>
             ))}
           </tbody>
@@ -199,6 +203,7 @@ function LoginsTab({ rows }: { rows: LoginRow[] }) {
 }
 
 function ApiTab({ rows }: { rows: ApiCallRow[] }) {
+  const tz = useProjectTz();
   const { paged, pager } = usePager(rows);
   const [openRow, setOpenRow] = useState<ApiCallRow | null>(null);
   if (!rows.length) return <Empty text="Пока пусто — здесь появятся POST/PUT-вызовы /api/v1/campaigns, /api/v1/attribute, /api/v1/subscribers, /api/v1/templates и /api/v1/automations." />;
@@ -223,7 +228,7 @@ function ApiTab({ rows }: { rows: ApiCallRow[] }) {
                     {r.statusCode ?? (r.ok ? "успех" : "ошибка")}
                   </Badge>
                 </Td>
-                <Td className="whitespace-nowrap">{new Date(r.created_at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" })}</Td>
+                <Td className="whitespace-nowrap">{formatDateTime(r.created_at, tz)}</Td>
                 <Td right>
                   <button
                     type="button"

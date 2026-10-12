@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/client";
 import { PACKAGES } from "@/lib/packages";
 import { Badge, Button, Card, useDialogs } from "@/app/ui";
 import { friendlyError } from "@/lib/errors";
+import { useProjectTz } from "../ProjectTimeProvider";
+import { formatDate } from "@/lib/datetime";
 
 type Tariff = { id: string; name: string; price_rub: number; monthly_push_limit: number; subscriber_limit: number | null };
 type Project = {
@@ -59,6 +61,7 @@ export default function BillingClient({
   currentIsPaid: boolean;
   publicId: string;
 }) {
+  const tz = useProjectTz();
   const router = useRouter();
   const supabase = createClient();
   const { confirm, toast } = useDialogs();
@@ -115,7 +118,7 @@ export default function BillingClient({
             <div className="text-ink-muted text-xs">Текущий тариф</div>
             <div className="text-xl font-bold">{currentName}</div>
             {project.current_period_end && (
-              <div className="text-xs text-ink-faint">до {new Date(project.current_period_end).toLocaleDateString("ru-RU")}</div>
+              <div className="text-xs text-ink-faint">до {formatDate(project.current_period_end, tz)}</div>
             )}
           </div>
           <div className="text-right">
