@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
+import { auditAs } from "@/lib/auditContext";
 import { upsertContact } from "@/lib/identity";
+import { writeAudit } from "@/lib/audit";
 
 // Ручное добавление контакта из раздела «Подписчики» — по аналогии с «Новый
 // шаблон», но НЕ создаёт push-подписчика: subscribers.endpoint/p256dh/auth —
@@ -28,6 +30,7 @@ export async function POST(req: Request) {
   if (!phoneTrim && !emailTrim) return NextResponse.json({ error: "Укажите телефон или email" }, { status: 400 });
 
   const access = await assertProjectAccess(projectId);
+  if (access.user) auditAs(access.user.id);
   if (!access.ok) return NextResponse.json({ error: "Нет доступа" }, { status: access.status });
 
   const result = await upsertContact(projectId, {
@@ -40,5 +43,12 @@ export async function POST(req: Request) {
     tags: Array.isArray(tags) ? tags : undefined,
   });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+  await writeAudit({
+    projectId,
+    entity: "subscriber",
+    entityId: result.id,
+    name: name?.trim() || phoneTrim || emailTrim,
+    action: result.created ? "create" : "update",
+  });
   return NextResponse.json({ ok: true, id: result.id, created: result.created });
 }

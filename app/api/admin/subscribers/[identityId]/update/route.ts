@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
+import { auditAs } from "@/lib/auditContext";
 import { updateContact } from "@/lib/identity";
+import { writeAudit } from "@/lib/audit";
 
 export async function POST(req: Request, { params }: { params: Promise<{ identityId: string }> }) {
   const { identityId } = await params;
@@ -19,6 +21,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ identit
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
 
   const access = await assertProjectAccess(projectId);
+  if (access.user) auditAs(access.user.id);
   if (!access.ok) return NextResponse.json({ error: "Нет доступа" }, { status: access.status });
 
   const result = await updateContact(projectId, identityId, {
@@ -32,5 +35,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ identit
     attributes: attributes && typeof attributes === "object" ? attributes : undefined,
   });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+  await writeAudit({
+    projectId,
+    entity: "subscriber",
+    entityId: identityId,
+    name: name?.trim() || phone?.trim() || email?.trim() || null,
+    action: "update",
+  });
   return NextResponse.json({ ok: true });
 }

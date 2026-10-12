@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { authenticateApiKey, hasScope } from "@/lib/apikey";
+import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveAutomationTemplates, normalizeStatusChecks, toAutomation, AUTOMATION_SELECT } from "@/lib/automations";
 import { validateSchedule, computeNextFireAt } from "@/lib/recurring";
@@ -9,6 +10,7 @@ import { logApiCall } from "@/lib/apiLog";
 // форма, что и элемент списка GET /api/v1/automations.
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const apiKey = await authenticateApiKey(req);
+  if (apiKey) auditAs(null, "api");
   if (!apiKey) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
   if (!hasScope(apiKey, "automations")) return NextResponse.json({ error: "api key missing scope: automations" }, { status: 403 });
   const { projectId } = apiKey;
@@ -26,6 +28,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 // 404 при следующем вызове).
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const apiKey = await authenticateApiKey(req);
+  if (apiKey) auditAs(null, "api");
   if (!apiKey) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
   if (!hasScope(apiKey, "automations")) return NextResponse.json({ error: "api key missing scope: automations" }, { status: 403 });
   const { projectId } = apiKey;
@@ -45,6 +48,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
 // type менять нельзя — правьте соответствующие типу поля, см. GET /api/v1/docs.
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const apiKey = await authenticateApiKey(req);
+  if (apiKey) auditAs(null, "api");
   if (!apiKey) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
   if (!hasScope(apiKey, "automations")) return NextResponse.json({ error: "api key missing scope: automations" }, { status: 403 });
   const { projectId } = apiKey;

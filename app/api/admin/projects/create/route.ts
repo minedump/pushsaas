@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
+import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateVapidKeys } from "@/lib/webpush";
 import { generateAttributionToken } from "@/lib/attribution";
@@ -11,6 +12,7 @@ import { generateAttributionToken } from "@/lib/attribution";
 export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
+  auditAs(user.id);
 
   const admin = createAdminClient();
 

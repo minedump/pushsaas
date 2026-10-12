@@ -24,7 +24,7 @@ type Identity = {
 };
 type DeviceRow = { id: string; platform: string; is_active: boolean; paused: boolean; created_at: string; attributes: Record<string, unknown> | null };
 type ChannelEventRow = { id: number; channel: string; active: boolean; contact: string | null; created_at: string };
-type FieldChangeRow = { id: number; field: string; old_value: string | null; new_value: string | null; created_at: string };
+type FieldChangeRow = { id: number; field: string; old_value: string | null; new_value: string | null; created_at: string; actor: string | null };
 type RecipientRow = {
   id: number;
   channel: "push" | "sms" | "email";
@@ -63,7 +63,7 @@ function fmt(d: string) {
 
 type HistoryEntry =
   | { kind: "channel"; key: string; created_at: string; channel: string; active: boolean; contact: string | null }
-  | { kind: "field"; key: string; created_at: string; field: string; old_value: string | null; new_value: string | null }
+  | { kind: "field"; key: string; created_at: string; field: string; old_value: string | null; new_value: string | null; actor: string | null }
   | { kind: "device"; key: string; created_at: string; platform: string; is_active: boolean; paused: boolean; ymClientId: string | undefined };
 
 export default function SubscriberProfile({
@@ -148,7 +148,7 @@ export default function SubscriberProfile({
 
   const history: HistoryEntry[] = [
     ...channelEvents.map((e) => ({ kind: "channel" as const, key: `c${e.id}`, created_at: e.created_at, channel: e.channel, active: e.active, contact: e.contact })),
-    ...fieldChanges.map((f) => ({ kind: "field" as const, key: `f${f.id}`, created_at: f.created_at, field: f.field, old_value: f.old_value, new_value: f.new_value })),
+    ...fieldChanges.map((f) => ({ kind: "field" as const, key: `f${f.id}`, created_at: f.created_at, field: f.field, old_value: f.old_value, new_value: f.new_value, actor: f.actor })),
     ...devices.map((d) => ({
       kind: "device" as const,
       key: `d${d.id}`,
@@ -428,6 +428,7 @@ export default function SubscriberProfile({
                           </Td>
                           <Td className="text-ink-muted truncate max-w-[280px]">
                             {h.old_value || "—"} → {h.new_value || "—"}
+                            {h.actor && <span className="ml-1.5 text-ink-faint">· {h.actor}</span>}
                           </Td>
                         </>
                       ) : (

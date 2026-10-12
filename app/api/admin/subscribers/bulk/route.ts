@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
+import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logFieldChanges } from "@/lib/identity";
 import { friendlyError } from "@/lib/errors";
+import { writeAudit } from "@/lib/audit";
 
 // Массовые действия над выбранными в таблице «Подписчики» контактами —
 // один запрос на весь выбор, а не N запросов на клиенте (масштаб — реальный
@@ -23,7 +25,18 @@ export async function POST(req: Request) {
   }
 
   const access = await assertProjectAccess(projectId);
+  if (access.user) auditAs(access.user.id);
   if (!access.ok) return NextResponse.json({ error: "Нет доступа" }, { status: access.status });
+
+  const done = async (affected: number) => {
+    await writeAudit({
+      projectId,
+      entity: "subscribers",
+      action: "bulk",
+      changes: { action, affected, ...(tag ? { tag } : {}), ...(channel ? { channel, active: !!active } : {}) },
+    });
+    return NextResponse.json({ ok: true, affected });
+  };
 
   const admin = createAdminClient();
   const { data: owned } = await admin.from("identities").select("id").eq("project_id", projectId).in("id", identityIds);
@@ -36,7 +49,7 @@ export async function POST(req: Request) {
     // без контактных данных.
     const { error } = await admin.from("identities").delete().in("id", ids);
     if (error) return NextResponse.json({ error: friendlyError(error) }, { status: 500 });
-    return NextResponse.json({ ok: true, affected: ids.length });
+    return await done(ids.length);
   }
 
   if (action === "channel") {
@@ -55,7 +68,7 @@ export async function POST(req: Request) {
       .map((r) => ({ project_id: projectId, identity_id: r.id, channel, active: !!active, contact: channel === "sms" ? r.phone : r.email }))
       .filter((e) => e.contact) as { project_id: string; identity_id: string; channel: "sms" | "email"; active: boolean; contact: string }[];
     if (events.length) await admin.from("identity_channel_events").insert(events).then(() => {}, () => {});
-    return NextResponse.json({ ok: true, affected: ids.length });
+    return await done(ids.length);
   }
 
   if (action === "tag_add" || action === "tag_remove") {
@@ -71,7 +84,7 @@ export async function POST(req: Request) {
       await admin.from("identities").update({ tags: next }).eq("id", r.id);
       logFieldChanges(admin, projectId, r.id, { tags: current }, { tags: next });
     }
-    return NextResponse.json({ ok: true, affected: ids.length });
+    return await done(ids.length);
   }
 
   return NextResponse.json({ error: "unknown action" }, { status: 400 });

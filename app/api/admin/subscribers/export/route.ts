@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
+import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { writeAudit } from "@/lib/audit";
 
 const PLATFORMS = ["ios", "android", "desktop", "unknown"] as const;
 
@@ -42,7 +44,10 @@ export async function GET(req: Request) {
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
 
   const access = await assertProjectAccess(projectId);
+  if (access.user) auditAs(access.user.id);
   if (!access.ok) return NextResponse.json({ error: "Нет доступа" }, { status: access.status });
+
+  await writeAudit({ projectId, entity: "subscribers", action: "export" });
 
   const admin = createAdminClient();
 

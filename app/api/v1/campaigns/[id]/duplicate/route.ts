@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { authenticateApiKeyFull, hasScope } from "@/lib/apikey";
+import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logApiCall } from "@/lib/apiLog";
 
@@ -10,6 +11,7 @@ import { logApiCall } from "@/lib/apiLog";
 // и статистика отправки — нет, копия всегда стартует чистым черновиком.
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const key = await authenticateApiKeyFull(req);
+  if (key) auditAs(null, "api");
   if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
   if (!hasScope(key, "campaigns")) return NextResponse.json({ error: "api key missing scope: campaigns" }, { status: 403 });
   const { projectId } = key;

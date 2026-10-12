@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
+import { auditAs } from "@/lib/auditContext";
 import { refreshProductFeed } from "@/lib/productFeed";
 
 // Ручное обновление кеша товарного фида — кнопка «Обновить сейчас» в
@@ -10,6 +11,7 @@ export async function POST(req: Request) {
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
 
   const access = await assertProjectAccess(projectId);
+  if (access.user) auditAs(access.user.id);
   if (!access.ok) return NextResponse.json({ error: "Нет доступа" }, { status: access.status });
 
   const result = await refreshProductFeed(projectId);

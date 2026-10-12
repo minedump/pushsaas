@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
+import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { checkServiceWorker, checkSnippet, checkManifest, type StepResult } from "@/lib/site-check";
 
@@ -18,6 +19,7 @@ export async function POST(req: Request) {
   }
 
   const access = await assertProjectAccess(projectId);
+  if (access.user) auditAs(access.user.id);
   if (!access.ok) return NextResponse.json({ error: "Нет доступа" }, { status: access.status });
 
   const admin = createAdminClient();

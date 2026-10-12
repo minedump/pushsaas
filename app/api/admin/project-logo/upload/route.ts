@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
+import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { friendlyError } from "@/lib/errors";
 import { sanitizeSvg } from "@/lib/sanitizeSvg";
@@ -28,6 +29,7 @@ export async function POST(req: Request) {
 
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
   const access = await assertProjectAccess(projectId);
+  if (access.user) auditAs(access.user.id);
   if (!access.ok) return NextResponse.json({ error: "Нет доступа" }, { status: access.status });
 
   if (!(file instanceof File) || !file.size) return NextResponse.json({ error: "Выберите файл" }, { status: 400 });
@@ -66,6 +68,7 @@ export async function DELETE(req: Request) {
   const { projectId } = await req.json().catch(() => ({}) as { projectId?: string });
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
   const access = await assertProjectAccess(projectId);
+  if (access.user) auditAs(access.user.id);
   if (!access.ok) return NextResponse.json({ error: "Нет доступа" }, { status: access.status });
 
   const admin = createAdminClient();

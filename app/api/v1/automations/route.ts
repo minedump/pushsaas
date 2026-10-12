@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { authenticateApiKey, hasScope } from "@/lib/apikey";
+import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveAutomationTemplates, normalizeStatusChecks, toAutomation, AUTOMATION_SELECT } from "@/lib/automations";
 import { validateSchedule, computeNextFireAt } from "@/lib/recurring";
@@ -12,6 +13,7 @@ import { logApiCall } from "@/lib/apiLog";
 // ?enabled=true|false — необязательные фильтры.
 export async function GET(req: Request) {
   const apiKey = await authenticateApiKey(req);
+  if (apiKey) auditAs(null, "api");
   if (!apiKey) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
   if (!hasScope(apiKey, "automations")) return NextResponse.json({ error: "api key missing scope: automations" }, { status: 403 });
   const { projectId } = apiKey;
@@ -51,6 +53,7 @@ export async function GET(req: Request) {
 // маркетинг по каналу.
 export async function POST(req: Request) {
   const apiKey = await authenticateApiKey(req);
+  if (apiKey) auditAs(null, "api");
   if (!apiKey) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
   if (!hasScope(apiKey, "automations")) return NextResponse.json({ error: "api key missing scope: automations" }, { status: 403 });
   const { projectId } = apiKey;

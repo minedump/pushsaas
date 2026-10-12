@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
+import { auditAs } from "@/lib/auditContext";
 import { expandRefs } from "@/lib/sender";
 
 // Резолвит products/product/categories/category/collections/collection
@@ -16,6 +17,7 @@ export async function POST(req: Request) {
   }
 
   const access = await assertProjectAccess(projectId);
+  if (access.user) auditAs(access.user.id);
   if (!access.ok) return NextResponse.json({ error: "Нет доступа" }, { status: access.status });
 
   const { template, ...rest } = data as Record<string, unknown> & { template?: unknown };

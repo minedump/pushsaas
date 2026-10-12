@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { authenticateApiKey, hasScope } from "@/lib/apikey";
+import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { updateContact } from "@/lib/identity";
 import { logApiCall } from "@/lib/apiLog";
@@ -33,6 +34,7 @@ function toSubscriber(row: {
 // GET /api/v1/subscribers/{id}   (Authorization: Bearer wpk_... | X-Api-Key: wpk_...)
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const key = await authenticateApiKey(req);
+  if (key) auditAs(null, "api");
   if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
   if (!hasScope(key, "subscribers")) return NextResponse.json({ error: "api key missing scope: subscribers" }, { status: 403 });
   const { projectId } = key;
@@ -58,6 +60,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 // быть идентифицируем хотя бы одним из двух).
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const key = await authenticateApiKey(req);
+  if (key) auditAs(null, "api");
   if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
   if (!hasScope(key, "subscribers")) return NextResponse.json({ error: "api key missing scope: subscribers" }, { status: 403 });
   const { projectId } = key;

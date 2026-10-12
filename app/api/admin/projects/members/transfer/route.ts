@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
+import { auditAs } from "@/lib/auditContext";
 import { createClient } from "@/lib/supabase/server";
 import { friendlyError } from "@/lib/errors";
 
@@ -11,6 +12,7 @@ export async function POST(req: Request) {
   if (!projectId || !userId) return NextResponse.json({ error: "projectId and userId required" }, { status: 400 });
 
   const access = await assertProjectAccess(projectId);
+  if (access.user) auditAs(access.user.id);
   if (!access.ok) return NextResponse.json({ error: "Нет доступа" }, { status: access.status });
 
   const supabase = await createClient();

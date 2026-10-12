@@ -26,7 +26,7 @@ export default async function LogPage({ params }: { params: Promise<{ id: string
   if (!project) notFound();
   await ensureProjectAccessible(project.id, project.is_active);
 
-  const [{ data: campaignsSentOrFailed }, { data: otpAll }, { data: apiCallsAll }] = await Promise.all([
+  const [{ data: campaignsSentOrFailed }, { data: otpAll }, { data: apiCallsAll }, { data: auditAll }] = await Promise.all([
     // 'sent' тоже нужен: dispatch*Campaign всегда ставит status="sent" по
     // факту завершения попытки, даже если КАЖДЫЙ получатель провалился
     // (delivered_count=0, "ошибка") или если сегмент ни на кого не попал
@@ -56,6 +56,14 @@ export default async function LogPage({ params }: { params: Promise<{ id: string
       .eq("project_id", id)
       .order("created_at", { ascending: false })
       .limit(300),
+    // Действия пользователей бэкофиса (audit_log, миграция 0103): триггеры в БД
+    // пишут создания/правки/удаления и смену настроек, хранится 3 месяца.
+    supabase
+      .from("audit_log")
+      .select("id, created_at, actor_name, actor_email, source, entity, entity_id, entity_name, action, changes")
+      .eq("project_id", id)
+      .order("created_at", { ascending: false })
+      .limit(500),
   ]);
 
   const failedCampaigns = (campaignsSentOrFailed ?? [])
@@ -71,6 +79,19 @@ export default async function LogPage({ params }: { params: Promise<{ id: string
     requestBody: r.request_body as Record<string, unknown> | null,
     responseBody: r.response_body as Record<string, unknown> | null,
     created_at: r.created_at,
+  }));
+
+  const actionRows = (auditAll ?? []).map((r) => ({
+    id: String(r.id),
+    created_at: r.created_at,
+    actorName: r.actor_name as string | null,
+    actorEmail: r.actor_email as string | null,
+    source: r.source as string,
+    entity: r.entity as string,
+    entityId: r.entity_id as string | null,
+    entityName: r.entity_name as string | null,
+    action: r.action as string,
+    changes: r.changes as Record<string, { old?: unknown; new?: unknown }> | null,
   }));
 
   const loginRows = (otpAll ?? []).map((r) => ({
@@ -130,7 +151,7 @@ export default async function LogPage({ params }: { params: Promise<{ id: string
       <h1 className="text-2xl font-semibold">Журнал</h1>
 
       <div className="mt-4 sm:mt-8">
-        <LogTabs projectId={id} errorRows={errorRows} loginRows={loginRows} apiCallRows={apiCallRows} />
+        <LogTabs projectId={id} errorRows={errorRows} loginRows={loginRows} apiCallRows={apiCallRows} actionRows={actionRows} />
       </div>
     </main>
   );

@@ -20,6 +20,7 @@ import { BulkActionsMenu, Button, ButtonLink, Checkbox, CustomSelect, Input, Lab
 import { friendlyError } from "@/lib/errors";
 import { MessagePreviewModal } from "../MessagePreviewModal";
 import { IdCopy } from "../IdCopy";
+import { formatShortDate } from "../formatAuthor";
 
 const PAGE_SIZE = 25;
 
@@ -45,6 +46,8 @@ type Template = {
   created_by: string | null;
   created_by_email: string | null;
   created_by_name: string | null;
+  edited_by: string | null;
+  edited_at: string | null;
 };
 
 const CHANNEL_LABEL: Record<Channel, string> = { push: "Push", sms: "SMS", email: "Email" };
@@ -401,6 +404,7 @@ export default function TemplatesManager({
                   <SortableTh label="ID" sortKey="id" active={sortKey === "id"} dir={sortDir} onClick={onSortClick} />
                   <SortableTh label="Создан" sortKey="created_at" active={sortKey === "created_at"} dir={sortDir} onClick={onSortClick} />
                   <SortableTh label="Автор" sortKey="created_by" active={sortKey === "created_by"} dir={sortDir} onClick={onSortClick} />
+                  <Th>Изменил</Th>
                   <Th>Действия</Th>
                 </tr>
               </thead>
@@ -451,6 +455,16 @@ export default function TemplatesManager({
                         </div>
                       ) : (
                         <div className="text-ink-muted truncate">{t.created_by_email || "—"}</div>
+                      )}
+                    </Td>
+                    <Td className="max-w-[160px]">
+                      {t.edited_by ? (
+                        <div className="min-w-0">
+                          <div className="text-ink-muted truncate">{t.edited_by}</div>
+                          <div className="text-[11px] text-ink-faint">{t.edited_at ? formatShortDate(t.edited_at) : ""}</div>
+                        </div>
+                      ) : (
+                        <span className="text-ink-faint">—</span>
                       )}
                     </Td>
                     <Td className="text-right">

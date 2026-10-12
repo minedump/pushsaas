@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { IconChevronRight, IconBraces, IconX } from "@tabler/icons-react";
 import { Badge, Button, Modal, Pagination, SegmentedControl } from "@/app/ui";
+import ActionsTab, { type ActionRow } from "./ActionsTab";
 
 const PAGE_SIZE = 25;
 
@@ -64,23 +65,26 @@ const ENDPOINT_LABEL: Record<string, string> = {
   campaigns: "/api/v1/campaigns",
   automations: "/api/v1/automations",
 };
-const errorStatusTone = (s: string) => (s === "failed" ? "bad" : "warn");
 const loginStatusTone = (s: string) => (s === "verified" ? "good" : s === "locked" ? "bad" : "warn");
+const errorStatusTone = (s: string) => (s === "failed" ? "bad" : "warn");
 
 export default function LogTabs({
   projectId,
   errorRows,
   loginRows,
   apiCallRows,
+  actionRows,
 }: {
   projectId: string;
   errorRows: ErrorRow[];
   loginRows: LoginRow[];
   apiCallRows: ApiCallRow[];
+  actionRows: ActionRow[];
 }) {
-  const [tab, setTab] = useState<"errors" | "logins" | "api">("errors");
+  const [tab, setTab] = useState<"actions" | "errors" | "logins" | "api">("actions");
 
   const tabOptions: { value: typeof tab; label: string }[] = [
+    { value: "actions", label: "Действия" },
     { value: "errors", label: "Ошибки отправки" },
     { value: "logins", label: "Входы" },
     { value: "api", label: "API" },
@@ -90,6 +94,7 @@ export default function LogTabs({
     <div>
       <SegmentedControl value={tab} onChange={setTab} options={tabOptions} className="mb-4 flex-wrap" />
 
+      {tab === "actions" && <ActionsTab projectId={projectId} rows={actionRows} />}
       {tab === "errors" && <ErrorsTab rows={errorRows} projectId={projectId} />}
       {tab === "logins" && <LoginsTab rows={loginRows} />}
       {tab === "api" && <ApiTab rows={apiCallRows} />}

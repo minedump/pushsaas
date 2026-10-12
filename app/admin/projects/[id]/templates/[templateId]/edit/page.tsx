@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { lastEdits } from "@/lib/lastEdits";
 import { ensureProjectAccessible } from "@/lib/guards";
 import EditTemplateForm from "./EditTemplateForm";
 
@@ -36,6 +37,8 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
     createdByEmail = creator?.email ?? null;
   }
 
+  const editor = (await lastEdits(supabase, id, "template", [template.id])).get(template.id);
+
   return (
     <EditTemplateForm
       projectId={id}
@@ -44,6 +47,8 @@ export default async function EditTemplatePage({ params }: { params: Promise<{ i
       createdAt={template.created_at}
       createdByName={createdByName}
       createdByEmail={createdByEmail}
+      editedBy={editor ? editor.name || editor.email : null}
+      editedAt={editor?.at ?? null}
     />
   );
 }

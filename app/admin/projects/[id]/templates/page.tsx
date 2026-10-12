@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { lastEdits } from "@/lib/lastEdits";
 import { ensureProjectAccessible } from "@/lib/guards";
 import TemplatesManager from "./TemplatesManager";
 
@@ -30,8 +31,12 @@ export default async function TemplatesPage({ params }: { params: Promise<{ id: 
     : { data: [] as { id: string; email: string; full_name: string | null }[] };
   const creatorById = new Map((creators ?? []).map((c) => [c.id, c]));
 
+  const editors = await lastEdits(supabase, id, "template");
+
   const templates = (templatesRaw ?? []).map((t) => ({
     ...t,
+    edited_by: editors.get(t.id)?.name || editors.get(t.id)?.email || null,
+    edited_at: editors.get(t.id)?.at ?? null,
     created_by_email: t.created_by ? (creatorById.get(t.created_by)?.email ?? null) : null,
     created_by_name: t.created_by ? (creatorById.get(t.created_by)?.full_name ?? null) : null,
   }));

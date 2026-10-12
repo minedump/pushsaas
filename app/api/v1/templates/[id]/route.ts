@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { authenticateApiKey, hasScope } from "@/lib/apikey";
+import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logApiCall } from "@/lib/apiLog";
 
@@ -30,6 +31,7 @@ function toTemplate(t: any) {
 // GET /api/v1/templates/{id} — полное содержимое одного шаблона.
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const key = await authenticateApiKey(req);
+  if (key) auditAs(null, "api");
   if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
   if (!hasScope(key, "templates")) return NextResponse.json({ error: "api key missing scope: templates" }, { status: 403 });
   const { projectId } = key;
@@ -48,6 +50,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 // создания). Частичное обновление — поле не передано, значит не трогаем.
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const key = await authenticateApiKey(req);
+  if (key) auditAs(null, "api");
   if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
   if (!hasScope(key, "templates")) return NextResponse.json({ error: "api key missing scope: templates" }, { status: 403 });
   const { projectId } = key;

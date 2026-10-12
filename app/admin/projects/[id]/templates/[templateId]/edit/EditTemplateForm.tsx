@@ -41,6 +41,8 @@ export default function EditTemplateForm({
   createdAt,
   createdByName,
   createdByEmail,
+  editedBy,
+  editedAt,
 }: {
   projectId: string;
   template: Template;
@@ -48,6 +50,8 @@ export default function EditTemplateForm({
   createdAt: string;
   createdByName: string | null;
   createdByEmail: string | null;
+  editedBy: string | null;
+  editedAt: string | null;
 }) {
   const supabase = createClient();
   const router = useRouter();
@@ -160,6 +164,12 @@ export default function EditTemplateForm({
             </span>
             <IdCopy id={template.id} />
           </div>
+
+          {editedBy && (
+            <p className="text-[12px] text-ink-faint m-0 -mt-1">
+              Изменил: {editedBy} · {formatShortDate(editedAt!)}
+            </p>
+          )}
 
           <div>
             <Label>Папка</Label>

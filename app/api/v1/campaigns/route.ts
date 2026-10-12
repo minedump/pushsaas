@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { authenticateApiKeyFull, hasScope } from "@/lib/apikey";
+import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createAndDispatch, createAndDispatchChannel } from "@/lib/sender";
 import { phonesToSubscriberIds, emailsToSubscriberIds } from "@/lib/identity";
@@ -15,6 +16,7 @@ import { logApiCall } from "@/lib/apiLog";
 // максимум 200.
 export async function GET(req: Request) {
   const key = await authenticateApiKeyFull(req);
+  if (key) auditAs(null, "api");
   if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
   if (!hasScope(key, "campaigns")) return NextResponse.json({ error: "api key missing scope: campaigns" }, { status: 403 });
 
@@ -85,6 +87,7 @@ export async function GET(req: Request) {
 //   что и в ручной рассылке.
 export async function POST(req: Request) {
   const key = await authenticateApiKeyFull(req);
+  if (key) auditAs(null, "api");
   if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
   if (!hasScope(key, "campaigns")) return NextResponse.json({ error: "api key missing scope: campaigns" }, { status: 403 });
   const { projectId } = key;

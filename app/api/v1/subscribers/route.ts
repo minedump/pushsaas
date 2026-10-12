@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { authenticateApiKey, hasScope } from "@/lib/apikey";
+import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { upsertContact } from "@/lib/identity";
 import { normalizePhone } from "@/lib/phone";
@@ -39,6 +40,7 @@ function toSubscriber(row: {
 // (устройств), отдельно от этого списка — GET /api/v1/subscribers/push-stats.
 export async function GET(req: Request) {
   const key = await authenticateApiKey(req);
+  if (key) auditAs(null, "api");
   if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
   if (!hasScope(key, "subscribers")) return NextResponse.json({ error: "api key missing scope: subscribers" }, { status: 403 });
   const { projectId } = key;
@@ -75,6 +77,7 @@ export async function GET(req: Request) {
 // включает канал, false — выключает (отписка).
 export async function POST(req: Request) {
   const key = await authenticateApiKey(req);
+  if (key) auditAs(null, "api");
   if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
   if (!hasScope(key, "subscribers")) return NextResponse.json({ error: "api key missing scope: subscribers" }, { status: 403 });
   const { projectId } = key;

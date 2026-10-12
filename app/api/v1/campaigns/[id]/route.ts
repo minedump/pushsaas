@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { authenticateApiKeyFull, hasScope } from "@/lib/apikey";
+import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePushTemplate, resolveChannelTemplate, mergeTemplateContext, splitTemplateData, type PushAction } from "@/lib/sender";
 import { hasUnsubscribeTag } from "@/lib/unsubscribe";
@@ -58,6 +59,7 @@ function toCampaign(c: any) {
 // ещё не уходила).
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const key = await authenticateApiKeyFull(req);
+  if (key) auditAs(null, "api");
   if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
   if (!hasScope(key, "campaigns")) return NextResponse.json({ error: "api key missing scope: campaigns" }, { status: 403 });
   const { id: campaignId } = await params;
@@ -73,6 +75,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 // история рассылок и статистика не должны исчезать задним числом.
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const key = await authenticateApiKeyFull(req);
+  if (key) auditAs(null, "api");
   if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
   if (!hasScope(key, "campaigns")) return NextResponse.json({ error: "api key missing scope: campaigns" }, { status: 403 });
   const { projectId } = key;
@@ -101,6 +104,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
 // ни другое не передано, статус остаётся как есть.
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const key = await authenticateApiKeyFull(req);
+  if (key) auditAs(null, "api");
   if (!key) return NextResponse.json({ error: "invalid api key" }, { status: 401 });
   if (!hasScope(key, "campaigns")) return NextResponse.json({ error: "api key missing scope: campaigns" }, { status: 403 });
   const { projectId } = key;

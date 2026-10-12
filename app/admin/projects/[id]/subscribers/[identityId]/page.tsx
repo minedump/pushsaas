@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureProjectAccessible } from "@/lib/guards";
 import SubscriberProfile from "./SubscriberProfile";
 
@@ -81,10 +82,25 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
     .limit(HISTORY_LIMIT);
   const { data: fieldChanges } = await supabase
     .from("identity_field_changes")
-    .select("id, field, old_value, new_value, created_at")
+    .select("id, field, old_value, new_value, created_at, actor_id, source")
     .eq("identity_id", identityId)
     .order("created_at", { ascending: false })
     .limit(HISTORY_LIMIT);
+
+  // Автор правки (миграция 0103): имя из профиля, у системных/API-правок — метка источника.
+  const actorIds = [...new Set((fieldChanges ?? []).map((f) => f.actor_id).filter(Boolean))] as string[];
+  const { data: actorProfiles } = actorIds.length
+    ? await createAdminClient().from("profiles").select("id, email, full_name").in("id", actorIds)
+    : { data: [] as { id: string; email: string; full_name: string | null }[] };
+  const actorById = new Map((actorProfiles ?? []).map((p) => [p.id, p.full_name || p.email]));
+  const fieldChangesWithActor = (fieldChanges ?? []).map((f) => ({
+    id: f.id,
+    field: f.field,
+    old_value: f.old_value,
+    new_value: f.new_value,
+    created_at: f.created_at,
+    actor: f.actor_id ? actorById.get(f.actor_id) ?? null : f.source === "api" ? "API" : null,
+  }));
 
   // Рассылки, ушедшие этому контакту — push резолвится по id устройств
   // (campaign_recipients.contact = subscribers.id как текст для push),
@@ -194,7 +210,7 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
       identity={identity}
       devices={devices}
       channelEvents={channelEvents ?? []}
-      fieldChanges={fieldChanges ?? []}
+      fieldChanges={fieldChangesWithActor}
       recipients={recipientRows.slice(0, HISTORY_LIMIT)}
       orders={orders}
       siteEvents={siteEvents}

@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
+import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizePhone } from "@/lib/phone";
 import { logFieldChanges } from "@/lib/identity";
+import { writeAudit } from "@/lib/audit";
 
 const PLATFORMS = ["ios", "android", "desktop", "unknown"] as const;
 
@@ -57,6 +59,7 @@ export async function POST(req: Request) {
   }
 
   const access = await assertProjectAccess(projectId);
+  if (access.user) auditAs(access.user.id);
   if (!access.ok) return NextResponse.json({ error: "Нет доступа" }, { status: access.status });
 
   const admin = createAdminClient();
@@ -188,5 +191,6 @@ export async function POST(req: Request) {
     }
   }
 
+  await writeAudit({ projectId, entity: "subscribers", action: "import", changes: { matched, unmatched, matchAgainst } });
   return NextResponse.json({ ok: true, matched, unmatched });
 }
