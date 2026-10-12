@@ -180,7 +180,7 @@ export default function ApiKeys({
                       .join(" · ") || "Каналы не выбраны"}
                   </Td>
                   <Td className="text-right">
-                    <Button variant="secondary" size="sm" onClick={() => remove(k.id)}>
+                    <Button variant="danger" size="sm" onClick={() => remove(k.id)}>
                       Удалить
                     </Button>
                   </Td>

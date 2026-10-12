@@ -331,7 +331,7 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
                 { label: "Отключить Email", icon: <IconPlayerPauseFilled size={13} />, onClick: () => bulkChannel("email", false) },
               ]}
             />
-            <Button variant="secondary" size="sm" disabled={bulkBusy} onClick={bulkDelete}>
+            <Button variant="danger" size="sm" disabled={bulkBusy} onClick={bulkDelete}>
               <IconTrash size={14} stroke={1.8} />
               Удалить
             </Button>
