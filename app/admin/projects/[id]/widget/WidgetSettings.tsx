@@ -223,10 +223,7 @@ export default function WidgetSettings({
           </div>
         </Card>
 
-        <div>
-          <div className="text-sm font-semibold text-ink mb-2">Предпросмотр</div>
-          <ButtonPreview config={button} />
-        </div>
+        <ButtonPreview config={button} />
       </div>
 
         </>
@@ -324,10 +321,7 @@ export default function WidgetSettings({
           </div>
         </Card>
 
-        <div>
-          <div className="text-sm font-semibold text-ink mb-2">Предпросмотр</div>
-          <PromptPreview config={prompt} />
-        </div>
+        <PromptPreview config={prompt} />
       </div>
         </>
       )}

@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import type { PromptConfig } from "@/lib/widget-config";
 import { BELL_SVG, PROMPT_BUTTON_RADIUS_PX, promptDesktopStyle, promptMobileStyle } from "@/lib/widget-scripts";
+import { DeviceStage, PreviewCard } from "./DevicePreview";
 
 // Живой мокап плашки — реальное поведение отличается на мобильном
 // (полоса на всю ширину сверху) и на десктопе (карточка 300px слева
@@ -67,27 +69,21 @@ function Card({ config, variant }: { config: PromptConfig; variant: "mobile" | "
   );
 }
 
+type PromptView = "mobile" | "desktop" | "ios";
+
 export default function PromptPreview({ config }: { config: PromptConfig }) {
+  const [view, setView] = useState<PromptView>("mobile");
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-      <div>
-        <div className="text-[11px] text-ink-faint mb-1.5">Мобильный</div>
-        <div className="relative h-40 rounded-xl border border-border bg-surface-2 overflow-hidden">
-          <Card config={config} variant="mobile" />
-        </div>
-      </div>
-      <div>
-        <div className="text-[11px] text-ink-faint mb-1.5">Десктоп</div>
-        <div className="relative h-40 rounded-xl border border-border bg-surface-2 overflow-hidden">
-          <Card config={config} variant="desktop" />
-        </div>
-      </div>
-      <div>
-        <div className="text-[11px] text-ink-faint mb-1.5">iPhone (не на экране «Домой»)</div>
-        <div className="relative h-40 rounded-xl border border-border bg-surface-2 overflow-hidden">
-          <Card config={config} variant="ios" />
-        </div>
-      </div>
-    </div>
+    <PreviewCard
+      value={view}
+      onChange={setView}
+      options={[
+        { value: "mobile", label: "Телефон" },
+        { value: "desktop", label: "Компьютер" },
+        { value: "ios", label: "iPhone вне «Домой»" },
+      ]}
+    >
+      <DeviceStage device={view === "desktop" ? "desktop" : "phone"}>{config.enabled && <Card config={config} variant={view} />}</DeviceStage>
+    </PreviewCard>
   );
 }
