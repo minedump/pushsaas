@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Card, SegmentedControl } from "@/app/ui";
+import { SegmentedControl } from "@/app/ui";
 
 export type PreviewDevice = "phone" | "desktop";
 
@@ -23,13 +23,13 @@ export function PreviewCard<T extends string>({
   children: ReactNode;
 }) {
   return (
-    <Card>
+    <div>
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="text-sm font-semibold text-ink">{title}</div>
         <SegmentedControl value={value} onChange={onChange} options={options} className="flex-wrap" />
       </div>
       {children}
-    </Card>
+    </div>
   );
 }
 
