@@ -24,6 +24,24 @@ function SkeletonApp() {
   );
 }
 
+// Поля формы из последней генерации (читаем из готового манифеста), чтобы при перегенерации
+// не вводить название и цвет заново — менять можно только картинку или только нужное поле.
+function fieldsFrom(r: ManifestResult | null): { name: string; shortName: string; themeColor: string } {
+  if (r) {
+    try {
+      const m = JSON.parse(r.manifest);
+      return {
+        name: m.name || "",
+        shortName: m.short_name || "",
+        themeColor: /^#[0-9a-fA-F]{6}$/.test(m.theme_color || "") ? m.theme_color : "#2c4a66",
+      };
+    } catch {
+      /* битый манифест — пустая форма */
+    }
+  }
+  return { name: "", shortName: "", themeColor: "#2c4a66" };
+}
+
 export default function ManifestSetup({
   projectId,
   initial,
@@ -37,9 +55,9 @@ export default function ManifestSetup({
   const { toast } = useDialogs();
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ManifestResult | null>(initial);
-  const [name, setName] = useState("");
-  const [shortName, setShortName] = useState("");
-  const [themeColor, setThemeColor] = useState("#2c4a66");
+  const [name, setName] = useState(() => fieldsFrom(initial).name);
+  const [shortName, setShortName] = useState(() => fieldsFrom(initial).shortName);
+  const [themeColor, setThemeColor] = useState(() => fieldsFrom(initial).themeColor);
   const [file, setFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(!initial);
@@ -53,6 +71,16 @@ export default function ManifestSetup({
       return "";
     }
   }, [result]);
+
+  // открыть форму перегенерации: поля — из последнего результата, файл выбирается заново
+  function openForm() {
+    const f = fieldsFrom(result);
+    setName(f.name);
+    setShortName(f.shortName);
+    setThemeColor(f.themeColor);
+    pickFile(null);
+    setShowForm(true);
+  }
 
   function pickFile(f: File | null) {
     setFile(f);
@@ -184,7 +212,7 @@ export default function ManifestSetup({
                   Скачать site.webmanifest
                 </Button>
                 {!showForm && (
-                  <Button variant="secondary" size="sm" onClick={() => setShowForm(true)}>
+                  <Button variant="secondary" size="sm" onClick={openForm}>
                     Перегенерировать
                   </Button>
                 )}
