@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Card, ColorField, Input, Label, Textarea, Toggle, useDialogs } from "@/app/ui";
+import { Button, Card, ColorField, Input, Label, SegmentedControl, Textarea, Toggle, useDialogs } from "@/app/ui";
 import { CustomSelect } from "@/app/ui/CustomSelect";
 import type { ButtonConfig, ButtonPosition, ButtonSize, CornerRadius, PromptConfig } from "@/lib/widget-config";
 import ButtonPreview from "./ButtonPreview";
@@ -110,6 +110,7 @@ export default function WidgetSettings({
   const [prompt, setPrompt] = useState(initialPrompt);
   const [busyButton, setBusyButton] = useState(false);
   const [busyPrompt, setBusyPrompt] = useState(false);
+  const [tab, setTab] = useState<"button" | "prompt">("button");
 
   async function saveButton() {
     setBusyButton(true);
@@ -143,7 +144,19 @@ export default function WidgetSettings({
     <>
       <SenderaApiDocs />
 
-      <h2 className="text-base font-semibold mt-4 sm:mt-8">Плавающая кнопка подписки</h2>
+      <SegmentedControl
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: "button", label: "Кнопка подписки" },
+          { value: "prompt", label: "Плашка перед запросом" },
+        ]}
+        className="mt-4 sm:mt-8 mb-5 flex-wrap"
+      />
+
+      {tab === "button" && (
+        <>
+      <h2 className="text-base font-semibold">Плавающая кнопка подписки</h2>
       <p className="text-sm text-ink-muted mt-1">Кнопка в углу экрана вызывающая окно подписки на уведомления.</p>
       <div className="mt-3 flex flex-col gap-4">
         <Card className={`flex flex-col gap-3 ${busyButton ? "opacity-60" : ""}`}>
@@ -214,7 +227,12 @@ export default function WidgetSettings({
         </div>
       </div>
 
-      <h2 className="text-base font-semibold mt-4 sm:mt-8">Плашка перед системным запросом</h2>
+        </>
+      )}
+
+      {tab === "prompt" && (
+        <>
+      <h2 className="text-base font-semibold">Плашка перед системным запросом</h2>
       <p className="text-sm text-ink-muted mt-1">
         Плашка со своим текстом и кнопками «Разрешить»/«Не сейчас» — выезжает сверху на телефоне, всплывает в левом
         верхнем углу на компьютере, прямо перед настоящим системным диалогом браузера.
@@ -309,6 +327,8 @@ export default function WidgetSettings({
           <PromptPreview config={prompt} />
         </div>
       </div>
+        </>
+      )}
     </>
   );
 }
