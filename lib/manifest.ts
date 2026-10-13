@@ -4,8 +4,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 // Генерация PWA-иконок из одного загруженного логотипа + сборка webmanifest.
 // Правила форматов:
 //   · icon-192/512 (purpose any, Android/установка) — со скруглением углов ~18%
-//   · maskable-192/512 — БЕЗ скругления, логотип 80% на подложке цвета темы
-//     (форму — круг/сквиркл — накладывает сама ОС Android)
+//   · maskable-192/512 — БЕЗ скругления (форму — круг/сквиркл — накладывает сама ОС Android).
+//     Логотип с прозрачными краями: 80% на подложке цвета темы. Картинка со сплошными краями
+//     (текстура/фото): на всю площадь, без рамки.
 //   · apple-touch-icon 180×180 — БЕЗ скругления и БЕЗ прозрачности
 //     (iOS скругляет сам; прозрачность заливается цветом темы)
 //   · favicon-96x96.png и favicon.ico (16/32/48) — как "any", со скруглением. SVG-фавикон
@@ -74,7 +75,31 @@ async function makeIcons(source: Buffer, themeColor: string) {
       .toBuffer();
   }
 
+  // Сплошная картинка по краям (текстура, фото, залитый фон) уже сама подложка: поля цвета
+  // темы вокруг неё выглядят чёрной/цветной рамкой. Для такой иконки maskable — на всю площадь,
+  // для логотипа на прозрачном фоне — с полями на цвете темы.
+  async function edgesOpaque(): Promise<boolean> {
+    const meta = await sharp(base).metadata();
+    if (!meta.hasAlpha) return true;
+    const t = 8;
+    const strips = [
+      { left: 0, top: 0, width: 512, height: t },
+      { left: 0, top: 512 - t, width: 512, height: t },
+      { left: 0, top: 0, width: t, height: 512 },
+      { left: 512 - t, top: 0, width: t, height: 512 },
+    ];
+    for (const region of strips) {
+      const { channels } = await sharp(base).extract(region).stats();
+      if (channels[3] && channels[3].min < 250) return false;
+    }
+    return true;
+  }
+  const fullBleed = await edgesOpaque();
+
   async function maskable(size: number): Promise<Buffer> {
+    if (fullBleed) {
+      return sharp(base).resize(size, size).flatten({ background: themeColor }).png(PNG_OUT).toBuffer();
+    }
     const inner = Math.round(size * 0.8); // безопасная зона maskable
     const logo = await sharp(base).resize(inner, inner).png().toBuffer();
     return sharp({ create: { width: size, height: size, channels: 4, background: themeColor } })
