@@ -142,7 +142,9 @@ export default function WidgetSettings({
 
   return (
     <>
-      <SenderaApiDocs />
+      <div>
+        <SenderaApiDocs />
+      </div>
 
       <SegmentedControl
         value={tab}
