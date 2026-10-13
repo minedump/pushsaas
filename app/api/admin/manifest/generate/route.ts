@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import sharp from "sharp";
 import { assertProjectAccess } from "@/lib/auth";
 import { auditAs } from "@/lib/auditContext";
 import { generateManifestAssets, buildManifestJson, buildHeadSnippet } from "@/lib/manifest";
@@ -45,12 +46,32 @@ export async function POST(req: Request) {
 
   try {
     const buf = Buffer.from(await icon.arrayBuffer());
+
+    // размер исходника: совсем маленький — отказ (из него не собрать даже 192),
+    // меньше 512 — генерируем, но предупреждаем, что крупные иконки выйдут размытыми
+    const meta = await sharp(buf).metadata().catch(() => null);
+    if (!meta?.width || !meta?.height) {
+      return NextResponse.json({ error: "Не удалось прочитать картинку — проверьте файл" }, { status: 400 });
+    }
+    const side = Math.min(meta.width, meta.height);
+    if (side < 192) {
+      return NextResponse.json(
+        { error: `Иконка слишком маленькая (${meta.width}×${meta.height}). Нужен квадрат от 512×512, минимум 192×192` },
+        { status: 400 }
+      );
+    }
+    const warning =
+      side < 512
+        ? `Иконка ${meta.width}×${meta.height} меньше 512×512 — крупные иконки получатся размытыми. Лучше загрузить квадрат от 512×512`
+        : undefined;
+
     const config = await generateManifestAssets(projectId, buf, { name, shortName, themeColor });
     return NextResponse.json({
       ok: true,
       manifest: buildManifestJson(config),
       headSnippet: buildHeadSnippet(config),
       icons: config.icons,
+      warning,
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "generation failed";

@@ -79,6 +79,7 @@ export default function ManifestSetup({
     setResult(json);
     setShowForm(false);
     toast("Манифест и иконки готовы", "good");
+    if (json.warning) toast(json.warning, "warn");
     router.refresh();
   }
 
