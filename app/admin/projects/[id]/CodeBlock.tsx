@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { IconCopy, IconCheck } from "@tabler/icons-react";
-import { Button } from "@/app/ui";
+import { Button, useCopy } from "@/app/ui";
 
 // Многострочный блок кода с кнопкой копирования (сниппеты для вставки на сайт).
 export default function CodeBlock({ code, title }: { code: string; title?: string }) {
   const [copied, setCopied] = useState(false);
+  const copy = useCopy();
   return (
     <div className="relative my-2.5 rounded-xl border border-border bg-surface-2 overflow-hidden">
       {title && (
@@ -21,7 +22,7 @@ export default function CodeBlock({ code, title }: { code: string; title?: strin
           variant="secondary"
           size="sm"
           onClick={async () => {
-            await navigator.clipboard.writeText(code);
+            if (!(await copy(code))) return;
             setCopied(true);
             setTimeout(() => setCopied(false), 1500);
           }}

@@ -14,7 +14,7 @@ import {
   IconSearch,
 } from "@tabler/icons-react";
 import { createClient } from "@/lib/supabase/client";
-import { Button, Checkbox, CustomSelect, Input, Label, Modal, useDialogs } from "@/app/ui";
+import { Button, Checkbox, CustomSelect, Input, Label, Modal, useCopy, useDialogs } from "@/app/ui";
 import { friendlyError } from "@/lib/errors";
 import { formatAuthor, formatShortDate } from "../formatAuthor";
 import { useProjectTz } from "../ProjectTimeProvider";
@@ -62,6 +62,7 @@ export default function MediaLibrary({
   const supabase = createClient();
   const router = useRouter();
   const { confirm, prompt, toast } = useDialogs();
+  const copy = useCopy();
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [folderFilter, setFolderFilter] = useState<string>("all"); // "all" | "none" | folder id
@@ -139,7 +140,7 @@ export default function MediaLibrary({
   }
 
   async function copyUrl(asset: Asset) {
-    await navigator.clipboard.writeText(asset.url);
+    if (!(await copy(asset.url, "Ссылка скопирована"))) return;
     setCopiedId(asset.id);
     setTimeout(() => setCopiedId((v) => (v === asset.id ? null : v)), 1500);
   }

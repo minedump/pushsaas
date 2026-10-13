@@ -15,5 +15,6 @@ export { Toggle } from "./Toggle";
 export { ColorField } from "./ColorField";
 export { DialogProvider, useDialogs } from "./Dialogs";
 export { Modal } from "./Modal";
+export { useCopy } from "./useCopy";
 export { TooltipHost } from "./Tooltip";
 export { cn } from "./cn";

@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { IconCopy, IconCheck } from "@tabler/icons-react";
-import { Button } from "@/app/ui";
+import { Button, useCopy } from "@/app/ui";
 
 export default function CopyBox({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
+  const copy = useCopy();
   return (
     <div className="flex gap-2 items-start bg-surface-2 border border-border rounded-lg px-3 py-2.5 my-2.5">
       <code className="flex-1 min-w-0 text-[13px] whitespace-pre-wrap break-all font-mono leading-relaxed">{text}</code>
@@ -14,7 +15,7 @@ export default function CopyBox({ text }: { text: string }) {
         size="sm"
         className="shrink-0"
         onClick={async () => {
-          await navigator.clipboard.writeText(text);
+          if (!(await copy(text))) return;
           setCopied(true);
           setTimeout(() => setCopied(false), 1500);
         }}
