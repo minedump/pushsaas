@@ -101,6 +101,39 @@ function SenderaApiDocsModal({ onClose }: { onClose: () => void }) {
             (раздел «Авторизация»). Без самих значений, только факт привязки.
           </p>
         </section>
+
+        <section>
+          <div className="font-semibold text-ink mb-1">Окно «Установка приложения»</div>
+          <p className="m-0">
+            Окно с пошаговой инструкцией, как добавить сайт на экран телефона. Настраивается в «Виджеты» → «Установка приложения»,
+            включается там же. Своих кнопок открытия виджет не рисует: окно открывает код сайта, вкладки показывать или нет решаете вы,
+            выбрав подходящий метод. Пока виджет выключен, методы ничего не делают и пишут предупреждение в консоль.
+          </p>
+          <div className="mt-2 flex flex-col gap-2">
+            <div>
+              <div className="font-mono text-[12px] text-ink">sendera.openInstallGuide()</div>
+              <p className="m-0">
+                Открывает окно с вкладками «iPhone» и «Android». Первой показана вкладка по устройству посетителя, переключить её можно
+                вручную.
+              </p>
+            </div>
+            <div>
+              <div className="font-mono text-[12px] text-ink">sendera.openInstallGuideIos()</div>
+              <p className="m-0">Открывает окно без вкладок, только с инструкцией для iPhone.</p>
+            </div>
+            <div>
+              <div className="font-mono text-[12px] text-ink">sendera.openInstallGuideAndroid()</div>
+              <p className="m-0">Открывает окно без вкладок, только с инструкцией для Android.</p>
+            </div>
+            <div>
+              <div className="font-mono text-[12px] text-ink">sendera.closeInstallGuide()</div>
+              <p className="m-0">Закрывает окно. Если оно не открыто, ничего не происходит.</p>
+            </div>
+          </div>
+          <pre className="mt-1.5 mb-0 text-[12px] bg-surface-2 border border-border rounded-lg p-2.5 overflow-x-auto">
+            {`document.getElementById('install-btn').addEventListener('click', function(){\n  var ua = navigator.userAgent;\n  if (/iPhone/.test(ua)) sendera.openInstallGuideIos();\n  else if (/Android/.test(ua)) sendera.openInstallGuideAndroid();\n  else sendera.openInstallGuide();\n});`}
+          </pre>
+        </section>
       </div>
     </Modal>
   );

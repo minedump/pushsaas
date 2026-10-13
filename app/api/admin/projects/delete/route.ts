@@ -33,6 +33,11 @@ export async function POST(req: Request) {
     if (files?.length) {
       await admin.storage.from("project-assets").remove(files.map((f) => `${projectId}/${f.name}`));
     }
+    // свои картинки шагов «Установки приложения» лежат во вложенной папке install/
+    const { data: installFiles } = await admin.storage.from("project-assets").list(`${projectId}/install`);
+    if (installFiles?.length) {
+      await admin.storage.from("project-assets").remove(installFiles.map((f) => `${projectId}/install/${f.name}`));
+    }
   } catch {}
 
   const { error } = await admin.from("projects").delete().eq("id", projectId);

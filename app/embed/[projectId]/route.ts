@@ -1,6 +1,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveButtonConfig, resolvePromptConfig, type ButtonConfig, type PromptConfig } from "@/lib/widget-config";
 import { buttonBlock, promptBlock } from "@/lib/widget-scripts";
+import { resolveInstallConfig, type InstallConfig } from "@/lib/install-guide";
+import { installBlock } from "@/lib/install-widget";
 
 // Serves the per-project subscribe widget as JavaScript.
 // The client embeds ONE script tag:  <script src="https://APP/embed/PROJECT_ID.js" async></script>
@@ -63,12 +65,20 @@ export async function GET(_req: Request, ctx: { params: Promise<{ projectId: str
   // best-effort: настройки кнопки/плашки подписки (см. «Виджеты») — тем же
   // паттерном, что атрибуция/Метрика выше. Резолверы сами подставляют
   // дефолты на кривые/отсутствующие данные.
-  const { data: widgetRow, error: widgetErr } = await admin.from("projects").select("widget_config").eq("id", projectId).maybeSingle();
-  const widgetConfig = (!widgetErr && (widgetRow?.widget_config as { button?: unknown; prompt?: unknown } | null)) || {};
+  const { data: widgetRow, error: widgetErr } = await admin
+    .from("projects")
+    .select("widget_config, manifest_config")
+    .eq("id", projectId)
+    .maybeSingle();
+  const widgetConfig = (!widgetErr && (widgetRow?.widget_config as { button?: unknown; prompt?: unknown; install?: unknown } | null)) || {};
   const button = resolveButtonConfig(widgetConfig.button);
   const prompt = resolvePromptConfig(widgetConfig.prompt);
+  const install = resolveInstallConfig(widgetConfig.install, project.id);
+  // версия схем окна «Установка приложения»: меняется при перегенерации манифеста
+  // (иконка/название/цвет), чтобы сайты не держали старые картинки в кэше
+  const installVersion = String((!widgetErr && (widgetRow?.manifest_config as { generated_at?: string } | null)?.generated_at) || "0").replace(/\D/g, "");
 
-  const js = widget(project.id, project.vapid_public_key, api, attribution, ymCounterId, button, prompt, project.is_active !== false);
+  const js = widget(project.id, project.vapid_public_key, api, attribution, ymCounterId, button, prompt, install, installVersion, project.is_active !== false);
   return new Response(js, {
     headers: {
       "Content-Type": "application/javascript; charset=utf-8",
@@ -85,6 +95,8 @@ function widget(
   ymCounterId: string | null,
   button: ButtonConfig,
   prompt: PromptConfig,
+  install: InstallConfig,
+  installVersion: string,
   isActive: boolean
 ) {
   return `(function(){
@@ -347,13 +359,22 @@ function widget(
       .catch(function(){ return { authenticated:false, phone:false, email:false }; });
   }
 
+  // Окно «Установка приложения»: пока оно выключено в «Виджетах» (или проект
+  // заблокирован), методы открытия — заглушки с понятным сообщением в консоли,
+  // а не ошибка "is not a function" в коде магазина. Включённое окно подменяет
+  // их своими в блоке installBlock ниже.
+  function installOff(){ console.warn("[sendera] окно «Установка приложения» выключено в разделе «Виджеты»"); }
+
   window.sendera = {
     subscribe: subscribe, event: track, identify: identify,
-    isSubscribed: isSubscribed, isAuthenticated: isAuthenticated
+    isSubscribed: isSubscribed, isAuthenticated: isAuthenticated,
+    openInstallGuide: installOff, openInstallGuideIos: installOff,
+    openInstallGuideAndroid: installOff, closeInstallGuide: function(){}
   };
 })();
 ${isActive && button.enabled ? buttonBlock(projectId, button) : ""}
-${isActive && prompt.enabled ? promptBlock(projectId, prompt) : ""}`;
+${isActive && prompt.enabled ? promptBlock(projectId, prompt) : ""}
+${isActive && install.enabled ? installBlock(api, projectId, install, installVersion) : ""}`;
 }
 
 function attributionSnippet(cfg: { cookieName: string; windowDays: number } | null) {

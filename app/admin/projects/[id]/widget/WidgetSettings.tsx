@@ -8,6 +8,8 @@ import type { ButtonConfig, ButtonPosition, ButtonSize, CornerRadius, PromptConf
 import ButtonPreview from "./ButtonPreview";
 import PromptPreview from "./PromptPreview";
 import { SenderaApiDocs } from "./SenderaApiDocs";
+import InstallSettings from "./InstallSettings";
+import type { InstallConfig } from "@/lib/install-guide";
 
 const POSITION_LABEL: Record<ButtonPosition, string> = {
   "bottom-right": "Справа внизу",
@@ -99,10 +101,16 @@ export default function WidgetSettings({
   projectId,
   initialButton,
   initialPrompt,
+  initialInstall,
+  installVersion,
+  hasManifest,
 }: {
   projectId: string;
   initialButton: ButtonConfig;
   initialPrompt: PromptConfig;
+  initialInstall: InstallConfig;
+  installVersion: string;
+  hasManifest: boolean;
 }) {
   const router = useRouter();
   const { toast } = useDialogs();
@@ -110,7 +118,7 @@ export default function WidgetSettings({
   const [prompt, setPrompt] = useState(initialPrompt);
   const [busyButton, setBusyButton] = useState(false);
   const [busyPrompt, setBusyPrompt] = useState(false);
-  const [tab, setTab] = useState<"button" | "prompt">("button");
+  const [tab, setTab] = useState<"button" | "prompt" | "install">("button");
 
   async function saveButton() {
     setBusyButton(true);
@@ -152,6 +160,7 @@ export default function WidgetSettings({
         options={[
           { value: "button", label: "Кнопка подписки" },
           { value: "prompt", label: "Плашка перед запросом" },
+          { value: "install", label: "Установка приложения" },
         ]}
         className="mt-4 sm:mt-8 mb-5 flex-wrap"
       />
@@ -227,6 +236,10 @@ export default function WidgetSettings({
       </div>
 
         </>
+      )}
+
+      {tab === "install" && (
+        <InstallSettings projectId={projectId} initial={initialInstall} version={installVersion} hasManifest={hasManifest} />
       )}
 
       {tab === "prompt" && (
