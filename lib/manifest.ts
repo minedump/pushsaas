@@ -19,6 +19,11 @@ export type ManifestConfig = {
 
 const BUCKET = "project-assets";
 
+// Финальные PNG жмём в 8-битную палитру (libimagequant). На текстурном логотипе 512×512
+// это 562 КБ → ~200 КБ при разнице на глаз не видной (макс. отклонение ~20 из 255),
+// а чистый lossless даёт лишь -13%. Промежуточные буферы остаются обычными PNG.
+const PNG_OUT = { palette: true, quality: 85, effort: 10, compressionLevel: 9 } as const;
+
 function roundedMask(size: number): Buffer {
   const r = Math.round(size * 0.18);
   return Buffer.from(
@@ -34,7 +39,7 @@ async function makeIcons(source: Buffer, themeColor: string) {
     const img = await sharp(base).resize(size, size).png().toBuffer();
     return sharp(img)
       .composite([{ input: roundedMask(size), blend: "dest-in" }])
-      .png()
+      .png(PNG_OUT)
       .toBuffer();
   }
 
@@ -43,12 +48,12 @@ async function makeIcons(source: Buffer, themeColor: string) {
     const logo = await sharp(base).resize(inner, inner).png().toBuffer();
     return sharp({ create: { width: size, height: size, channels: 4, background: themeColor } })
       .composite([{ input: logo, gravity: "centre" }])
-      .png()
+      .png(PNG_OUT)
       .toBuffer();
   }
 
   async function apple(): Promise<Buffer> {
-    return sharp(base).resize(180, 180).flatten({ background: themeColor }).png().toBuffer();
+    return sharp(base).resize(180, 180).flatten({ background: themeColor }).png(PNG_OUT).toBuffer();
   }
 
   return {
