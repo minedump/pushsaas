@@ -8,12 +8,23 @@ import { createAdminClient } from "@/lib/supabase/admin";
 //     (форму — круг/сквиркл — накладывает сама ОС Android)
 //   · apple-touch-icon 180×180 — БЕЗ скругления и БЕЗ прозрачности
 //     (iOS скругляет сам; прозрачность заливается цветом темы)
+//   · favicon-96x96.png и favicon.ico (16/32/48) — как "any", со скруглением. SVG-фавикон
+//     из растра не делаем: честного вектора из картинки не получить.
 
 export type ManifestConfig = {
   name: string;
   short_name: string;
   theme_color: string;
-  icons: { i192: string; i512: string; m192: string; m512: string; apple: string };
+  icons: {
+    i192: string;
+    i512: string;
+    m192: string;
+    m512: string;
+    apple: string;
+    // фавиконы добавлены позже: у проектов, сгенерированных раньше, их нет до перегенерации
+    f96?: string;
+    ico?: string;
+  };
   generated_at: string;
 };
 
@@ -29,6 +40,26 @@ function roundedMask(size: number): Buffer {
   return Buffer.from(
     `<svg width="${size}" height="${size}"><rect x="0" y="0" width="${size}" height="${size}" rx="${r}" ry="${r}" fill="#fff"/></svg>`
   );
+}
+
+// ICO-контейнер из PNG-картинок (PNG внутри ICO поддерживают все браузеры с Vista/IE9).
+function buildIco(images: { size: number; data: Buffer }[]): Buffer {
+  const head = Buffer.alloc(6);
+  head.writeUInt16LE(1, 2); // type: icon
+  head.writeUInt16LE(images.length, 4);
+  const dir = Buffer.alloc(16 * images.length);
+  let offset = head.length + dir.length;
+  images.forEach((img, i) => {
+    const o = i * 16;
+    dir.writeUInt8(img.size >= 256 ? 0 : img.size, o); // width
+    dir.writeUInt8(img.size >= 256 ? 0 : img.size, o + 1); // height
+    dir.writeUInt16LE(1, o + 4); // planes
+    dir.writeUInt16LE(32, o + 6); // bit count
+    dir.writeUInt32LE(img.data.length, o + 8);
+    dir.writeUInt32LE(offset, o + 12);
+    offset += img.data.length;
+  });
+  return Buffer.concat([head, dir, ...images.map((i) => i.data)]);
 }
 
 async function makeIcons(source: Buffer, themeColor: string) {
@@ -56,12 +87,26 @@ async function makeIcons(source: Buffer, themeColor: string) {
     return sharp(base).resize(180, 180).flatten({ background: themeColor }).png(PNG_OUT).toBuffer();
   }
 
+  // фавикон: те же скруглённые "any"; мелкие размеры без палитры (там и так единицы КБ)
+  async function faviconPng(size: number): Promise<Buffer> {
+    const img = await sharp(base).resize(size, size).png().toBuffer();
+    return sharp(img)
+      .composite([{ input: roundedMask(size), blend: "dest-in" }])
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+  }
+  const ico = buildIco(
+    await Promise.all([16, 32, 48].map(async (size) => ({ size, data: await faviconPng(size) })))
+  );
+
   return {
     "icon-192.png": await anyIcon(192),
     "icon-512.png": await anyIcon(512),
     "icon-maskable-192.png": await maskable(192),
     "icon-maskable-512.png": await maskable(512),
     "apple-touch-icon.png": await apple(),
+    "favicon-96x96.png": await anyIcon(96),
+    "favicon.ico": ico,
   };
 }
 
@@ -85,7 +130,7 @@ export async function generateManifestAssets(
   for (const [filename, buf] of Object.entries(files)) {
     const path = `${projectId}/${filename}`;
     const { error } = await admin.storage.from(BUCKET).upload(path, buf, {
-      contentType: "image/png",
+      contentType: filename.endsWith(".ico") ? "image/x-icon" : "image/png",
       cacheControl: "86400",
       upsert: true,
     });
@@ -103,6 +148,8 @@ export async function generateManifestAssets(
       m192: urls["icon-maskable-192.png"],
       m512: urls["icon-maskable-512.png"],
       apple: urls["apple-touch-icon.png"],
+      f96: urls["favicon-96x96.png"],
+      ico: urls["favicon.ico"],
     },
     generated_at: new Date().toISOString(),
   };
@@ -139,9 +186,13 @@ export function buildManifestJson(config: ManifestConfig): string {
 }
 
 export function buildHeadSnippet(config: ManifestConfig): string {
-  return [
+  const lines = [
     `<link rel="manifest" href="/site.webmanifest">`,
     `<meta name="theme-color" content="${config.theme_color}">`,
     `<link rel="apple-touch-icon" sizes="180x180" href="${config.icons.apple}">`,
-  ].join("\n");
+  ];
+  // у проектов, сгенерированных до появления фавиконов, этих ссылок нет — строки не выводим
+  if (config.icons.ico) lines.push(`<link rel="shortcut icon" href="${config.icons.ico}" type="image/x-icon">`);
+  if (config.icons.f96) lines.push(`<link rel="icon" sizes="96x96" href="${config.icons.f96}" type="image/png">`);
+  return lines.join("\n");
 }

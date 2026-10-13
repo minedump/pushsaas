@@ -9,7 +9,7 @@ import CodeBlock from "./CodeBlock";
 type ManifestResult = {
   manifest: string;
   headSnippet: string;
-  icons: { i192: string; i512: string; m192: string; m512: string; apple: string };
+  icons: { i192: string; i512: string; m192: string; m512: string; apple: string; f96?: string; ico?: string };
 };
 
 const COLOR_PRESETS = ["#2c4a66", "#111827", "#2563eb", "#7c3aed", "#16a34a", "#ea580c", "#dc2626", "#0d9488"];
@@ -137,7 +137,7 @@ export default function ManifestSetup({
               </label>
               <p className="text-[12.5px] text-ink-faint mt-1.5 mb-0">
                 Изображение по центру, с небольшими полями. Остальные форматы сделаем сами: Android — со скруглением,
-                maskable — с полями на подложке цвета темы, Apple — без скруглений и прозрачности (iOS скругляет сам).
+                maskable — с полями на подложке цвета темы, Apple — без скруглений и прозрачности (iOS скругляет сам), фавикон для вкладки браузера — как у Android.
               </p>
             </div>
 
@@ -224,8 +224,11 @@ export default function ManifestSetup({
           </p>
           <CodeBlock code={result.headSnippet} />
           <p className="text-[12.5px] text-ink-faint">
-            Если в шаблоне уже есть старый <code className="font-mono">&lt;link rel=&quot;manifest&quot;&gt;</code> или{" "}
-            <code className="font-mono">apple-touch-icon</code> — замените их, дублировать нельзя.
+            Если в шаблоне уже есть старый <code className="font-mono">&lt;link rel=&quot;manifest&quot;&gt;</code>,{" "}
+            <code className="font-mono">apple-touch-icon</code> или строки{" "}
+            <code className="font-mono">rel=&quot;icon&quot;</code> /{" "}
+            <code className="font-mono">rel=&quot;shortcut icon&quot;</code> (в том числе с SVG) — замените их,
+            дублировать нельзя.
           </p>
         </div>
       )}
