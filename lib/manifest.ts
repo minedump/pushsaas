@@ -112,6 +112,10 @@ export function buildManifestJson(config: ManifestConfig): string {
     {
       name: config.name,
       short_name: config.short_name,
+      // Стабильный идентификатор приложения: без id Chrome берёт start_url и ругается
+      // в DevTools. "/" даёт тот же адрес (https://сайт/), что и вычисленный раньше,
+      // поэтому уже установленные приложения не превращаются в новые.
+      id: "/",
       start_url: "/",
       scope: "/",
       display: "standalone",
