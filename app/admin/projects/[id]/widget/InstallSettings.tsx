@@ -82,39 +82,40 @@ export default function InstallSettings({
   const setList = (fn: (l: Row[]) => Row[]) => setRows((r) => ({ ...r, [platform]: fn(r[platform]) }));
   const patch = (uid: string, p: Partial<InstallStep>) => setList((l) => l.map((r) => (r.uid === uid ? { ...r, ...p } : r)));
 
+  // Перетаскивание: слушатели движения и отпускания вешаем на окно на время жеста, а не на ручку.
+  // Когда строка переставляется, React переносит её узел в DOM, браузер снимает захват указателя
+  // с ручки, и событие отпускания до неё уже не доходит — строка зависала бы в режиме переноса.
   function dragStart(e: React.PointerEvent, uid: string) {
     e.preventDefault();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     setDragUid(uid);
+    const move = (ev: PointerEvent) => dragTo(ev.clientY, uid);
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      setDragUid(null);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
   }
-  function dragMove(e: React.PointerEvent, uid: string) {
-    if (dragUid !== uid) return;
-    const y = e.clientY;
+  // Новое место строки — по числу остальных строк, середина которых выше курсора: так резкий
+  // рывок мыши переставляет сразу на нужное место, а не на одну позицию за событие.
+  function dragTo(y: number, uid: string) {
     setList((l) => {
-      const i = l.findIndex((r) => r.uid === uid);
-      const prev = l[i - 1];
-      if (prev) {
-        const r = rowRefs.current[prev.uid]?.getBoundingClientRect();
-        if (r && y < r.top + r.height / 2) {
-          const next = [...l];
-          [next[i - 1], next[i]] = [next[i], next[i - 1]];
-          return next;
-        }
+      const cur = l.findIndex((r) => r.uid === uid);
+      if (cur < 0) return l;
+      const others = l.filter((r) => r.uid !== uid);
+      let idx = 0;
+      for (const r of others) {
+        const box = rowRefs.current[r.uid]?.getBoundingClientRect();
+        if (box && y > box.top + box.height / 2) idx++;
       }
-      const after = l[i + 1];
-      if (after) {
-        const r = rowRefs.current[after.uid]?.getBoundingClientRect();
-        if (r && y > r.top + r.height / 2) {
-          const next = [...l];
-          [next[i + 1], next[i]] = [next[i], next[i + 1]];
-          return next;
-        }
-      }
-      return l;
+      if (idx === cur) return l;
+      const next = [...others];
+      next.splice(idx, 0, l[cur]);
+      return next;
     });
-  }
-  function dragEnd() {
-    setDragUid(null);
   }
 
   function addStep() {
@@ -231,9 +232,6 @@ export default function InstallSettings({
                 >
                   <div
                     onPointerDown={(e) => dragStart(e, s.uid)}
-                    onPointerMove={(e) => dragMove(e, s.uid)}
-                    onPointerUp={dragEnd}
-                    onPointerCancel={dragEnd}
                     style={{ touchAction: "none" }}
                     className={`p-1 -m-1 mt-0.5 text-ink-faint hover:text-ink ${dragUid === s.uid ? "cursor-grabbing text-ink" : "cursor-grab"}`}
                     aria-label="Перетащить для изменения порядка шагов"
