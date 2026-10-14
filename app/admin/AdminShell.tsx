@@ -42,6 +42,24 @@ type Project = { id: string; name: string; is_active: boolean };
 const ALL_PROJECTS = "__all__";
 const SIDEBAR_COLLAPSED_KEY = "sendera-sidebar-collapsed";
 
+// Браузер может запретить localStorage (блокировка данных сайтов, приватный
+// режим): обращение тогда бросает исключение. Тема и сворачивание меню должны
+// работать и без хранилища — просто не запомнятся до следующего захода.
+function storageGet(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function storageSet(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* хранилище недоступно — состояние живёт только в этой вкладке */
+  }
+}
+
 export default function AdminShell({
   role,
   projects,
@@ -65,13 +83,13 @@ export default function AdminShell({
   // DOM-разметку не трогаем: если снять и тут же вернуть класс, получится
   // мелькание, усиленное transition-[width] на aside.
   useEffect(() => {
-    if (localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1") setCollapsed(true);
+    if (storageGet(SIDEBAR_COLLAPSED_KEY) === "1") setCollapsed(true);
   }, []);
 
   function toggleCollapsed() {
     setCollapsed((v) => {
       const next = !v;
-      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
+      storageSet(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
       document.documentElement.classList.toggle("sb-collapsed", next);
       return next;
     });
@@ -372,7 +390,7 @@ function ThemeToggle() {
 
   useEffect(() => {
     setMounted(true);
-    const stored = localStorage.getItem(THEME_KEY);
+    const stored = storageGet(THEME_KEY);
     if (stored === "light" || stored === "dark") setTheme(stored);
 
     // Системная тема может смениться на лету (авто-режим ОС, переключатель
@@ -401,7 +419,7 @@ function ThemeToggle() {
 
   function toggle() {
     const next: "light" | "dark" = isDark ? "light" : "dark";
-    localStorage.setItem(THEME_KEY, next);
+    storageSet(THEME_KEY, next);
     document.documentElement.setAttribute("data-theme", next);
     setTheme(next);
   }

@@ -36,14 +36,10 @@ export async function POST(req: Request) {
 
   // Сохраняем итог шага (ok и время) — страница настроек покажет галочку после
   // перезахода. Ошибки записи пользователю не показываем, только в лог.
-  const { data: row, error: readErr } = await admin.from("projects").select("setup_checks").eq("id", projectId).maybeSingle();
-  if (readErr) {
-    console.error("[verify-setup] read setup_checks failed:", readErr.message);
-  } else if (row) {
-    const checks = { ...(row.setup_checks || {}), [step]: { ok: result.ok, checked_at: new Date().toISOString() } };
-    const { error: writeErr } = await admin.from("projects").update({ setup_checks: checks }).eq("id", projectId);
-    if (writeErr) console.error("[verify-setup] save setup_checks failed:", writeErr.message);
-  }
+  // Запись атомарная (функция в БД меняет только ключ этого шага): три
+  // одновременные проверки не затирают результаты друг друга.
+  const { error: saveErr } = await admin.rpc("set_setup_check", { p_project: projectId, p_step: step, p_ok: result.ok });
+  if (saveErr) console.error("[verify-setup] save setup_checks failed:", saveErr.message);
 
   // подробности (какой пункт не прошёл) наружу не отдаём — интерфейсу нужен только итог
   return NextResponse.json({ ok: result.ok });
