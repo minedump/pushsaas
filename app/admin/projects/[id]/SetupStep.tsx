@@ -1,27 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import {
-  IconCircleCheck,
-  IconAlertCircle,
-  IconCircleDashed,
-  IconRefresh,
-  IconPlus,
-  IconMinus,
-} from "@tabler/icons-react";
-import { cn, useDialogs } from "@/app/ui";
-import { formatDateTime } from "@/lib/datetime";
-import { useProjectTz } from "./ProjectTimeProvider";
-
-type CheckItem = { label: string; ok: boolean; note?: string };
+import { IconCircleCheck, IconCircleDashed, IconRefresh, IconPlus, IconMinus } from "@tabler/icons-react";
+import { useDialogs } from "@/app/ui";
 
 // Последний сохранённый результат проверки шага (projects.setup_checks).
-// Старые записи хранили только ok — пунктов и времени в них нет.
-export type SavedCheck = { ok?: boolean; checks?: CheckItem[]; checked_at?: string };
+export type SavedCheck = { ok?: boolean; checked_at?: string };
 
 // Раскрывающаяся карточка шага подключения. В шапке: статус-иконка, название,
-// иконка «проверить» и +/−. В теле: содержимое шага + результаты проверки
-// уведомлением. Отдельной кнопки «Проверить» и слова «Готово» нет.
+// иконка «проверить» и +/−. Итог проверки — только тост «прошла / не прошла»
+// без подробностей, а в шапке остаётся галочка у пройденного шага.
 export default function SetupStep({
   projectId,
   step,
@@ -35,50 +23,32 @@ export default function SetupStep({
   initial?: SavedCheck;
   children: React.ReactNode;
 }) {
-  const tz = useProjectTz();
   const { toast } = useDialogs();
-  const [ok, setOk] = useState<boolean | null>(initial && typeof initial.ok === "boolean" ? initial.ok : null);
+  const [ok, setOk] = useState(initial?.ok === true);
   const [open, setOpen] = useState(initial?.ok !== true); // выполненные — свёрнуты
   const [busy, setBusy] = useState(false);
-  const [checks, setChecks] = useState<CheckItem[] | null>(initial?.checks ?? null);
-  const [checkedAt, setCheckedAt] = useState<string | null>(initial?.checked_at ?? null);
-  const [error, setError] = useState<string | null>(null);
 
   async function verify(e: React.MouseEvent) {
     e.stopPropagation();
+    if (busy) return;
     setBusy(true);
-    setError(null);
-    setOpen(true);
     try {
       const res = await fetch("/api/admin/verify-setup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, step }),
       });
-      const json = await res.json();
-      if (!res.ok) {
-        setError(json.error || "Ошибка проверки");
-        setOk(null);
-      } else {
-        setOk(json.ok);
-        setChecks(json.checks);
-        setCheckedAt(json.checkedAt ?? null);
-        if (json.saved === false) toast("Проверка выполнена, но результат не удалось сохранить", "bad");
-      }
+      const json = await res.json().catch(() => ({}));
+      const passed = res.ok && json.ok === true;
+      // сбой самой проверки (нет доступа, нет домена, сеть) — не итог по шагу,
+      // прежняя галочка остаётся; итог пользователю в любом случае один из двух
+      if (res.ok) setOk(passed);
+      toast(passed ? "Проверка пройдена" : "Проверка не пройдена", passed ? "good" : "bad");
     } catch {
-      setError("Не удалось выполнить проверку");
+      toast("Проверка не пройдена", "bad");
     }
     setBusy(false);
   }
-
-  const StatusIcon =
-    ok === true ? (
-      <IconCircleCheck size={20} stroke={2} className="text-good shrink-0" />
-    ) : ok === false ? (
-      <IconAlertCircle size={20} stroke={2} className="text-bad shrink-0" />
-    ) : (
-      <IconCircleDashed size={20} stroke={2} className="text-ink-faint shrink-0" />
-    );
 
   return (
     <div className="bg-surface border border-border rounded-xl mt-3">
@@ -86,7 +56,11 @@ export default function SetupStep({
         className="flex items-center gap-2.5 p-4 cursor-pointer select-none"
         onClick={() => setOpen((v) => !v)}
       >
-        {StatusIcon}
+        {ok ? (
+          <IconCircleCheck size={20} stroke={2} className="text-good shrink-0" />
+        ) : (
+          <IconCircleDashed size={20} stroke={2} className="text-ink-faint shrink-0" />
+        )}
         <span className="flex-1 font-semibold text-sm">{title}</span>
         <button
           onClick={verify}
@@ -101,41 +75,7 @@ export default function SetupStep({
         </span>
       </div>
 
-      {open && (
-        <div className="px-4 pb-4">
-          {children}
-
-          {error && (
-            <div className="mt-3 rounded-lg p-3 bg-bad-tint border border-border text-bad text-[13px]">{error}</div>
-          )}
-
-          {checks && (
-            <div
-              className={cn(
-                "mt-3 rounded-lg p-3 border border-border",
-                ok ? "bg-good-tint" : "bg-warn-tint"
-              )}
-            >
-              {checkedAt && <div className="text-[12px] text-ink-faint mb-2">Проверено {formatDateTime(checkedAt, tz)}</div>}
-              <ul className="list-none p-0 m-0 flex flex-col gap-1.5">
-                {checks.map((c, i) => (
-                  <li key={i} className="flex items-start gap-2 text-[13px]">
-                    {c.ok ? (
-                      <IconCircleCheck size={15} stroke={2} className="text-good shrink-0 mt-0.5" />
-                    ) : (
-                      <IconAlertCircle size={15} stroke={2} className="text-bad shrink-0 mt-0.5" />
-                    )}
-                    <span className={c.ok ? "text-ink-muted" : "text-ink"}>
-                      {c.label}
-                      {c.note && <span className="text-ink-faint"> — {c.note}</span>}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
+      {open && <div className="px-4 pb-4">{children}</div>}
     </div>
   );
 }
