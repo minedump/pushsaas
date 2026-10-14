@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { minifyJs } from "@/lib/minify-js";
 
 // Управление НАТИВНОЙ кнопкой входа InSales («Войти через <приложение>»,
 // блок .co-login--social_login) — отдельный, опциональный скрипт.
@@ -31,7 +32,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ projectId: str
     rounded: !!config.auth_button_rounded,
   };
 
-  return new Response(script(opts), {
+  return new Response(await minifyJs(script(opts)), {
     headers: { "Content-Type": "application/javascript; charset=utf-8", "Cache-Control": "public, max-age=300" },
   });
 }

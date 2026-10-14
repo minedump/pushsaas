@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/build-sdk.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -19,6 +20,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "sharp": "^0.35.3",
+    "terser": "^5.51.2",
     "undici": "^7.28.0",
     "web-push": "^3.6.7"
   },

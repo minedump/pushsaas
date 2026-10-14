@@ -3,6 +3,7 @@ import { resolveButtonConfig, resolvePromptConfig, type ButtonConfig, type Promp
 import { buttonBlock, promptBlock } from "@/lib/widget-scripts";
 import { resolveInstallConfig, type InstallConfig } from "@/lib/install-guide";
 import { installBlock } from "@/lib/install-widget";
+import { minifyJs } from "@/lib/minify-js";
 
 // Serves the per-project subscribe widget as JavaScript.
 // The client embeds ONE script tag:  <script src="https://APP/embed/PROJECT_ID.js" async></script>
@@ -79,7 +80,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ projectId: str
   const installVersion = String((!widgetErr && (widgetRow?.manifest_config as { generated_at?: string } | null)?.generated_at) || "0").replace(/\D/g, "");
 
   const js = widget(project.id, project.vapid_public_key, api, attribution, ymCounterId, button, prompt, install, installVersion, project.is_active !== false);
-  return new Response(js, {
+  return new Response(await minifyJs(js), {
     headers: {
       "Content-Type": "application/javascript; charset=utf-8",
       "Cache-Control": "public, max-age=300",
