@@ -7,7 +7,7 @@ import { ensureAttributionToken } from "@/lib/attribution";
 import { ButtonLink } from "@/app/ui";
 import CodeBlock from "../CodeBlock";
 import ManifestSetup from "../ManifestSetup";
-import SetupStep from "../SetupStep";
+import SetupStep, { type SavedCheck } from "../SetupStep";
 import ProjectSettings from "../ProjectSettings";
 import AttributionSettings from "./AttributionSettings";
 
@@ -58,7 +58,7 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
   // отдельные best-effort запросы: до миграций 0005/0006 колонок нет —
   // страница не падает, просто пустые форма и статусы
   let manifestInitial: { manifest: string; headSnippet: string; icons: ManifestConfig["icons"] } | null = null;
-  let setupChecks: Record<string, { ok?: boolean }> = {};
+  let setupChecks: Record<string, SavedCheck> = {};
   {
     const { data: mrow, error: merr } = await supabase
       .from("projects")
@@ -74,7 +74,8 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
       .select("setup_checks")
       .eq("id", id)
       .maybeSingle();
-    if (!cerr && crow?.setup_checks) setupChecks = crow.setup_checks as Record<string, { ok?: boolean }>;
+    if (cerr) console.error("[settings] read setup_checks failed:", cerr.message);
+    else if (crow?.setup_checks) setupChecks = crow.setup_checks as Record<string, SavedCheck>;
   }
 
   return (
@@ -88,7 +89,7 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
           projectId={project.id}
           step="sw"
           title="Шаг 1 — скачайте и загрузите скрипт в раздел «Файлы»"
-          initialOk={!!setupChecks.sw?.ok}
+          initial={setupChecks.sw}
         >
           <ButtonLink href={swUrl} download variant="secondary" size="sm">
             <IconDownload size={15} stroke={1.8} />
@@ -111,7 +112,7 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
           projectId={project.id}
           step="snippet"
           title="Шаг 2 — вставьте код в раздел <body>"
-          initialOk={!!setupChecks.snippet?.ok}
+          initial={setupChecks.snippet}
         >
           <CodeBlock code={snippet} />
           <p className="text-[13px] text-ink-faint">
@@ -143,7 +144,7 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
           projectId={project.id}
           step="manifest"
           title="Шаг 3 — добавьте PWA-манифест на сайт"
-          initialOk={!!setupChecks.manifest?.ok}
+          initial={setupChecks.manifest}
         >
           <p className="text-sm text-ink-muted mt-0">
             Чтобы сайт устанавливался на экран «Домой» как приложение, нужен файл{" "}

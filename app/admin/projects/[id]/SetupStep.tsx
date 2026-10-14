@@ -9,9 +9,15 @@ import {
   IconPlus,
   IconMinus,
 } from "@tabler/icons-react";
-import { cn } from "@/app/ui";
+import { cn, useDialogs } from "@/app/ui";
+import { formatDateTime } from "@/lib/datetime";
+import { useProjectTz } from "./ProjectTimeProvider";
 
 type CheckItem = { label: string; ok: boolean; note?: string };
+
+// Последний сохранённый результат проверки шага (projects.setup_checks).
+// Старые записи хранили только ok — пунктов и времени в них нет.
+export type SavedCheck = { ok?: boolean; checks?: CheckItem[]; checked_at?: string };
 
 // Раскрывающаяся карточка шага подключения. В шапке: статус-иконка, название,
 // иконка «проверить» и +/−. В теле: содержимое шага + результаты проверки
@@ -20,19 +26,22 @@ export default function SetupStep({
   projectId,
   step,
   title,
-  initialOk,
+  initial,
   children,
 }: {
   projectId: string;
   step: "sw" | "snippet" | "manifest";
   title: string;
-  initialOk: boolean;
+  initial?: SavedCheck;
   children: React.ReactNode;
 }) {
-  const [ok, setOk] = useState<boolean | null>(initialOk ? true : null);
-  const [open, setOpen] = useState(!initialOk); // выполненные — свёрнуты
+  const tz = useProjectTz();
+  const { toast } = useDialogs();
+  const [ok, setOk] = useState<boolean | null>(initial && typeof initial.ok === "boolean" ? initial.ok : null);
+  const [open, setOpen] = useState(initial?.ok !== true); // выполненные — свёрнуты
   const [busy, setBusy] = useState(false);
-  const [checks, setChecks] = useState<CheckItem[] | null>(null);
+  const [checks, setChecks] = useState<CheckItem[] | null>(initial?.checks ?? null);
+  const [checkedAt, setCheckedAt] = useState<string | null>(initial?.checked_at ?? null);
   const [error, setError] = useState<string | null>(null);
 
   async function verify(e: React.MouseEvent) {
@@ -53,6 +62,8 @@ export default function SetupStep({
       } else {
         setOk(json.ok);
         setChecks(json.checks);
+        setCheckedAt(json.checkedAt ?? null);
+        if (json.saved === false) toast("Проверка выполнена, но результат не удалось сохранить", "bad");
       }
     } catch {
       setError("Не удалось выполнить проверку");
@@ -105,6 +116,7 @@ export default function SetupStep({
                 ok ? "bg-good-tint" : "bg-warn-tint"
               )}
             >
+              {checkedAt && <div className="text-[12px] text-ink-faint mb-2">Проверено {formatDateTime(checkedAt, tz)}</div>}
               <ul className="list-none p-0 m-0 flex flex-col gap-1.5">
                 {checks.map((c, i) => (
                   <li key={i} className="flex items-start gap-2 text-[13px]">

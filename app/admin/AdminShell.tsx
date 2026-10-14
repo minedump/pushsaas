@@ -368,14 +368,35 @@ const THEME_KEY = "sendera-theme";
 function ThemeToggle() {
   const [theme, setTheme] = useState<"light" | "dark" | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [systemDark, setSystemDark] = useState(false);
 
   useEffect(() => {
     setMounted(true);
     const stored = localStorage.getItem(THEME_KEY);
     if (stored === "light" || stored === "dark") setTheme(stored);
+
+    // Системная тема может смениться на лету (авто-режим ОС, переключатель
+    // в браузере) — пока явного выбора нет, иконка должна за ней идти.
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    setSystemDark(mq.matches);
+    const onSystem = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    mq.addEventListener("change", onSystem);
+
+    // Явный выбор, сделанный в другой вкладке, подхватываем сразу.
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== THEME_KEY) return;
+      if (e.newValue === "light" || e.newValue === "dark") {
+        setTheme(e.newValue);
+        document.documentElement.setAttribute("data-theme", e.newValue);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      mq.removeEventListener("change", onSystem);
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
 
-  const systemDark = mounted && typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches;
   const isDark = theme ? theme === "dark" : systemDark;
 
   function toggle() {

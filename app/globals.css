@@ -19,12 +19,16 @@
   --bad: #dc2626;
   --bad-tint: #fbe9e6;
   --bad-solid: var(--bad);
+  /* Нативные элементы (скроллбары, списки, поле даты, автозаполнение)
+     рисуются браузером в цвет текущей темы, а не всегда светлыми. */
+  color-scheme: light;
 }
 
 /* Системная тёмная тема — только пока пользователь явно не выбрал светлую
    (см. :root[data-theme="light"] ниже, которая должна её перебивать). */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --paper: #14171b;
     --surface: #1a1e23;
     --surface-2: #20252b;
@@ -51,6 +55,7 @@
 /* Явный выбор темы (кнопка-переключатель, см. AdminShell.tsx ThemeToggle) —
    побеждает системную настройку в обе стороны. */
 :root[data-theme="dark"] {
+  color-scheme: dark;
   --paper: #14171b;
   --surface: #1a1e23;
   --surface-2: #20252b;

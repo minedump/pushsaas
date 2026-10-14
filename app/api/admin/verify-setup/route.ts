@@ -34,12 +34,21 @@ export async function POST(req: Request) {
   else if (step === "snippet") result = await checkSnippet(domain, projectId);
   else result = await checkManifest(domain);
 
-  // персист — best-effort (до миграции 0006 колонки может не быть)
-  const { data: row } = await admin.from("projects").select("setup_checks").eq("id", projectId).maybeSingle();
-  if (row) {
-    const checks = { ...(row.setup_checks || {}), [step]: { ok: result.ok, checked_at: new Date().toISOString() } };
-    await admin.from("projects").update({ setup_checks: checks }).eq("id", projectId);
+  // Сохраняем результат целиком (не только «ok»): и успех, и провал, и список
+  // пунктов — страница настроек восстанавливает их после перезахода. Ошибки
+  // записи не глотаем: логируем и отдаём saved:false, чтобы кнопка не делала
+  // вид, что состояние сохранено.
+  const checkedAt = new Date().toISOString();
+  let saved = false;
+  const { data: row, error: readErr } = await admin.from("projects").select("setup_checks").eq("id", projectId).maybeSingle();
+  if (readErr) {
+    console.error("[verify-setup] read setup_checks failed:", readErr.message);
+  } else if (row) {
+    const checks = { ...(row.setup_checks || {}), [step]: { ok: result.ok, checks: result.checks, checked_at: checkedAt } };
+    const { error: writeErr } = await admin.from("projects").update({ setup_checks: checks }).eq("id", projectId);
+    if (writeErr) console.error("[verify-setup] save setup_checks failed:", writeErr.message);
+    else saved = true;
   }
 
-  return NextResponse.json(result);
+  return NextResponse.json({ ...result, checkedAt, saved });
 }
