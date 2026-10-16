@@ -308,19 +308,15 @@ export default function InstallSettings({
                 Добавить шаг
               </Button>
             </div>
-            <p className="text-xs text-ink-faint mt-2 mb-0">
-              Название кнопки в <code className="font-mono">**звёздочках**</code> выделится жирным. Схемы шагов рисуются сами по данным манифеста: иконка,
-              короткое название, цвет и адрес сайта.{" "}
-              {!hasManifest && (
-                <>
-                  Манифест пока не создан — в схемах будет буква на плашке.{" "}
-                  <a href={`/admin/projects/${projectId}/settings`} className="text-accent underline">
-                    Создать манифест
-                  </a>
-                  .
-                </>
-              )}
-            </p>
+            {!hasManifest && (
+              <p className="text-xs text-ink-faint mt-2 mb-0">
+                Манифест пока не создан — в схемах будет буква на плашке.{" "}
+                <a href={`/admin/projects/${projectId}/settings`} className="text-accent underline">
+                  Создать манифест
+                </a>
+                .
+              </p>
+            )}
           </div>
 
           <div>
