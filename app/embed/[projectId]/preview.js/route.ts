@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveButtonConfig, resolvePromptConfig } from "@/lib/widget-config";
-import { buttonBlock, promptBlock, WIDGET_Z_INDEX } from "@/lib/widget-scripts";
+import { buttonBlock, promptBlock } from "@/lib/widget-scripts";
 import { resolveInstallConfig } from "@/lib/install-guide";
 import { installBlock } from "@/lib/install-widget";
 import { minifyJs } from "@/lib/minify-js";
@@ -68,7 +68,7 @@ function previewShell(projectId: string, widget: PreviewWidget) {
     var b = document.createElement("div");
     b.id = "sendera-preview-badge";
     b.setAttribute("data-nosnippet", "");
-    b.style.cssText = "position:fixed;left:50%;transform:translateX(-50%);${atBottom ? "bottom" : "top"}:12px;z-index:${WIDGET_Z_INDEX + 1};display:flex;align-items:center;gap:10px;padding:7px 8px 7px 14px;border-radius:999px;background:#16191e;color:#fff;font:600 12.5px/1 -apple-system,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.25)";
+    b.style.cssText = "position:fixed;left:50%;transform:translateX(-50%);${atBottom ? "bottom" : "top"}:12px;z-index:2147483647;display:flex;align-items:center;gap:10px;padding:7px 8px 7px 14px;border-radius:999px;background:#16191e;color:#fff;font:600 12.5px/1 -apple-system,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.25)";
     var t = document.createElement("span"); t.textContent = "Предпросмотр виджета";
     var x = document.createElement("button"); x.type = "button"; x.textContent = "Закрыть";
     x.style.cssText = "border:none;border-radius:999px;padding:6px 11px;background:#fff;color:#16191e;font:600 12px/1 -apple-system,sans-serif;cursor:pointer";
