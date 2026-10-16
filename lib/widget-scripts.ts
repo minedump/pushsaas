@@ -206,6 +206,7 @@ export function buttonBlock(projectId: string, config: ButtonConfig): string {
 
         var btn = document.createElement("button");
         btn.id = "sendera-btn";
+        btn.setAttribute("data-nosnippet", ""); // текст кнопки не должен попадать в сниппеты поисковиков
         btn.style.cssText = "${baseCss}";
 
         var closeBtn = document.createElement("span");
@@ -298,6 +299,7 @@ export function promptBlock(projectId: string, config: PromptConfig): string {
         var mobile = window.matchMedia("(max-width: 640px)").matches;
         var card = document.createElement("div");
         card.id = "sendera-prompt";
+        card.setAttribute("data-nosnippet", ""); // текст плашки не должен попадать в сниппеты поисковиков
         card.innerHTML =
           '<div class="pss-p-icon" style="color:${color}">' + BELL + '</div>' +
           '<div class="pss-p-text">' +
