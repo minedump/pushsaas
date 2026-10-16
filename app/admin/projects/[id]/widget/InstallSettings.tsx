@@ -16,6 +16,7 @@ import {
 } from "@/lib/install-guide";
 import type { CornerRadius } from "@/lib/widget-config";
 import InstallPreview from "./InstallPreview";
+import SitePreviewLink from "./SitePreviewLink";
 
 const RADIUS_LABEL: Record<CornerRadius, string> = {
   none: "Без закругления",
@@ -36,11 +37,13 @@ const withUid = (s: InstallStep): Row => ({ ...s, uid: `s${++uidCounter}` });
 
 export default function InstallSettings({
   projectId,
+  domain,
   initial,
   version,
   hasManifest,
 }: {
   projectId: string;
+  domain: string | null;
   initial: InstallConfig;
   version: string;
   hasManifest: boolean;
@@ -325,6 +328,8 @@ export default function InstallSettings({
               Сохранить окно
             </Button>
           </div>
+
+          <SitePreviewLink projectId={projectId} domain={domain} widget="install" />
         </Card>
 
         <InstallPreview config={config} projectId={projectId} version={version} />

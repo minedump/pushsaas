@@ -177,7 +177,11 @@ function escapeHtml(s: string) {
 // закрыта крестиком (пауза config.dismissDays), и на iOS вне standalone —
 // там подписка технически невозможна (см. needsHomeScreen), кнопка вообще
 // не показывается, а не подменяется инструкцией.
-export function buttonBlock(projectId: string, config: ButtonConfig): string {
+// preview=true — режим «Посмотреть на сайте» (см. lib/widget-preview.ts): виджет
+// показывается сразу и всегда, игнорируя паузу после закрытия, задержку,
+// минимум страниц, поддержку push и «Домой» на iPhone, и ничего не запоминает
+// у посетителя. В обычной выдаче (preview=false) код остаётся прежним.
+export function buttonBlock(projectId: string, config: ButtonConfig, preview = false): string {
   const baseCss = toCssText(buttonBaseStyle(config));
   return `(function(){
   function ready(fn){ if(document.readyState!=="loading") fn(); else document.addEventListener("DOMContentLoaded", fn); }
@@ -185,18 +189,18 @@ export function buttonBlock(projectId: string, config: ButtonConfig): string {
   ${pageViewsCheck(projectId)}
   var DISMISS_KEY = ${JSON.stringify(`pss_button_dismissed_${projectId}`)};
   var DISMISS_DAYS = ${config.dismissDays};
-  var DELAY_SECONDS = ${config.delaySeconds};
+  var DELAY_SECONDS = ${preview ? 0 : config.delaySeconds};
   var MIN_PAGE_VIEWS = ${config.minPageViews};
 
   ready(function(){
     if(!window.sendera){ console.error("[sendera] подключите скрипт /embed/{projectId}.js"); return; }
-    if(needsHomeScreen()) return; // iOS вне standalone — подписка технически невозможна, кнопку не показываем
-    if(!("serviceWorker" in navigator && "PushManager" in window && "Notification" in window)) return;
+    ${preview ? "" : `if(needsHomeScreen()) return; // iOS вне standalone — подписка технически невозможна, кнопку не показываем
+    if(!("serviceWorker" in navigator && "PushManager" in window && "Notification" in window)) return;`}
     if(document.getElementById("sendera-btn")) return;
 
     function dismissed(){ try { var raw = localStorage.getItem(DISMISS_KEY); if(!raw) return false; return (Date.now() - Number(raw)) < DISMISS_DAYS * 86400000; } catch(e){ return false; } }
-    if(dismissed()) return;
-    if(pageViews() < MIN_PAGE_VIEWS) return;
+    ${preview ? "" : `if(dismissed()) return;
+    if(pageViews() < MIN_PAGE_VIEWS) return;`}
 
     function render(){
       window.sendera.isSubscribed().then(function(already){
@@ -215,7 +219,7 @@ export function buttonBlock(projectId: string, config: ButtonConfig): string {
         closeBtn.innerHTML = '${CLOSE_SVG}';
         closeBtn.addEventListener("click", function(e){
           e.stopPropagation();
-          try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch(err){}
+          ${preview ? "" : "try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch(err){}"}
           window.sendera.event("widget_button_dismissed", {});
           btn.remove();
         });
@@ -254,7 +258,10 @@ export function buttonBlock(projectId: string, config: ButtonConfig): string {
 // только если разрешение ещё не решено (Notification.permission==="default"),
 // не закрыта недавно (dismissDays), и устройство ещё не подписано. На iOS
 // вне standalone вместо кнопки «Разрешить» — инструкция «на экран Домой».
-export function promptBlock(projectId: string, config: PromptConfig): string {
+// preview=true — режим «Посмотреть на сайте», см. buttonBlock выше. Плашка
+// всегда показывается в обычном виде (с кнопкой «Разрешить»), без варианта
+// для iPhone.
+export function promptBlock(projectId: string, config: PromptConfig, preview = false): string {
   const DISMISS_KEY = `pss_prompt_dismissed_${projectId}`;
   const title = escapeHtml(config.title);
   const body = escapeHtml(config.body);
@@ -276,20 +283,24 @@ export function promptBlock(projectId: string, config: PromptConfig): string {
   var BELL = '${BELL_SVG}';
   var DISMISS_KEY = ${JSON.stringify(DISMISS_KEY)};
   var DISMISS_DAYS = ${config.dismissDays};
-  var DELAY_SECONDS = ${config.delaySeconds};
+  var DELAY_SECONDS = ${preview ? 0 : config.delaySeconds};
   var MIN_PAGE_VIEWS = ${config.minPageViews};
   function dismissed(){ try { var raw = localStorage.getItem(DISMISS_KEY); if(!raw) return false; return (Date.now() - Number(raw)) < DISMISS_DAYS * 86400000; } catch(e){ return false; } }
-  function dismiss(){ try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch(e){} }
+  function dismiss(){ ${preview ? "" : "try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch(e){}"} }
 
   ready(function(){
     if(!window.sendera){ console.error("[sendera] подключите скрипт /embed/{projectId}.js"); return; }
-    if(dismissed()) return;
+    ${
+      preview
+        ? "var homeScreen = false;"
+        : `if(dismissed()) return;
     var homeScreen = needsHomeScreen();
     if(!homeScreen){
       if(!supported() || Notification.permission !== "default") return;
+    }`
     }
     if(document.getElementById("sendera-prompt")) return;
-    if(pageViews() < MIN_PAGE_VIEWS) return;
+    ${preview ? "" : "if(pageViews() < MIN_PAGE_VIEWS) return;"}
 
     function render(){
       window.sendera.isSubscribed().then(function(already){

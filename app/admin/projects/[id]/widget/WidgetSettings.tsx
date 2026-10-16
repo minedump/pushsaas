@@ -9,6 +9,7 @@ import ButtonPreview from "./ButtonPreview";
 import PromptPreview from "./PromptPreview";
 import { SenderaApiDocs } from "./SenderaApiDocs";
 import InstallSettings from "./InstallSettings";
+import SitePreviewLink from "./SitePreviewLink";
 import type { InstallConfig } from "@/lib/install-guide";
 
 const POSITION_LABEL: Record<ButtonPosition, string> = {
@@ -99,6 +100,7 @@ function ShowConditionsRow({
 
 export default function WidgetSettings({
   projectId,
+  domain,
   initialButton,
   initialPrompt,
   initialInstall,
@@ -106,6 +108,7 @@ export default function WidgetSettings({
   hasManifest,
 }: {
   projectId: string;
+  domain: string | null;
   initialButton: ButtonConfig;
   initialPrompt: PromptConfig;
   initialInstall: InstallConfig;
@@ -230,6 +233,8 @@ export default function WidgetSettings({
               Сохранить кнопку
             </Button>
           </div>
+
+          <SitePreviewLink projectId={projectId} domain={domain} widget="button" />
         </Card>
 
         <ButtonPreview config={button} />
@@ -239,7 +244,7 @@ export default function WidgetSettings({
       )}
 
       {tab === "install" && (
-        <InstallSettings projectId={projectId} initial={initialInstall} version={installVersion} hasManifest={hasManifest} />
+        <InstallSettings projectId={projectId} domain={domain} initial={initialInstall} version={installVersion} hasManifest={hasManifest} />
       )}
 
       {tab === "prompt" && (
@@ -332,6 +337,8 @@ export default function WidgetSettings({
               Сохранить плашку
             </Button>
           </div>
+
+          <SitePreviewLink projectId={projectId} domain={domain} widget="prompt" />
         </Card>
 
         <PromptPreview config={prompt} />

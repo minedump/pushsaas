@@ -379,6 +379,26 @@ function widget(
     openInstallGuide: installOff, openInstallGuideIos: installOff,
     openInstallGuideAndroid: installOff, closeInstallGuide: function(){}
   };
+
+  // Предпросмотр виджета из админки: страница открыта по подписанной ссылке
+  // ?sendera_preview=<токен> — подгружаем отдельный скрипт предпросмотра (код
+  // выключенных виджетов в основной скрипт не входит). Токен держим на время
+  // вкладки, чтобы он пережил переходы по сайту; если сервер его не принял
+  // (истёк/чужой), забываем.
+  (function(){
+    try {
+      var PKEY = "pss_preview_" + PROJECT_ID;
+      var pt = new URL(location.href).searchParams.get("sendera_preview");
+      if(pt){ try { sessionStorage.setItem(PKEY, pt); } catch(e){} }
+      else { try { pt = sessionStorage.getItem(PKEY); } catch(e){} }
+      if(!pt) return;
+      var ps = document.createElement("script");
+      ps.async = true;
+      ps.src = API + "/embed/" + PROJECT_ID + "/preview.js?t=" + encodeURIComponent(pt);
+      ps.onerror = function(){ try { sessionStorage.removeItem(PKEY); } catch(e){} };
+      document.head.appendChild(ps);
+    } catch(e){}
+  })();
 })();
 ${isActive && button.enabled ? buttonBlock(projectId, button) : ""}
 ${isActive && prompt.enabled ? promptBlock(projectId, prompt) : ""}

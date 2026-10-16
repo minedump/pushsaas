@@ -9,7 +9,7 @@ export default async function WidgetPage({ params }: { params: Promise<{ id: str
   const { id } = await params;
   const supabase = await createClient();
 
-  const { data: project } = await supabase.from("projects").select("id, name, is_active, widget_config, manifest_config").eq("id", id).maybeSingle();
+  const { data: project } = await supabase.from("projects").select("id, name, domain, is_active, widget_config, manifest_config").eq("id", id).maybeSingle();
   if (!project) notFound();
   await ensureProjectAccessible(project.id, project.is_active);
 
@@ -24,6 +24,7 @@ export default async function WidgetPage({ params }: { params: Promise<{ id: str
 
       <WidgetSettings
         projectId={id}
+        domain={project.domain}
         initialButton={resolveButtonConfig(config.button)}
         initialPrompt={resolvePromptConfig(config.prompt)}
         initialInstall={resolveInstallConfig(config.install, id)}
