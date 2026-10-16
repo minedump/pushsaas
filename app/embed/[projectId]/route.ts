@@ -186,17 +186,23 @@ function widget(
     var ticket;
     try { ticket = new URL(location.href).searchParams.get("pss_link"); } catch(e){ return; }
     if(!ticket) return;
-    fetch(API + "/api/public/link", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ projectId: PROJECT_ID, ticket: ticket, deviceToken: deviceToken() })
-    }).then(function(r){ return r.json(); }).then(function(d){
+    function clean(){
+      var u = new URL(location.href); u.searchParams.delete("pss_link");
+      history.replaceState(null, "", u.toString());
+    }
+    // Привязке телефона нужно устройство: если токена ещё нет (анонимную запись
+    // при обычной загрузке страницы больше не заводим), заводим его сейчас.
+    // Через микрозадачу — ensureDeviceToken опирается на переменные, которые
+    // объявлены ниже по тексту и к этому моменту уже инициализированы.
+    Promise.resolve().then(ensureDeviceToken).then(function(dt){
+      return fetch(API + "/api/public/link", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ projectId: PROJECT_ID, ticket: ticket, deviceToken: dt })
+      }).then(function(r){ return r.json(); });
+    }).then(function(d){
       if(d && d.continue){ location.replace(d.continue); return; }
-      var u = new URL(location.href); u.searchParams.delete("pss_link");
-      history.replaceState(null, "", u.toString());
-    }).catch(function(){
-      var u = new URL(location.href); u.searchParams.delete("pss_link");
-      history.replaceState(null, "", u.toString());
-    });
+      clean();
+    }).catch(clean);
   })();
 
   // Возврат со страницы кода SENDERA: ?pss_auth_failed=1 — авторизация не
@@ -255,7 +261,8 @@ function widget(
     }).catch(function(){ return null; });
     return deviceTokenPromise;
   }
-  ensureDeviceToken();
+  // Токен заводится только по требованию (первое событие, identify или возврат
+  // со страницы входа) — просто загрузка страницы анонимных записей не создаёт.
 
   // Текущая push-подписка ЭТОГО браузера, если она есть и браузер вообще
   // поддерживает push API — иначе null (никогда не бросает).
