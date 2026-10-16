@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { IconX, IconBook2 } from "@tabler/icons-react";
 import { Modal } from "@/app/ui";
+import { INSTALL_QUERY_PARAM } from "@/lib/install-widget";
 
 // Справка по методам window.sendera.* — раньше единственное упоминание было
 // вскользь в «Настройках» (sendera.subscribe() + завязка на
@@ -107,7 +108,7 @@ function SenderaApiDocsModal({ onClose }: { onClose: () => void }) {
           <p className="m-0">
             Окно с пошаговой инструкцией, как добавить сайт на экран телефона. Настраивается в «Виджеты» → «Установка приложения»,
             включается там же. Своих кнопок открытия виджет не рисует: окно открывает код сайта, вкладки показывать или нет решаете вы,
-            выбрав подходящий метод. Пока виджет выключен, методы ничего не делают и пишут предупреждение в консоль.
+            выбрав подходящий метод или ссылку с параметром. Пока виджет выключен, методы ничего не делают и пишут предупреждение в консоль.
           </p>
           <div className="mt-2 flex flex-col gap-2">
             <div>
@@ -128,6 +129,20 @@ function SenderaApiDocsModal({ onClose }: { onClose: () => void }) {
             <div>
               <div className="font-mono text-[12px] text-ink">sendera.closeInstallGuide()</div>
               <p className="m-0">Закрывает окно. Если оно не открыто, ничего не происходит.</p>
+            </div>
+            <div>
+              <div className="font-mono text-[12px] text-ink">?{INSTALL_QUERY_PARAM}=…</div>
+              <p className="m-0">
+                Открытие по ссылке, без кода: если в адресе любой страницы сайта, где подключён скрипт, есть этот параметр, окно открывается
+                само один раз после загрузки страницы, а параметр сразу убирается из адреса (обновление страницы окно не повторит).
+                Подходит для ссылок в письмах, SMS и QR-кодах. Значения:{" "}
+                <code className="font-mono">1</code> (или пустое) — окно с вкладками, <code className="font-mono">ios</code> — только
+                iPhone, <code className="font-mono">android</code> — только Android. Незнакомое значение игнорируется. Как и методы выше,
+                работает, только когда виджет включён.
+              </p>
+              <pre className="mt-1.5 mb-0 text-[12px] bg-surface-2 border border-border rounded-lg p-2.5 overflow-x-auto">
+                {`https://ваш-сайт/?${INSTALL_QUERY_PARAM}=1\nhttps://ваш-сайт/catalog/?${INSTALL_QUERY_PARAM}=ios\nhttps://ваш-сайт/?${INSTALL_QUERY_PARAM}=android`}
+              </pre>
             </div>
           </div>
           <pre className="mt-1.5 mb-0 text-[12px] bg-surface-2 border border-border rounded-lg p-2.5 overflow-x-auto">

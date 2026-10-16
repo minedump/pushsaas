@@ -75,6 +75,10 @@ function jsLiteral(v: unknown): string {
     .split(String.fromCharCode(0x2029)).join("\\u2029");
 }
 
+// Параметр адреса, по которому окно открывается само (см. конец installBlock);
+// имя же показывает справка «Методы основного скрипта» в «Виджетах».
+export const INSTALL_QUERY_PARAM = "sendera_install";
+
 export function installBlock(api: string, projectId: string, config: InstallConfig, version: string): string {
   const steps = (list: InstallStep[]) => list.map((s) => ({ t: s.text, img: installStepImageUrl(api, projectId, s, version) }));
   const data = {
@@ -119,7 +123,7 @@ export function installBlock(api: string, projectId: string, config: InstallConf
   }
 
   // mode: "tabs" — обе платформы с переключателем, "ios" / "android" — одна платформа без вкладок
-  function open(mode, platform){
+  function open(mode, platform, via){
     if(root){
       var old = root; root = null;
       if(old.parentNode) old.parentNode.removeChild(old);
@@ -190,12 +194,32 @@ export function installBlock(api: string, projectId: string, config: InstallConf
     void root.offsetWidth;
     root.classList.add("pss-i-in");
     try { dlg.focus(); } catch(e){}
-    window.sendera.event("widget_install_opened", { mode: mode, platform: platform });
+    var info = { mode: mode, platform: platform };
+    if(via) info.via = via;
+    window.sendera.event("widget_install_opened", info);
   }
 
   window.sendera.openInstallGuide = function(){ open("tabs", defaultPlatform()); };
   window.sendera.openInstallGuideIos = function(){ open("ios", "ios"); };
   window.sendera.openInstallGuideAndroid = function(){ open("android", "android"); };
   window.sendera.closeInstallGuide = close;
+
+  // Открытие по ссылке: ?${INSTALL_QUERY_PARAM}=1 (общая, с вкладками), =ios или =android.
+  // Окно открывается один раз после загрузки страницы, параметр сразу убираем из
+  // адреса — обновление страницы его не повторит. Незнакомое значение игнорируем.
+  (function(){
+    var u, v;
+    try { u = new URL(location.href); v = u.searchParams.get(${JSON.stringify(INSTALL_QUERY_PARAM)}); } catch(e){ return; }
+    if(v === null) return;
+    v = String(v).toLowerCase().replace(/^\\s+|\\s+$/g, "");
+    var mode, platform;
+    if(v === "ios" || v === "iphone"){ mode = "ios"; platform = "ios"; }
+    else if(v === "android"){ mode = "android"; platform = "android"; }
+    else if(v === "" || v === "1" || v === "true" || v === "tabs" || v === "all"){ mode = "tabs"; platform = defaultPlatform(); }
+    else return;
+    try { u.searchParams.delete(${JSON.stringify(INSTALL_QUERY_PARAM)}); history.replaceState(null, "", u.toString()); } catch(e){}
+    function go(){ open(mode, platform, "url"); }
+    if(document.readyState !== "loading") go(); else document.addEventListener("DOMContentLoaded", go);
+  })();
 })();`;
 }
