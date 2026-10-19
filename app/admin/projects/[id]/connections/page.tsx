@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureProjectAccessible } from "@/lib/guards";
+import { ensureMtsCallbackKey } from "@/lib/mts-callback";
 import IntegrationsSettings from "./IntegrationsSettings";
 
 export default async function ConnectionsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -28,7 +29,7 @@ export default async function ConnectionsPage({ params }: { params: Promise<{ id
     supabase.from("oidc_clients").select("config").eq("project_id", id).maybeSingle(),
     admin
       .from("project_secrets")
-      .select("telegram_gateway_token, bytehand_service_key, haskimail_server_token, smsc_login, smsc_password")
+      .select("telegram_gateway_token, bytehand_service_key, haskimail_server_token, smsc_login, smsc_password, mts_token")
       .eq("project_id", id)
       .maybeSingle(),
     // best-effort: haskimail_marketing_stream/haskimail_transactional_stream —
@@ -39,6 +40,8 @@ export default async function ConnectionsPage({ params }: { params: Promise<{ id
       .eq("project_id", id)
       .maybeSingle(),
   ]);
+
+  const mtsCallbackKey = await ensureMtsCallbackKey(project.id);
 
   return (
     <main className="max-w-4xl mx-auto">
@@ -55,6 +58,8 @@ export default async function ConnectionsPage({ params }: { params: Promise<{ id
           hasHaskimailStream: !streamErr && !!streamSecret?.haskimail_marketing_stream,
           hasHaskimailTransactionalStream: !streamErr && !!streamSecret?.haskimail_transactional_stream,
           hasSmsc: !!secrets?.smsc_login && !!secrets?.smsc_password,
+          hasMts: !!secrets?.mts_token,
+          mtsCallbackUrl: `${process.env.NEXT_PUBLIC_APP_URL || ""}/api/public/mts/status?key=${mtsCallbackKey}`,
         }}
       />
     </main>

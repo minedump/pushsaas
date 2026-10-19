@@ -6,7 +6,7 @@
 // Никаких server-only импортов (createAdminClient и т.п.) — этот файл
 // подключается и из клиентского компонента настроек.
 
-export type SmsProvider = "bytehand" | "smsc";
+export type SmsProvider = "bytehand" | "smsc" | "mts";
 export type TelegramProvider = "telegram_gateway" | "smsc";
 export type EmailProvider = "haskimail" | "smsc";
 
@@ -17,6 +17,7 @@ export const DEFAULT_EMAIL_PROVIDER: EmailProvider = "haskimail";
 export const SMS_PROVIDERS: { id: SmsProvider; label: string }[] = [
   { id: "bytehand", label: "Bytehand" },
   { id: "smsc", label: "SMSC.ru" },
+  { id: "mts", label: "МТС Маркетолог" },
 ];
 export const TELEGRAM_PROVIDERS: { id: TelegramProvider; label: string }[] = [
   { id: "telegram_gateway", label: "Telegram Gateway (официальный)" },
@@ -28,7 +29,7 @@ export const EMAIL_PROVIDERS: { id: EmailProvider; label: string }[] = [
 ];
 
 export function resolveSmsProvider(configured: unknown): SmsProvider {
-  return configured === "smsc" ? "smsc" : DEFAULT_SMS_PROVIDER;
+  return configured === "smsc" || configured === "mts" ? configured : DEFAULT_SMS_PROVIDER;
 }
 export function resolveTelegramProvider(configured: unknown): TelegramProvider {
   return configured === "smsc" ? "smsc" : DEFAULT_TELEGRAM_PROVIDER;

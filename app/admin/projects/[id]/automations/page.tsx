@@ -55,11 +55,12 @@ export default async function AutomationsPage({ params }: { params: Promise<{ id
   const admin = createAdminClient();
   const { data: secrets } = await admin
     .from("project_secrets")
-    .select("bytehand_service_key, smsc_login, smsc_password, haskimail_server_token")
+    .select("bytehand_service_key, smsc_login, smsc_password, mts_token, haskimail_server_token")
     .eq("project_id", id)
     .maybeSingle();
   const hasBytehand = !!secrets?.bytehand_service_key;
   const hasSmsc = !!secrets?.smsc_login && !!secrets?.smsc_password;
+  const hasMts = !!secrets?.mts_token;
   const hasHaskimail = !!secrets?.haskimail_server_token;
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
 
@@ -85,6 +86,7 @@ export default async function AutomationsPage({ params }: { params: Promise<{ id
         channelProvider={welcomeChannelProvider}
         hasBytehand={hasBytehand}
         hasSmsc={hasSmsc}
+        hasMts={hasMts}
         hasHaskimail={hasHaskimail}
         segmentOptions={segmentOptions}
         projectTimezone={projectTimezone}

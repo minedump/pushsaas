@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Input, Label, useDialogs } from "@/app/ui";
 import IntegrationCard from "../IntegrationCard";
+import CopyBox from "../CopyBox";
 
 type Initial = {
   smsSender: string;
@@ -14,6 +15,8 @@ type Initial = {
   hasHaskimailStream: boolean;
   hasHaskimailTransactionalStream: boolean;
   hasSmsc: boolean;
+  hasMts: boolean;
+  mtsCallbackUrl: string;
 };
 
 export default function IntegrationsSettings({ projectId, initial }: { projectId: string; initial: Initial }) {
@@ -33,6 +36,7 @@ export default function IntegrationsSettings({ projectId, initial }: { projectId
   const [bytehandKey, setBytehandKey] = useState("");
   const [smscLogin, setSmscLogin] = useState("");
   const [smscPassword, setSmscPassword] = useState("");
+  const [mtsToken, setMtsToken] = useState("");
 
   async function saveCard(card: string, payload: Record<string, unknown>, resetFields: () => void) {
     setSavingCard(card);
@@ -86,6 +90,9 @@ export default function IntegrationsSettings({ projectId, initial }: { projectId
       }
     );
 
+  const saveMts = () =>
+    saveCard("mts", { smsSender, ...(mtsToken.trim() ? { mtsToken: mtsToken.trim() } : {}) }, () => setMtsToken(""));
+
   // Сброс — явные пустые строки (не omit), чтобы сервер стёр значение, а не
   // оставил как есть. Только собственные поля карточки: общие (email/sms
   // отправитель) сброс не трогает — они принадлежат не одному провайдеру.
@@ -121,6 +128,8 @@ export default function IntegrationsSettings({ projectId, initial }: { projectId
       setSmscLogin("");
       setSmscPassword("");
     });
+
+  const resetMts = () => resetCard("mts", "МТС Маркетолог", { mtsToken: "" }, () => setMtsToken(""));
 
   return (
     <section className="mt-5">
@@ -254,6 +263,38 @@ export default function IntegrationsSettings({ projectId, initial }: { projectId
               </Button>
             )}
             <Button size="sm" disabled={savingCard === "smsc"} onClick={saveSmsc}>
+              Сохранить
+            </Button>
+          </div>
+        </div>
+      </IntegrationCard>
+
+      <IntegrationCard title="МТС Маркетолог" badges={["SMS", "AUTH"]} configured={initial.hasMts}>
+        <div className={savingCard === "mts" ? "opacity-60" : ""}>
+          <div>
+            <Label>Токен API</Label>
+            <Input
+              type="password"
+              value={mtsToken}
+              onChange={(e) => setMtsToken(e.target.value)}
+              placeholder={initial.hasMts ? "оставьте пустым — не менять" : "токен из кабинета МТС Маркетолога"}
+            />
+          </div>
+          <div className="mt-3">
+            <Label>SMS-отправитель</Label>
+            <Input value={smsSender} onChange={(e) => setSmsSender(e.target.value)} placeholder="имя, согласованное в кабинете МТС" />
+          </div>
+          <div className="mt-3">
+            <Label>Адрес для статусов доставки</Label>
+            <CopyBox text={initial.mtsCallbackUrl} />
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            {initial.hasMts && (
+              <Button variant="secondary" size="sm" disabled={savingCard === "mts"} onClick={resetMts}>
+                Сбросить
+              </Button>
+            )}
+            <Button size="sm" disabled={savingCard === "mts"} onClick={saveMts}>
               Сохранить
             </Button>
           </div>

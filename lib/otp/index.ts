@@ -5,6 +5,7 @@ import { checkSendAbility, sendTelegramCode } from "./telegram";
 import { sendSms } from "./sms";
 import { sendEmail } from "./haskimail";
 import { sendSmsSmsc, sendTelegramSmsc, sendEmailSmsc } from "./smsc";
+import { sendSmsMts } from "./mts";
 import { resolveSmsProvider, resolveTelegramProvider, resolveEmailProvider } from "./providers";
 import { isRuCisPhone } from "@/lib/phone";
 import { applyTemplate } from "@/lib/template";
@@ -233,6 +234,9 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
     .maybeSingle();
   const smscLogin = smscSecret?.smsc_login || null;
   const smscPassword = smscSecret?.smsc_password || null;
+  // mts_token — миграция 0107, отдельным запросом по той же причине
+  const { data: mtsSecret } = await admin.from("project_secrets").select("mts_token").eq("project_id", projectId).maybeSingle();
+  const mtsToken = mtsSecret?.mts_token || null;
   const { data: oidcClient } = await admin.from("oidc_clients").select("config").eq("project_id", projectId).maybeSingle();
   const channels: ChannelConfig = { push: true, email: true, telegram: true, sms: true, ...(oidcClient?.config?.channels || {}) };
   const smsSender: string | undefined = oidcClient?.config?.sms_sender;
@@ -367,6 +371,16 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
         const sent = await sendSmsSmsc(smscLogin, smscPassword, key.phone, smsText, smsSender);
         attempts.push({ channel: ch, ok: sent.ok, reason: sent.ok ? undefined : "provider_error" });
         if (sent.ok) { channel = ch; usedProvider = "smsc"; providerMessageId = sent.messageId; break; }
+        continue;
+      }
+      if (smsProvider === "mts") {
+        if (!mtsToken) {
+          attempts.push({ channel: ch, ok: false, reason: "not_configured" });
+          continue;
+        }
+        const sent = await sendSmsMts(mtsToken, key.phone, smsText, smsSender);
+        attempts.push({ channel: ch, ok: sent.ok, reason: sent.ok ? undefined : "provider_error" });
+        if (sent.ok) { channel = ch; usedProvider = "mts"; providerMessageId = sent.messageId; break; }
         continue;
       }
       if (!secrets?.bytehand_service_key) {

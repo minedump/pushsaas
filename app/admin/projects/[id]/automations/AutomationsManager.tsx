@@ -121,6 +121,7 @@ export default function AutomationsManager({
   channelProvider,
   hasBytehand,
   hasSmsc,
+  hasMts,
   hasHaskimail,
   segmentOptions,
   projectTimezone,
@@ -137,6 +138,7 @@ export default function AutomationsManager({
   channelProvider: Record<string, string>;
   hasBytehand: boolean;
   hasSmsc: boolean;
+  hasMts: boolean;
   hasHaskimail: boolean;
   segmentOptions: string[];
   projectTimezone: string;
@@ -174,7 +176,7 @@ export default function AutomationsManager({
     email: channelEnabled.email !== false,
   });
   const [cProvider, setCProvider] = useState<Partial<Record<Channel, string>>>(channelProvider);
-  const providerConfigured: Record<string, boolean> = { bytehand: hasBytehand, smsc: hasSmsc, haskimail: hasHaskimail };
+  const providerConfigured: Record<string, boolean> = { bytehand: hasBytehand, smsc: hasSmsc, mts: hasMts, haskimail: hasHaskimail };
   function configuredProvidersFor(ch: Channel): { id: string; label: string }[] {
     return (PROVIDER_OPTIONS[ch] || []).filter((o) => providerConfigured[o.id]);
   }

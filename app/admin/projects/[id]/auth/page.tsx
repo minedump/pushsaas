@@ -19,17 +19,20 @@ export default async function AuthPage({ params }: { params: Promise<{ id: strin
   if (!project) notFound();
   await ensureProjectAccessible(project.id, project.is_active);
 
-  const { data: oidc } = await supabase
+  const { data: oidcRow } = await supabase
     .from("oidc_clients")
     .select("client_id, is_enabled, config")
     .eq("project_id", id)
     .maybeSingle();
+  // запись без client_id — только подписи отправителя из «Подключений», вход не настроен
+  const oidc = oidcRow?.client_id ? oidcRow : null;
 
   // Наличие токенов каналов (сами значения владельцу не показываем)
   let hasTelegram = false;
   let hasBytehand = false;
   let hasHaskimail = false;
   let hasSmsc = false;
+  let hasMts = false;
   if (oidc) {
     const admin = createAdminClient();
     const { data: secrets } = await admin
@@ -55,6 +58,8 @@ export default async function AuthPage({ params }: { params: Promise<{ id: strin
       .eq("project_id", id)
       .maybeSingle();
     hasSmsc = !smscErr && !!smscSecret?.smsc_login && !!smscSecret?.smsc_password;
+    const { data: mtsSecret, error: mtsErr } = await admin.from("project_secrets").select("mts_token").eq("project_id", id).maybeSingle();
+    hasMts = !mtsErr && !!mtsSecret?.mts_token;
   }
   const hasEmailFrom = !!oidc?.config?.email_from?.toString().trim();
 
@@ -94,6 +99,7 @@ export default async function AuthPage({ params }: { params: Promise<{ id: strin
                 hasBytehand,
                 hasHaskimail,
                 hasSmsc,
+                hasMts,
                 hasEmailFrom,
               }
             : null

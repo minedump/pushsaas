@@ -250,7 +250,7 @@ export default async function ApiPage({ params }: { params: Promise<{ id: string
   const admin = createAdminClient();
   const { data: secrets } = await admin
     .from("project_secrets")
-    .select("bytehand_service_key, smsc_login, smsc_password, haskimail_server_token")
+    .select("bytehand_service_key, smsc_login, smsc_password, mts_token, haskimail_server_token")
     .eq("project_id", id)
     .maybeSingle();
   const { data: streamSecret, error: streamErr } = await admin
@@ -264,6 +264,7 @@ export default async function ApiPage({ params }: { params: Promise<{ id: string
     sms: [
       ...(secrets?.bytehand_service_key ? [{ value: "bytehand", label: "Bytehand" }] : []),
       ...(smscReady ? [{ value: "smsc", label: "SMSC.ru" }] : []),
+      ...(secrets?.mts_token ? [{ value: "mts", label: "МТС Маркетолог" }] : []),
     ],
     email: [
       ...(haskimailReady ? [{ value: "haskimail", label: "Haskimail" }] : []),

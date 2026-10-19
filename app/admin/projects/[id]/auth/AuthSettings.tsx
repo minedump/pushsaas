@@ -57,6 +57,7 @@ type Initial = {
   hasBytehand: boolean;
   hasHaskimail: boolean;
   hasSmsc: boolean;
+  hasMts: boolean;
   hasEmailFrom: boolean;
 };
 
@@ -102,6 +103,7 @@ export default function AuthSettings({
     bytehand: initial?.hasBytehand ?? false,
     haskimail: initial?.hasHaskimail ?? false,
     smsc: initial?.hasSmsc ?? false,
+    mts: initial?.hasMts ?? false,
   };
 
   // Только настроенные провайдеры канала — не показываем то, что нельзя

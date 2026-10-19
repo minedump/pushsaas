@@ -20,7 +20,7 @@ type Key = {
 
 type ProviderOption = { value: string; label: string };
 
-const PROVIDER_LABEL: Record<string, string> = { bytehand: "Bytehand", smsc: "SMSC.ru", haskimail: "Haskimail" };
+const PROVIDER_LABEL: Record<string, string> = { bytehand: "Bytehand", smsc: "SMSC.ru", mts: "МТС Маркетолог", haskimail: "Haskimail" };
 const SCOPE_LABEL: Record<string, string> = Object.fromEntries(API_SCOPES.map((s) => [s.id, s.label]));
 
 export default function ApiKeys({

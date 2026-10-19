@@ -3,9 +3,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { sendPush, type PushPayload } from "@/lib/webpush";
 import { applyTemplate } from "@/lib/template";
 import { filterConsentedContacts, phonesToSubscriberIds, emailsToSubscriberIds, resolvePushSegmentIds } from "@/lib/identity";
-import { sendSms } from "@/lib/otp/sms";
 import { sendEmail } from "@/lib/otp/haskimail";
-import { sendSmsSmsc, sendEmailSmsc } from "@/lib/otp/smsc";
+import { sendEmailSmsc } from "@/lib/otp/smsc";
+import { sendSmsMtsBatch, MTS_BATCH_SIZE } from "@/lib/otp/mts";
+import { sendSmsByProvider, smsProviderReady, SMS_SECRET_COLUMNS } from "@/lib/otp/sms-send";
 import { shortenUrl } from "@/lib/clck";
 import { normalizePhone } from "@/lib/phone";
 import { unsubscribeUrl, hasUnsubscribeTag } from "@/lib/unsubscribe";
@@ -134,7 +135,7 @@ async function logRecipients(
   campaignId: string,
   projectId: string,
   channel: "push" | "sms" | "email",
-  rows: { contact: string; status: "delivered" | "failed"; token?: string; rawContext?: RawContextSnapshot; rendered?: Record<string, unknown> }[]
+  rows: { contact: string; status: "delivered" | "failed"; token?: string; rawContext?: RawContextSnapshot; rendered?: Record<string, unknown>; providerMessageId?: string }[]
 ) {
   if (!rows.length) return;
   await admin
@@ -149,6 +150,7 @@ async function logRecipients(
         token: r.token ?? null,
         raw_context: r.rawContext ?? null,
         rendered_content: r.rendered ?? null,
+        provider_message_id: r.providerMessageId ?? null,
       }))
     )
     .then(
@@ -777,7 +779,7 @@ export async function sendCampaignJobNow(
       }
       const { data: secrets } = await admin
         .from("project_secrets")
-        .select("bytehand_service_key, smsc_login, smsc_password, haskimail_server_token, haskimail_marketing_stream, haskimail_transactional_stream")
+        .select("bytehand_service_key, smsc_login, smsc_password, mts_token, haskimail_server_token, haskimail_marketing_stream, haskimail_transactional_stream")
         .eq("project_id", job.project_id)
         .maybeSingle();
       const { data: oidc } = await admin.from("oidc_clients").select("config").eq("project_id", job.project_id).maybeSingle();
@@ -789,15 +791,14 @@ export async function sendCampaignJobNow(
       rawSnapshot = { template: rawTemplate, context: rawContext, automation: {} };
       const attrs = { ...contactAttrs, ...sendCtx, template: templateCtx, context: sendCtx, automation: {} };
       const token = genRecipientToken();
+      let providerMessageId: string | undefined;
       if (secrets && campaign.provider) {
         if (job.channel === "sms") {
           const smsSender = (oidc?.config as { sms_sender?: string } | null)?.sms_sender || undefined;
           const text = await injectClickTrackingSms(applyTemplate(campaign.body, attrs), job.campaign_id, token);
           rendered = { body: text };
-          const result =
-            campaign.provider === "smsc"
-              ? await sendSmsSmsc(secrets.smsc_login!, secrets.smsc_password!, job.contact, text, smsSender)
-              : await sendSms(secrets.bytehand_service_key!, job.contact, text, smsSender);
+          const result = await sendSmsByProvider(campaign.provider, secrets, job.contact, text, smsSender);
+          providerMessageId = result.messageId;
           status = result.ok ? "sent" : "failed";
         } else {
           const emailFrom = (oidc?.config as { email_from?: string } | null)?.email_from || "";
@@ -815,7 +816,7 @@ export async function sendCampaignJobNow(
         }
       }
       await logRecipients(admin, job.campaign_id, job.project_id, job.channel, [
-        { contact: job.contact, status: status === "sent" ? "delivered" : "failed", token, rawContext: rawSnapshot, rendered },
+        { contact: job.contact, status: status === "sent" ? "delivered" : "failed", token, rawContext: rawSnapshot, rendered, providerMessageId },
       ]);
       await bumpCampaignCounts(admin, job.campaign_id, status);
     }
@@ -1799,7 +1800,7 @@ export async function sendWelcomeNow(
           } else {
             const { data: secrets } = await admin
               .from("project_secrets")
-              .select("bytehand_service_key, smsc_login, smsc_password, haskimail_server_token, haskimail_marketing_stream, haskimail_transactional_stream")
+              .select("bytehand_service_key, smsc_login, smsc_password, mts_token, haskimail_server_token, haskimail_marketing_stream, haskimail_transactional_stream")
               .eq("project_id", projectId)
               .maybeSingle();
             const { data: oidc } = await admin.from("oidc_clients").select("config").eq("project_id", projectId).maybeSingle();
@@ -1809,16 +1810,15 @@ export async function sendWelcomeNow(
               const templateCtx = await expandRefs(projectId, tpl.context || {});
               const rawSnapshot: RawContextSnapshot = { template: tpl.context || {}, context: {}, automation: automationCtx };
               let renderedContent: Record<string, unknown> = {};
+              let providerMessageId: string | undefined;
               if (channel === "sms") {
                 const smsSender = (oidc?.config as { sms_sender?: string } | null)?.sms_sender || undefined;
                 const attrs = { ...contactAttrs, ...eventContext, template: templateCtx, context: {}, automation: automationCtx };
                 const smsBody = applyTemplate(tpl.body!, attrs);
                 const text = campaignId ? await injectClickTrackingSms(smsBody, campaignId, token) : smsBody;
                 renderedContent = { body: text };
-                const result =
-                  provider === "smsc"
-                    ? await sendSmsSmsc(secrets.smsc_login!, secrets.smsc_password!, contact, text, smsSender)
-                    : await sendSms(secrets.bytehand_service_key!, contact, text, smsSender);
+                const result = await sendSmsByProvider(provider, secrets, contact, text, smsSender);
+                providerMessageId = result.messageId;
                 status = result.ok ? "sent" : "failed";
               } else {
                 const emailFrom = (oidc?.config as { email_from?: string } | null)?.email_from || "";
@@ -1847,7 +1847,7 @@ export async function sendWelcomeNow(
                   })
                   .eq("id", campaignId);
                 await logRecipients(admin, campaignId, projectId, channel, [
-                  { contact, status: status === "sent" ? "delivered" : "failed", token, rawContext: rawSnapshot, rendered: renderedContent },
+                  { contact, status: status === "sent" ? "delivered" : "failed", token, rawContext: rawSnapshot, rendered: renderedContent, providerMessageId },
                 ]);
               }
             }
@@ -2074,7 +2074,7 @@ export async function resolveChannelProvider(
 ): Promise<string | null> {
   const { data: secrets } = await admin
     .from("project_secrets")
-    .select("bytehand_service_key, smsc_login, smsc_password, haskimail_server_token, haskimail_marketing_stream, haskimail_transactional_stream")
+    .select("bytehand_service_key, smsc_login, smsc_password, mts_token, haskimail_server_token, haskimail_marketing_stream, haskimail_transactional_stream")
     .eq("project_id", projectId)
     .maybeSingle();
   if (!secrets) return null;
@@ -2083,11 +2083,11 @@ export async function resolveChannelProvider(
   const haskimailStream = type === "transactional" ? secrets.haskimail_transactional_stream : secrets.haskimail_marketing_stream;
   const configured: Record<string, boolean> =
     channel === "sms"
-      ? { bytehand: !!secrets.bytehand_service_key, smsc: smscReady }
+      ? { bytehand: !!secrets.bytehand_service_key, smsc: smscReady, mts: !!secrets.mts_token }
       : { haskimail: !!secrets.haskimail_server_token && !!haskimailStream, smsc: smscReady };
 
   if (hint && configured[hint]) return hint;
-  const order = channel === "sms" ? ["bytehand", "smsc"] : ["haskimail", "smsc"];
+  const order = channel === "sms" ? ["bytehand", "smsc", "mts"] : ["haskimail", "smsc"];
   return order.find((p) => configured[p]) || null;
 }
 
@@ -2105,10 +2105,10 @@ export async function dispatchSmsCampaign(campaign: SmsEmailCampaignRow, contact
 
   const { data: secrets } = await admin
     .from("project_secrets")
-    .select("bytehand_service_key, smsc_login, smsc_password")
+    .select(SMS_SECRET_COLUMNS)
     .eq("project_id", campaign.project_id)
     .maybeSingle();
-  if (!secrets || (campaign.provider === "smsc" ? !secrets.smsc_login : !secrets.bytehand_service_key)) {
+  if (!secrets || !smsProviderReady(campaign.provider, secrets)) {
     await admin.from("campaigns").update({ status: "failed", error: "provider not configured" }).eq("id", campaign.id);
     return { ok: false, delivered: 0, failed: 0, total: audience.length, error: "provider not configured" };
   }
@@ -2123,25 +2123,38 @@ export async function dispatchSmsCampaign(campaign: SmsEmailCampaignRow, contact
 
   let delivered = 0;
   let failed = 0;
-  const recipients: { contact: string; status: "delivered" | "failed"; token: string; rawContext: RawContextSnapshot; rendered: Record<string, unknown> }[] = [];
+  const recipients: { contact: string; status: "delivered" | "failed"; token: string; rawContext: RawContextSnapshot; rendered: Record<string, unknown>; providerMessageId?: string }[] = [];
   const { template: templateCtx, context: sendCtx } = await resolveTemplateData(campaign.project_id, campaign.template_data);
   const { template: rawTemplate, context: rawContext } = splitTemplateData(campaign.template_data);
   const rawSnapshot: RawContextSnapshot = { template: rawTemplate, context: rawContext, automation: {} };
-  const CONCURRENCY = 10;
+  // МТС принимает сообщения пачкой в одном запросе, остальные провайдеры —
+  // по одному, поэтому пачки по 10 параллельных запросов.
+  const isMts = campaign.provider === "mts";
+  const CONCURRENCY = isMts ? MTS_BATCH_SIZE : 10;
   for (let i = 0; i < audience.length; i += CONCURRENCY) {
     const chunk = audience.slice(i, i + CONCURRENCY);
-    await Promise.all(
+    const prepared = await Promise.all(
       chunk.map(async (c) => {
         const attrs = { ...c.attrs, ...sendCtx, template: templateCtx, context: sendCtx, automation: {} };
         const token = genRecipientToken();
         const text = await injectClickTrackingSms(applyTemplate(campaign.body, attrs), campaign.id, token);
-        const result =
-          campaign.provider === "smsc"
-            ? await sendSmsSmsc(secrets.smsc_login!, secrets.smsc_password!, c.value, text, smsSender)
-            : await sendSms(secrets.bytehand_service_key!, c.value, text, smsSender);
+        return { c, token, text };
+      })
+    );
+    const mtsResults = isMts ? await sendSmsMtsBatch(secrets.mts_token!, prepared.map((p) => ({ phone: p.c.value, text: p.text })), smsSender) : null;
+    await Promise.all(
+      prepared.map(async ({ c, token, text }) => {
+        const result = mtsResults ? mtsResults.get(c.value) || { ok: false } : await sendSmsByProvider(campaign.provider, secrets, c.value, text, smsSender);
         if (result.ok) delivered++;
         else failed++;
-        recipients.push({ contact: c.value, status: result.ok ? "delivered" : "failed", token, rawContext: rawSnapshot, rendered: { body: text } });
+        recipients.push({
+          contact: c.value,
+          status: result.ok ? "delivered" : "failed",
+          token,
+          rawContext: rawSnapshot,
+          rendered: { body: text },
+          providerMessageId: result.messageId,
+        });
       })
     );
   }
@@ -2466,7 +2479,7 @@ export async function sendTestMessage(
 
     const { data: secrets } = await admin
       .from("project_secrets")
-      .select("bytehand_service_key, smsc_login, smsc_password")
+      .select(SMS_SECRET_COLUMNS)
       .eq("project_id", projectId)
       .maybeSingle();
     if (!secrets) return { ok: false, error: "SMS не настроен" };
@@ -2476,10 +2489,7 @@ export async function sendTestMessage(
 
     const { template: smsTemplateCtx, context: smsSendCtx } = await resolveTemplateData(projectId, content.data);
     const text = applyTemplate(content.text, { ...smsSendCtx, template: smsTemplateCtx, context: smsSendCtx, automation: {} });
-    const result =
-      provider === "smsc"
-        ? await sendSmsSmsc(secrets.smsc_login!, secrets.smsc_password!, phone, text, smsSender)
-        : await sendSms(secrets.bytehand_service_key!, phone, text, smsSender);
+    const result = await sendSmsByProvider(provider, secrets, phone, text, smsSender);
     return result.ok ? { ok: true } : { ok: false, error: "Провайдер отклонил отправку" };
   }
 

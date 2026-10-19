@@ -81,7 +81,7 @@ export async function getOidcContext(projectId: string): Promise<OidcContext | n
       .maybeSingle(),
     admin.from("projects").select("domain, is_active, logo_url").eq("id", projectId).maybeSingle(),
   ]);
-  if (!client || !secrets?.oidc_private_key_pem || !secrets?.oidc_client_secret_hash || !project?.is_active) return null;
+  if (!client?.client_id || !client.kid || !secrets?.oidc_private_key_pem || !secrets?.oidc_client_secret_hash || !project?.is_active) return null;
   return {
     projectId,
     clientId: client.client_id,
@@ -109,11 +109,12 @@ export async function ensureOidcClient(
     .eq("project_id", projectId)
     .maybeSingle();
 
-  if (existing && !opts.regenerateSecret) return { clientId: existing.client_id, clientSecret: null };
+  // запись без client_id — заготовка с одними подписями отправителя (миграция 0108)
+  if (existing?.client_id && !opts.regenerateSecret) return { clientId: existing.client_id, clientSecret: null };
 
   const clientSecret = "psss_" + crypto.randomBytes(24).toString("hex");
 
-  if (existing) {
+  if (existing?.client_id) {
     await admin
       .from("project_secrets")
       .update({ oidc_client_secret_hash: sha256(clientSecret) })
@@ -129,7 +130,8 @@ export async function ensureOidcClient(
   // is_enabled: false явно — вход не должен стать доступен покупателям, пока
   // админ не настроит хотя бы один рабочий канал и не включит его сам
   // (см. «Статус входа» в AuthSettings.tsx и проверку в /api/admin/oidc/settings).
-  await admin.from("oidc_clients").insert({ project_id: projectId, client_id: clientId, kid, is_enabled: false });
+  if (existing) await admin.from("oidc_clients").update({ client_id: clientId, kid, is_enabled: false }).eq("project_id", projectId);
+  else await admin.from("oidc_clients").insert({ project_id: projectId, client_id: clientId, kid, is_enabled: false });
   await admin
     .from("project_secrets")
     .upsert(

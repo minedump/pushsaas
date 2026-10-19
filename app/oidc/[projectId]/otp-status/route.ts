@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyParam } from "@/lib/oidc";
 import { checkSmsDelivery } from "@/lib/otp/sms";
 import { checkSmscDelivery } from "@/lib/otp/smsc";
+import { checkMtsDelivery } from "@/lib/otp/mts";
 import { needsDeliveryPoll } from "@/lib/otp/providers";
 
 // Опрашивается со страницы кода (см. codeForm в ../auth/route.ts) для любого
@@ -48,8 +49,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ projectId: str
     const { data: secrets } = await admin.from("project_secrets").select("smsc_login, smsc_password").eq("project_id", projectId).maybeSingle();
     if (!secrets?.smsc_login || !secrets?.smsc_password) return NextResponse.json({ status: "unknown" });
     state = await checkSmscDelivery(secrets.smsc_login, secrets.smsc_password, otp.provider_message_id, target, channel === "telegram");
+  } else if (otp.provider === "mts") {
+    const { data: secrets } = await admin.from("project_secrets").select("mts_token").eq("project_id", projectId).maybeSingle();
+    if (!secrets?.mts_token) return NextResponse.json({ status: "unknown" });
+    state = await checkMtsDelivery(secrets.mts_token, otp.provider_message_id);
   } else {
-    // единственный другой провайдер, которому сейчас нужен поллинг — Bytehand (sms)
+    // последний из провайдеров, которым нужен поллинг, — Bytehand (sms)
     const { data: secrets } = await admin.from("project_secrets").select("bytehand_service_key").eq("project_id", projectId).maybeSingle();
     if (!secrets?.bytehand_service_key) return NextResponse.json({ status: "unknown" });
     state = await checkSmsDelivery(secrets.bytehand_service_key, otp.provider_message_id);

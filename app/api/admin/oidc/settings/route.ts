@@ -31,6 +31,7 @@ export async function POST(req: Request) {
     haskimailMarketingStream,
     smscLogin,
     smscPassword,
+    mtsToken,
   } = await req.json().catch(() => ({}));
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
 
@@ -44,10 +45,10 @@ export async function POST(req: Request) {
   // двух последовательных round-trip'ов к Supabase (заметная доля задержки
   // сохранения при удалённой БД).
   const [{ data: client }, { data: secrets }] = await Promise.all([
-    admin.from("oidc_clients").select("config").eq("project_id", projectId).maybeSingle(),
+    admin.from("oidc_clients").select("client_id, config").eq("project_id", projectId).maybeSingle(),
     admin
       .from("project_secrets")
-      .select("telegram_gateway_token, bytehand_service_key, haskimail_server_token, smsc_login, smsc_password")
+      .select("telegram_gateway_token, bytehand_service_key, haskimail_server_token, smsc_login, smsc_password, mts_token")
       .eq("project_id", projectId)
       .maybeSingle(),
   ]);
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
   // авторизацией, но и кампаниями/API — их можно сохранить и без включённого
   // входа по телефону. Настройки самого OIDC-каскада (channels/providers/
   // кнопка входа) по-прежнему требуют client — применять их не к чему без него.
-  if (!client) {
+  if (!client?.client_id) {
     const secretOnly: Record<string, string | null> = {};
     if (telegramToken !== undefined) secretOnly.telegram_gateway_token = telegramToken || null;
     if (bytehandKey !== undefined) secretOnly.bytehand_service_key = bytehandKey || null;
@@ -65,8 +66,17 @@ export async function POST(req: Request) {
     if (haskimailMarketingStream !== undefined) secretOnly.haskimail_marketing_stream = haskimailMarketingStream || null;
     if (smscLogin !== undefined) secretOnly.smsc_login = smscLogin || null;
     if (smscPassword !== undefined) secretOnly.smsc_password = smscPassword || null;
-    if (Object.keys(secretOnly).length) {
-      await admin.from("project_secrets").update(secretOnly).eq("project_id", projectId);
+    if (mtsToken !== undefined) secretOnly.mts_token = mtsToken || null;
+    // подписи отправителя живут в config и нужны подключениям без входа по телефону
+    const stubConfig = { ...(client?.config || {}) };
+    if (smsSender !== undefined) stubConfig.sms_sender = smsSender || null;
+    if (emailFrom !== undefined) stubConfig.email_from = emailFrom || null;
+    const hasSender = smsSender !== undefined || emailFrom !== undefined;
+    if (Object.keys(secretOnly).length || hasSender) {
+      await Promise.all([
+        Object.keys(secretOnly).length ? admin.from("project_secrets").update(secretOnly).eq("project_id", projectId) : Promise.resolve(),
+        hasSender ? admin.from("oidc_clients").upsert({ project_id: projectId, config: stubConfig }, { onConflict: "project_id" }) : Promise.resolve(),
+      ]);
       return NextResponse.json({ ok: true });
     }
     return NextResponse.json({ error: "Сначала включите вход по телефону" }, { status: 400 });
@@ -81,11 +91,17 @@ export async function POST(req: Request) {
   const nextProviders = { ...(client.config?.providers || {}), ...(providers && typeof providers === "object" ? providers : {}) };
   const willHaveSmsc =
     (smscLogin !== undefined ? !!smscLogin : !!secrets?.smsc_login) && (smscPassword !== undefined ? !!smscPassword : !!secrets?.smsc_password);
+  const willHaveMts = mtsToken !== undefined ? !!mtsToken : !!secrets?.mts_token;
   const willHaveEmailFrom = !!(emailFrom !== undefined ? emailFrom : client.config?.email_from || "").toString().trim();
 
   const willHave = {
     telegram: nextProviders.telegram === "smsc" ? willHaveSmsc : telegramToken !== undefined ? !!telegramToken : !!secrets?.telegram_gateway_token,
-    sms: nextProviders.sms === "smsc" ? willHaveSmsc : bytehandKey !== undefined ? !!bytehandKey : !!secrets?.bytehand_service_key,
+    sms:
+      nextProviders.sms === "smsc"
+        ? willHaveSmsc
+        : nextProviders.sms === "mts"
+          ? willHaveMts
+          : bytehandKey !== undefined ? !!bytehandKey : !!secrets?.bytehand_service_key,
     // email-канал сверх токена ещё требует заполненного отправителя (From) —
     // без него сервис-провайдер либо отклонит письмо, либо, что хуже,
     // отправит с неверифицированного домена и уйдёт в спам.
@@ -164,6 +180,7 @@ export async function POST(req: Request) {
   if (haskimailMarketingStream !== undefined) secretUpdates.haskimail_marketing_stream = haskimailMarketingStream || null;
   if (smscLogin !== undefined) secretUpdates.smsc_login = smscLogin || null;
   if (smscPassword !== undefined) secretUpdates.smsc_password = smscPassword || null;
+  if (mtsToken !== undefined) secretUpdates.mts_token = mtsToken || null;
 
   // Две независимые таблицы — пишем параллельно, не по очереди.
   await Promise.all([

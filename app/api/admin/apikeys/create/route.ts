@@ -25,7 +25,7 @@ export async function POST(req: Request) {
   // сервер — последняя линия защиты, не доверяем присланному значению вслепую.
   const { data: secrets } = await admin
     .from("project_secrets")
-    .select("bytehand_service_key, smsc_login, smsc_password, haskimail_server_token")
+    .select("bytehand_service_key, smsc_login, smsc_password, mts_token, haskimail_server_token")
     .eq("project_id", projectId)
     .maybeSingle();
   const { data: streamSecret } = await admin
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
     .eq("project_id", projectId)
     .maybeSingle();
   const smscReady = !!secrets?.smsc_login && !!secrets?.smsc_password;
-  const smsOk = smsProvider === "bytehand" ? !!secrets?.bytehand_service_key : smsProvider === "smsc" ? smscReady : false;
+  const smsOk = smsProvider === "bytehand" ? !!secrets?.bytehand_service_key : smsProvider === "smsc" ? smscReady : smsProvider === "mts" ? !!secrets?.mts_token : false;
   const emailOk =
     emailProvider === "haskimail"
       ? !!secrets?.haskimail_server_token && !!streamSecret?.haskimail_marketing_stream
