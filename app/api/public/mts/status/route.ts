@@ -40,8 +40,13 @@ export async function POST(req: Request) {
         p_status: String(item.status ?? ""),
         p_final_failed: failed,
       });
-      if (found) return;
+      if (found) {
+        console.log("[mts-status]", JSON.stringify({ message_id: item.message_id, internal_id: item.internal_id, status: item.status, matched: id }));
+        return;
+      }
     }
+    // не нашли получателя: тестовая отправка, SMS кода входа или другой id — id и статус нужны, чтобы понять, какой id присылает МТС
+    console.log("[mts-status]", JSON.stringify({ message_id: item.message_id, internal_id: item.internal_id, status: item.status, matched: null }));
   };
 
   const CONCURRENCY = 10;
