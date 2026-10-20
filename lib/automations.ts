@@ -54,6 +54,7 @@ export function toAutomation(a: any) {
           key: cfg.key || null,
           recipientMode: cfg.list_fanout ? "fanout" : cfg.transactional ? "phone" : "segment",
           phonePath: cfg.phone_path || null,
+          createContact: !!cfg.create_contact,
           emailPath: cfg.email_path || null,
           externalIdPath: cfg.external_id_path || null,
           orderIdPath: cfg.order_id_path || null,

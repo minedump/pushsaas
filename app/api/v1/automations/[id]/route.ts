@@ -77,6 +77,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     key,
     recipientMode,
     phonePath,
+    createContact,
     emailPath,
     externalIdPath,
     orderIdPath,
@@ -180,6 +181,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       recipientMode !== undefined ||
       key !== undefined ||
       phonePath !== undefined ||
+      createContact !== undefined ||
       emailPath !== undefined ||
       externalIdPath !== undefined ||
       orderIdPath !== undefined ||
@@ -214,6 +216,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       const newCfg: Record<string, unknown> = { key: trimmedKey, transactional: mode === "phone" };
       if (mode === "phone") {
         newCfg.phone_path = String(phonePath !== undefined ? phonePath : cfg.phone_path || "").trim() || undefined;
+        newCfg.create_contact = (createContact !== undefined ? !!createContact : !!cfg.create_contact) || undefined;
         newCfg.email_path = String(emailPath !== undefined ? emailPath : cfg.email_path || "").trim() || undefined;
         newCfg.external_id_path = String(externalIdPath !== undefined ? externalIdPath : cfg.external_id_path || "").trim() || undefined;
         newCfg.order_id_path = String(orderIdPath !== undefined ? orderIdPath : cfg.order_id_path || "").trim() || undefined;

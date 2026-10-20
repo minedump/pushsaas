@@ -76,6 +76,7 @@ type Automation = {
     trigger_event?: string;
     cancel_events?: string[];
     transactional?: boolean;
+    create_contact?: boolean;
     phone_path?: string;
     status_field?: string;
     status_value?: string;
@@ -700,6 +701,7 @@ export default function AutomationsManager({
     comment: "",
     mode: "phone" as "phone" | "segment" | "fanout",
     phonePath: "client.phone",
+    createContact: false,
     emailPath: "",
     externalIdPath: "",
     statusChecks: [{ field: "fulfillment_status", op: "contains", value: "shipped" }] as {
@@ -750,6 +752,7 @@ export default function AutomationsManager({
       .map((c) => ({ field: c.field.trim(), op: c.op || "contains", value: c.value.trim() }));
     if (v.mode === "phone") {
       config.phone_path = v.phonePath.trim() || undefined;
+      config.create_contact = v.createContact ? true : undefined;
       config.email_path = v.emailPath.trim() || undefined;
       config.external_id_path = v.externalIdPath.trim() || undefined;
       config.status_checks = statusChecks;
@@ -832,6 +835,7 @@ export default function AutomationsManager({
       comment: a.comment || "",
       mode: a.config?.list_fanout ? "fanout" : a.config?.transactional ? "phone" : "segment",
       phonePath: a.config?.phone_path || "",
+      createContact: !!a.config?.create_contact,
       emailPath: a.config?.email_path || "",
       externalIdPath: a.config?.external_id_path || "",
       statusChecks: a.config?.status_checks?.length
@@ -1057,6 +1061,17 @@ export default function AutomationsManager({
               <div>
                 <Label>Путь к номеру заказа (дедуп)</Label>
                 <Input value={v.orderIdPath} onChange={(e) => setV({ ...v, orderIdPath: e.target.value })} placeholder="number" />
+              </div>
+              <div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm">Создавать контакт, если его ещё нет</div>
+                  <Toggle checked={v.createContact} onChange={(val) => setV({ ...v, createContact: val })} label={v.createContact ? "Вкл" : "Выкл"} />
+                </div>
+                <p className="text-[12px] text-ink-faint mt-1.5 mb-0">
+                  Для внешних систем, которые присылают получателя, ещё неизвестного нам. Контакт сохраняется, сообщение попадает в «Рассылки» и в историю
+                  контакта. Если сообщение не транзакционное, контакту сразу ставится согласие на рассылку по этому каналу (оно получено и хранится во
+                  внешней системе), кроме тех, кто отписался у нас. Ответ честный: при ошибке отправки 502, при неверном получателе 422.
+                </p>
               </div>
             </div>
           </>

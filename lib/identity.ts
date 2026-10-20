@@ -264,6 +264,10 @@ export type UpsertContactInput = {
   insalesClientId?: string | null;
   smsActive?: boolean;
   emailActive?: boolean;
+  // Не запускать приветственные автоматизации канала при первом включении
+  // согласия: так делает автосоздание контакта из триггерного вебхука (согласие
+  // получено и хранится во внешней системе, приветствие покупателю там не ждут).
+  skipWelcome?: boolean;
   tags?: string[];
   attributes?: Record<string, string | null>;
 };
@@ -358,11 +362,11 @@ function logChannelEvents(
   const rows: { project_id: string; identity_id: string; channel: "sms" | "email"; active: boolean; contact: string }[] = [];
   if (input.smsActive !== undefined && input.smsActive !== before.sms && contactPhone) {
     rows.push({ project_id: projectId, identity_id: identityId, channel: "sms", active: input.smsActive, contact: contactPhone });
-    if (input.smsActive) fireWelcomeAutomations(projectId, "sms", { identityId }).catch(() => {});
+    if (input.smsActive && !input.skipWelcome) fireWelcomeAutomations(projectId, "sms", { identityId }).catch(() => {});
   }
   if (input.emailActive !== undefined && input.emailActive !== before.email && contactEmail) {
     rows.push({ project_id: projectId, identity_id: identityId, channel: "email", active: input.emailActive, contact: contactEmail });
-    if (input.emailActive) fireWelcomeAutomations(projectId, "email", { identityId }).catch(() => {});
+    if (input.emailActive && !input.skipWelcome) fireWelcomeAutomations(projectId, "email", { identityId }).catch(() => {});
   }
   if (rows.length) admin.from("identity_channel_events").insert(rows).then(() => {}, () => {});
 }

@@ -360,6 +360,12 @@ const AUTOMATION_CUSTOM_FIELDS: ApiField[] = [
   },
   { name: "statusChecks", type: "{field,op,value}[]", description: "Условие срабатывания — все элементы массива должны совпасть (И). Применимо к любому recipientMode. Поля объекта ниже.", children: AUTOMATION_STATUS_CHECK_CHILDREN },
   { name: "phonePath", type: "string", description: 'recipientMode:"phone" — путь к телефону получателя в теле вебхука, например client.phone. Пусто = не резолвить по телефону (тогда нужен emailPath или externalIdPath).' },
+  {
+    name: "createContact",
+    type: "boolean",
+    description:
+      'recipientMode:"phone" — по умолчанию false. true — если получателя ещё нет среди контактов, он создаётся (нужен телефон или email в теле), и ответ становится «честным»: 422 — получатель не указан, неверен или отписался у нас, 502 — не удалось отправить, 202 — принято, но отправка отложена окном отправки или интервалом. Если isTransactional не включён, контакту сразу ставится согласие на рассылку по каналу автоматизации (оно получено и хранится во внешней системе); отписавшиеся у нас контакты не включаются обратно. Приветственные автоматизации при этом не запускаются.',
+  },
   { name: "emailPath", type: "string", description: 'recipientMode:"phone" — путь к email получателя, используется если phonePath пуст или не нашёл совпадения среди контактов.' },
   { name: "externalIdPath", type: "string", description: 'recipientMode:"phone" — путь к внешнему id контакта (например insalesClientId) — используется как последний способ определить получателя.' },
   { name: "orderIdPath", type: "string", description: 'recipientMode:"phone"/"segment" — путь к id заказа (или другому уникальному идентификатору события) в теле — используется для защиты от повторной отправки на один и тот же вебхук.' },
@@ -394,6 +400,7 @@ const AUTOMATION_FULL_FIELDS: ApiField[] = [
   { name: "key", type: "string | null", description: "Только type: custom — слаг вебхука (?automation=)." },
   { name: "recipientMode", type: '"phone" | "segment" | "fanout" | null', description: "Только type: custom — режим определения получателя." },
   { name: "phonePath, emailPath, externalIdPath, orderIdPath", type: "string | null", description: 'Только type: custom, recipientMode:"phone" (orderIdPath — также "segment").' },
+  { name: "createContact", type: "boolean", description: 'Только type: custom, recipientMode:"phone" — создавать ли контакт, если его ещё нет.' },
   { name: "segmentPath", type: "string | null", description: 'Только type: custom, recipientMode:"segment".' },
   { name: "productIdPath, listType, trackFieldPath, trackMode", type: "string | null", description: 'Только type: custom, recipientMode:"fanout".' },
   { name: "statusChecks", type: "{field,op,value}[]", description: "Только type: custom — условие срабатывания.", children: AUTOMATION_STATUS_CHECK_CHILDREN },
@@ -430,7 +437,7 @@ export const API_GROUPS: ApiGroup[] = [
           { title: "sms (channel: \"sms\")", fields: SMS_FIELDS },
           { title: "email (channel: \"email\")", fields: EMAIL_FIELDS },
         ],
-        bodyExample: '{ "channel": "push", "title": "Привет", "body": "Тест", "segmentTags": ["vip"] }',
+        bodyExample: '{ "channel": "push", "internalTitle": "Тестовая рассылка", "title": "Привет", "body": "Тест", "segmentTags": ["vip"] }',
         bodyExamples: [
           {
             label: "push — максимум полей",
@@ -916,6 +923,8 @@ export const API_GROUPS: ApiGroup[] = [
           { name: "failed", type: "number", description: "Не доставлено." },
           { name: "total", type: "number", description: "Общее число (0 или 1)." },
           { name: "skipped", type: "string", description: "Присутствует, только если сработал пропуск — причина текстом (условие не совпало, уже отправляли и т.п.), не ошибка." },
+          { name: "contactCreated", type: "boolean", description: "Только для автоматизации с createContact: true — контакт был создан этим вызовом." },
+          { name: "deferred", type: "boolean", description: "Только для автоматизации с createContact: true (ответ 202) — принято, но отправка отложена окном отправки или интервалом." },
         ],
         responseNote: 'Условие автоматизации не совпало, или этому получателю уже отправляли — {ok:true, skipped:"причина"}, это не ошибка.',
         errors: [
@@ -923,6 +932,8 @@ export const API_GROUPS: ApiGroup[] = [
           { code: 400, description: "Параметр automation не передан." },
           BLOCKED_ERROR,
           { code: 404, description: "Автоматизация с таким ключом не найдена, выключена, или не настроен канал/шаблон." },
+          { code: 422, description: 'Только для автоматизации с createContact: true. error: "recipient_missing" — в теле нет телефона и email; "recipient_invalid" — телефон не распознан; "recipient_opted_out" — получатель отписался от рассылки у нас.' },
+          { code: 502, description: 'Только для автоматизации с createContact: true. error: "delivery_failed" — не удалось отправить; повторный запрос с тем же значением защиты от повторов отправит сообщение заново.' },
         ],
       },
     ],

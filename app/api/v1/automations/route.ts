@@ -78,6 +78,7 @@ export async function POST(req: Request) {
     key,
     recipientMode,
     phonePath,
+    createContact,
     emailPath,
     externalIdPath,
     orderIdPath,
@@ -168,6 +169,7 @@ export async function POST(req: Request) {
     const checks = normalizeStatusChecks(statusChecks);
     if (recipientMode === "phone") {
       cfg.phone_path = String(phonePath ?? "").trim() || undefined;
+      cfg.create_contact = createContact ? true : undefined;
       cfg.email_path = String(emailPath ?? "").trim() || undefined;
       cfg.external_id_path = String(externalIdPath ?? "").trim() || undefined;
       cfg.order_id_path = String(orderIdPath ?? "").trim() || undefined;

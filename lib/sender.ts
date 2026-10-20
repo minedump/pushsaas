@@ -2490,8 +2490,6 @@ export async function sendTestMessage(
     const { template: smsTemplateCtx, context: smsSendCtx } = await resolveTemplateData(projectId, content.data);
     const text = applyTemplate(content.text, { ...smsSendCtx, template: smsTemplateCtx, context: smsSendCtx, automation: {} });
     const result = await sendSmsByProvider(provider, secrets, phone, text, smsSender);
-    // id сообщения у провайдера — чтобы сверить его со статусом доставки в логе приёмника ([mts-status])
-    if (provider === "mts") console.log("[mts-send:test]", JSON.stringify({ ok: result.ok, messageId: result.messageId }));
     return result.ok ? { ok: true } : { ok: false, error: "Провайдер отклонил отправку" };
   }
 

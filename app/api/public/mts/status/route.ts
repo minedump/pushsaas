@@ -5,19 +5,18 @@ import { classifyMtsStatus } from "@/lib/otp/mts";
 // ключом показывается в «Подключениях» → «МТС Маркетолог»; его нужно указать в
 // кабинете МТС при создании подключения API.
 //
-// Тело: { items: [{ message_id, internal_id, status, ... }] }. МТС требует
+// Тело: { items: [{ message_id, status, ... }] }, status — числовой код (300 —
+// доставлено). МТС требует
 // ответ 204 (иначе повторяет доставку три дня), поэтому на любые статусы,
 // включая незнакомые, отвечаем 204. Неверный ключ — 401: это ошибка настройки,
 // её нужно заметить.
 //
-// Получателя находим по id сообщения, который мы сохранили при отправке
-// (campaign_recipients.provider_message_id). В документации не уточнено, какой
-// именно из двух id приходит в сообщении, поэтому пробуем оба. Окончательный
-// провал (NotSent, NotDelivered) переводит получателя в failed и пересчитывает
-// счётчики кампании (см. миграцию 0107).
+// Получателя находим по message_id: он совпадает с id, который мы сохранили при
+// отправке (campaign_recipients.provider_message_id). Окончательный провал
+// переводит получателя в failed и пересчитывает счётчики кампании (миграция 0107).
 export const maxDuration = 30;
 
-type Item = { message_id?: string | number; internal_id?: string | number; status?: string | number };
+type Item = { message_id?: string | number; status?: string | number };
 
 export async function POST(req: Request) {
   const key = new URL(req.url).searchParams.get("key");
@@ -31,22 +30,13 @@ export async function POST(req: Request) {
   const items = Array.isArray(body?.items) ? body!.items!.slice(0, 1000) : [];
 
   const apply = async (item: Item) => {
-    const failed = classifyMtsStatus(item.status) === "failed";
-    const ids = [...new Set([item.message_id, item.internal_id].filter((v) => v != null && v !== "").map(String))];
-    for (const id of ids) {
-      const { data: found } = await admin.rpc("apply_sms_delivery_status", {
-        p_project: owner.project_id,
-        p_message_id: id,
-        p_status: String(item.status ?? ""),
-        p_final_failed: failed,
-      });
-      if (found) {
-        console.log("[mts-status]", JSON.stringify({ message_id: item.message_id, internal_id: item.internal_id, status: item.status, matched: id }));
-        return;
-      }
-    }
-    // не нашли получателя: тестовая отправка, SMS кода входа или другой id — id и статус нужны, чтобы понять, какой id присылает МТС
-    console.log("[mts-status]", JSON.stringify({ message_id: item.message_id, internal_id: item.internal_id, status: item.status, matched: null }));
+    if (item.message_id == null || item.message_id === "") return;
+    await admin.rpc("apply_sms_delivery_status", {
+      p_project: owner.project_id,
+      p_message_id: String(item.message_id),
+      p_status: String(item.status ?? ""),
+      p_final_failed: classifyMtsStatus(item.status) === "failed",
+    });
   };
 
   const CONCURRENCY = 10;

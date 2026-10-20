@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { authenticateApiKey, hasScope } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createAndDispatch, createAndDispatchChannel, sendWelcomeNow, resolveCascadeChannel } from "@/lib/sender";
-import { enrichIdentityFields, resolveIdentitiesForProduct } from "@/lib/identity";
+import { enrichIdentityFields, resolveIdentitiesForProduct, upsertContact } from "@/lib/identity";
 import { normalizePhone } from "@/lib/phone";
 import { resolvePath } from "@/lib/jsonpath";
 
@@ -217,6 +217,9 @@ export async function POST(req: Request) {
   }
   const cfg = (automation.config || {}) as {
     transactional?: boolean;
+    // Создавать контакт, если его ещё нет (для вебхуков внешних систем, которые
+    // присылают получателя, ещё неизвестного нам), и честные коды ответа.
+    create_contact?: boolean;
     phone_path?: string;
     status_field?: string;
     status_value?: string;
@@ -273,12 +276,15 @@ export async function POST(req: Request) {
     dedupeVal = [String(resolvePath(body, cfg.order_id_path) ?? ""), ...matchedValues].join("|");
   }
   if (dedupeVal) {
-    const { data: prior } = await admin
+    let priorQuery = admin
       .from("automation_log")
       .select("id")
       .eq("project_id", projectId)
-      .contains("detail", { key: automationKey, dedupe: dedupeVal })
-      .limit(1);
+      .contains("detail", { key: automationKey, dedupe: dedupeVal });
+    // у автоматизации с честными кодами ответа повтор запроса после неудачной
+    // отправки (мы ответили 502) должен отправить сообщение заново
+    if (cfg.create_contact) priorQuery = priorQuery.neq("status", "failed");
+    const { data: prior } = await priorQuery.limit(1);
     if (prior?.length) return NextResponse.json({ ok: true, skipped: "already fired" });
   }
 
@@ -381,16 +387,23 @@ export async function POST(req: Request) {
 
   // recipient resolution, tried in order — first that resolves an existing
   // contact wins: телефон → email → внешний ID. Ищем существующую identity
-  // (никого не создаём тут — контакт должен быть уже известен системе через
-  // подписку/идентификацию), затем добираем недостающие поля контакта из
-  // того же тела вебхука (enrichIdentityFields — только пустые поля,
-  // существующие никогда не перезаписываются).
+  // (по умолчанию никого не создаём — контакт должен быть уже известен системе
+  // через подписку/идентификацию; исключение — автоматизация с флагом
+  // create_contact), затем добираем недостающие поля контакта из того же
+  // тела вебхука (enrichIdentityFields — только пустые поля, существующие
+  // никогда не перезаписываются).
   const phonePath = q.get("phone_path") ?? cfg.phone_path;
   const rawPhone = phonePath ? String(resolvePath(body, phonePath) ?? "") : "";
   const normalizedPhone = rawPhone ? normalizePhone(rawPhone) : null;
   const rawEmail = cfg.email_path ? String(resolvePath(body, cfg.email_path) ?? "") : "";
   const validEmail = rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) ? rawEmail.trim().toLowerCase() : "";
   const externalId = cfg.external_id_path ? String(resolvePath(body, cfg.external_id_path) ?? "") : "";
+
+  // Режим «создавать контакт»: коды ответа честные (внешняя система по ним
+  // решает, повторять ли запрос), тексты ошибок короткие и без подробностей.
+  const strict = !!cfg.create_contact;
+  if (strict && rawPhone && !normalizedPhone) return NextResponse.json({ error: "recipient_invalid" }, { status: 422 });
+  if (strict && !normalizedPhone && !validEmail) return NextResponse.json({ error: "recipient_missing" }, { status: 422 });
 
   if (normalizedPhone || validEmail || externalId) {
     let identityId: string | null = null;
@@ -407,6 +420,63 @@ export async function POST(req: Request) {
       identityId = data?.id || null;
     }
 
+    let contactCreated = false;
+    if (strict) {
+      // Каналы, которыми реально отправит эта автоматизация — согласие
+      // выставляем только на них (SMS по телефону, email по почте).
+      const channels = new Set<string>(automation.cascade ? Object.keys(automation.channel_templates || {}) : automation.channel ? [automation.channel] : []);
+      const wantSms = !!normalizedPhone && channels.has("sms");
+      const wantEmail = !!validEmail && channels.has("email");
+      // Не транзакционное: согласие на рассылку по этим каналам получено и
+      // хранится во внешней системе — фиксируем его у контакта. Явная отписка
+      // в нашей системе (последнее событие канала «выключено») сильнее: такого
+      // получателя не включаем обратно и сообщение не отправляем.
+      const grant = !automation.is_transactional;
+      let optedOut = false;
+
+      if (identityId) {
+        if (grant && (wantSms || wantEmail)) {
+          const { data: cur } = await admin.from("identities").select("sms_marketing_active_at, email_marketing_active_at").eq("id", identityId).maybeSingle();
+          const needSms = wantSms && !cur?.sms_marketing_active_at;
+          const needEmail = wantEmail && !cur?.email_marketing_active_at;
+          if (needSms || needEmail) {
+            const { data: events } = await admin
+              .from("identity_channel_events")
+              .select("channel, active, created_at")
+              .eq("identity_id", identityId)
+              .order("created_at", { ascending: false })
+              .limit(20);
+            const lastActive = (ch: string) => (events || []).find((e) => e.channel === ch)?.active;
+            if ((needSms && lastActive("sms") === false) || (needEmail && lastActive("email") === false)) {
+              optedOut = true;
+            } else {
+              const r = await upsertContact(projectId, {
+                phone: normalizedPhone || undefined,
+                email: validEmail || undefined,
+                ...(needSms ? { smsActive: true } : {}),
+                ...(needEmail ? { emailActive: true } : {}),
+                skipWelcome: true,
+              });
+              if (!r.ok) return NextResponse.json({ error: "internal_error" }, { status: 500 });
+            }
+          }
+        }
+      } else {
+        const r = await upsertContact(projectId, {
+          phone: normalizedPhone || undefined,
+          email: validEmail || undefined,
+          insalesClientId: externalId || undefined,
+          ...(grant && wantSms ? { smsActive: true } : {}),
+          ...(grant && wantEmail ? { emailActive: true } : {}),
+          skipWelcome: true,
+        });
+        if (!r.ok) return NextResponse.json({ error: "internal_error" }, { status: 500 });
+        identityId = r.id;
+        contactCreated = r.created;
+      }
+      if (optedOut) return NextResponse.json({ error: "recipient_opted_out" }, { status: 422 });
+    }
+
     if (identityId) {
       await enrichIdentityFields(identityId, {
         phone: normalizedPhone || undefined,
@@ -418,6 +488,12 @@ export async function POST(req: Request) {
       // key/dedupe для идемпотентности, отдельной строки не пишем: раньше
       // на один реальный send уходило 2 записи в лог, вторая без контекста.
       const status = await sendViaTemplate(admin, projectId, automation, identityId, body, { key: automationKey, ...(dedupeVal ? { dedupe: dedupeVal } : {}) });
+      if (strict) {
+        if (status === "failed") return NextResponse.json({ error: "delivery_failed" }, { status: 502 });
+        // отложено окном отправки/интервалом или пропущено — принято, но не отправлено сейчас
+        if (status === "skipped") return NextResponse.json({ ok: true, delivered: 0, deferred: true, ...(contactCreated ? { contactCreated } : {}) }, { status: 202 });
+        return NextResponse.json({ ok: true, total: 1, delivered: 1, failed: 0, ...(contactCreated ? { contactCreated } : {}) });
+      }
       return NextResponse.json({ ok: status !== "failed", total: 1, delivered: status === "sent" ? 1 : 0, failed: status === "failed" ? 1 : 0 });
     }
     // транзакционный режим (одному контакту) требует найденного контакта —

@@ -10,10 +10,10 @@
 // адрес (app/api/public/mts/status). Имя отправителя (naming) обязательно и
 // заводится в кабинете МТС, а не через API.
 //
-// Не проверено на живом аккаунте: код написан по документации, формат ответов
-// сверялся только с её примерами.
+// Проверено на живом аккаунте: отправка, ответ со статусом и обратный запрос с
+// id сообщения (message_id совпадает с messageID из ответа на отправку).
 
-const BASE = (process.env.MTS_API_URL || "https://api.mts.ru/client-omni-adapter_production/1.0.2").replace(/\/$/, "");
+const BASE = "https://api.mts.ru/client-omni-adapter_production/1.0.2";
 
 // В одном запросе документация разрешает до 1000 сообщений; берём меньше,
 // чтобы запрос не упирался в таймаут и ошибки не накрывали сразу тысячу.
@@ -71,9 +71,9 @@ export async function sendSmsMts(token: string, phoneDigits: string, text: strin
 
 export type MtsDeliveryState = "pending" | "delivered" | "failed";
 
-// Статус из ответа МТС (текст у токена, числовые коды — у подключения по
-// логину и паролю): окончательные «доставлено» и «не доставлено» отдельно,
-// всё остальное считаем «ещё в пути».
+// Статус от МТС: в обратном запросе приходит числовой код (300 — доставлено),
+// в ответе на запрос статуса — текст (Delivered, NotDelivered, NotSent).
+// Окончательные «доставлено» и «не доставлено» отдельно, всё остальное — «ещё в пути».
 export function classifyMtsStatus(status: unknown): MtsDeliveryState {
   if (typeof status === "number" || (typeof status === "string" && /^\d+$/.test(status))) {
     const n = Number(status);
@@ -87,18 +87,21 @@ export function classifyMtsStatus(status: unknown): MtsDeliveryState {
   return "pending";
 }
 
-// GET /mcom/messageManagement/messages/{messageID}/status
+// GET /mcom/messageManagement/messages/{messageID}/status — в data лежит
+// история статусов (Sending, затем Delivered), а не один статус.
 export async function checkMtsDelivery(token: string, messageId: string): Promise<MtsDeliveryState> {
   try {
     const res = await fetch(`${BASE}/mcom/messageManagement/messages/${encodeURIComponent(messageId)}/status`, { headers: headers(token) });
     if (!res.ok) return "pending"; // сбой самой проверки — не топим доставку из-за этого
-    const data = (await res.json().catch(() => null)) as { data?: { statuses?: { status?: string }[] }[] } | null;
-    const statuses = data?.data?.[0]?.statuses || [];
-    if (!statuses.length) return "pending";
-    // сообщение из нескольких частей: провал любой части — провал, иначе нужны все «доставлено»
-    const states = statuses.map((s) => classifyMtsStatus(s.status));
-    if (states.includes("failed")) return "failed";
-    return states.every((s) => s === "delivered") ? "delivered" : "pending";
+    const data = (await res.json().catch(() => null)) as { data?: { statuses?: { status?: string; date?: string }[] }[] } | null;
+    const history = (data?.data || []).filter((h) => h.statuses?.length);
+    if (!history.length) return "pending";
+    // провал в любой записи истории — провал; иначе смотрим последнюю запись по дате
+    if (history.some((h) => h.statuses!.some((s) => classifyMtsStatus(s.status) === "failed"))) return "failed";
+    const at = (h: (typeof history)[number]) => Math.max(...h.statuses!.map((s) => Date.parse(s.date || "") || 0));
+    const latest = history.reduce((x, y) => (at(y) >= at(x) ? y : x));
+    // сообщение из нескольких частей: нужны все «доставлено»
+    return latest.statuses!.every((s) => classifyMtsStatus(s.status) === "delivered") ? "delivered" : "pending";
   } catch {
     return "pending";
   }
