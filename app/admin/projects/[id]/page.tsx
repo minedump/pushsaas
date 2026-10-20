@@ -59,6 +59,8 @@ export default async function DashboardPage({ params }: { params: Promise<{ id: 
       .eq("project_id", id)
       .eq("is_active", true)
       .eq("paused", false)
+      // анонимные записи (устройство без push-подписки) — контакты, не подписчики
+      .not("endpoint", "is", null)
       .gte("created_at", startOfMonth.toISOString()),
     supabase
       .from("identities")

@@ -67,6 +67,8 @@ export default async function AnalyticsPage({
       .from("subscribers")
       .select("platform, is_active, created_at")
       .eq("project_id", id)
+      // анонимные записи (устройство без push-подписки) — контакты, не подписчики
+      .not("endpoint", "is", null)
       .gte("created_at", sinceIso)
       .lte("created_at", untilIso),
     supabase

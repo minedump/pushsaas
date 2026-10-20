@@ -24,7 +24,7 @@ export default async function ClientsPage() {
   const nameById = new Map((owners ?? []).map((o) => [o.id, o.full_name]));
 
   // active subscriber counts per project
-  const { data: subs } = await supabase.from("subscribers").select("project_id").eq("is_active", true).limit(10000);
+  const { data: subs } = await supabase.from("subscribers").select("project_id").eq("is_active", true).not("endpoint", "is", null).limit(10000);
   const subCount = new Map<string, number>();
   (subs ?? []).forEach((s) => subCount.set(s.project_id, (subCount.get(s.project_id) || 0) + 1));
 
