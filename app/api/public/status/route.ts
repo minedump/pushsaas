@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { checkRateLimit } from "@/lib/ratelimit";
+import { sha256 } from "@/lib/oidc";
 
 // Public "am I known" check — called by window.sendera.isAuthenticated().
-// Identifies the device by its push subscription endpoint and reports
+// Identifies the device by its push subscription endpoint (or, for a device
+// without push, by its device token) and reports
 // whether it's already linked (via a real OTP in /oidc/*/auth) to a
 // phone-verified identity AND/OR an email-verified identity — independently,
 // either one can be true on its own — no PII in the response, booleans only.
@@ -18,13 +20,14 @@ export async function OPTIONS() {
 }
 
 export async function POST(req: Request) {
-  const { projectId, endpoint } = (await req.json().catch(() => ({}))) as {
+  const { projectId, endpoint, deviceToken } = (await req.json().catch(() => ({}))) as {
     projectId?: string;
     endpoint?: string;
+    deviceToken?: string;
   };
 
-  if (!projectId || !endpoint) {
-    return NextResponse.json({ error: "projectId, endpoint required" }, { status: 400, headers: CORS });
+  if (!projectId || (!endpoint && !deviceToken)) {
+    return NextResponse.json({ error: "projectId and endpoint or deviceToken required" }, { status: 400, headers: CORS });
   }
 
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
@@ -32,13 +35,12 @@ export async function POST(req: Request) {
   if (!allowed) return NextResponse.json({ error: "too many requests" }, { status: 429, headers: CORS });
 
   const admin = createAdminClient();
-  const { data: subscriber } = await admin
-    .from("subscribers")
-    .select("id")
-    .eq("project_id", projectId)
-    .eq("endpoint", endpoint)
-    .eq("is_active", true)
-    .maybeSingle();
+  // push-адрес надёжнее; токен устройства — для устройств без push-подписки
+  const lookup = admin.from("subscribers").select("id").eq("project_id", projectId).eq("is_active", true);
+  const { data: subscriber } = await (endpoint
+    ? lookup.eq("endpoint", endpoint)
+    : lookup.eq("device_token_hash", sha256(String(deviceToken)))
+  ).maybeSingle();
   if (!subscriber) return NextResponse.json({ authenticated: false, phone: false, email: false }, { headers: CORS });
 
   const { data: link } = await admin

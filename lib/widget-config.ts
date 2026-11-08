@@ -41,7 +41,7 @@ export type PromptConfig = {
 };
 
 export const DEFAULT_BUTTON: ButtonConfig = {
-  enabled: true,
+  enabled: false,
   text: "Уведомления",
   color: "#2c4a66",
   textColor: "#ffffff",
@@ -105,7 +105,7 @@ function resolveMinPageViews(raw: unknown, fallback: number): number {
 export function resolveButtonConfig(raw: unknown): ButtonConfig {
   const c = (raw && typeof raw === "object" ? raw : {}) as Partial<ButtonConfig>;
   return {
-    enabled: c.enabled !== false,
+    enabled: c.enabled === true,
     text: typeof c.text === "string" && c.text.trim() ? c.text.trim().slice(0, 40) : DEFAULT_BUTTON.text,
     color: typeof c.color === "string" && HEX.test(c.color.trim()) ? c.color.trim() : DEFAULT_BUTTON.color,
     textColor: typeof c.textColor === "string" && HEX.test(c.textColor.trim()) ? c.textColor.trim() : DEFAULT_BUTTON.textColor,

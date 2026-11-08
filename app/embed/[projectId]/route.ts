@@ -83,7 +83,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ projectId: str
   return new Response(await minifyJs(js), {
     headers: {
       "Content-Type": "application/javascript; charset=utf-8",
-      "Cache-Control": "public, max-age=300",
+      // 60 секунд: переключение виджетов в «Виджетах» доходит до посетителей за минуту
+      "Cache-Control": "public, max-age=60, stale-while-revalidate=60",
     },
   });
 }
@@ -354,17 +355,17 @@ function widget(
   // только факт привязки; phone и email могут быть true одновременно,
   // по отдельности или оба false.
   function isAuthenticated(){
-    if(!supported() || !navigator.serviceWorker.getRegistration) return Promise.resolve({ authenticated:false, phone:false, email:false });
-    return navigator.serviceWorker.getRegistration("/service-worker.js")
-      .then(function(reg){ return reg ? reg.pushManager.getSubscription() : null; })
-      .then(function(sub){
-        if(!sub) return { authenticated:false, phone:false, email:false };
-        return fetch(API + "/api/public/status", {
-          method:"POST", headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({ projectId: PROJECT_ID, endpoint: sub.endpoint })
-        }).then(function(r){ return r.json(); });
-      })
-      .catch(function(){ return { authenticated:false, phone:false, email:false }; });
+    var none = { authenticated:false, phone:false, email:false };
+    // Устройство узнаём по push-подписке, если она есть, иначе по токену устройства:
+    // вход работает и без push, значит и ответ должен быть верным без него.
+    return currentPushSub().then(function(sub){
+      var body = { projectId: PROJECT_ID };
+      if(sub) body.endpoint = sub.endpoint;
+      else { var dt = deviceToken(); if(!dt) return none; body.deviceToken = dt; }
+      return fetch(API + "/api/public/status", {
+        method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)
+      }).then(function(r){ return r.json(); });
+    }).catch(function(){ return none; });
   }
 
   // Окно «Установка приложения»: пока оно выключено в «Виджетах» (или проект
