@@ -293,7 +293,7 @@ export async function upsertContact(projectId: string, input: UpsertContactInput
   const admin = createAdminClient();
   const { data: existing } = await admin
     .from("identities")
-    .select("id, name, phone, email, insales_client_id, tags, sms_marketing_active_at, email_marketing_active_at")
+    .select("id, name, phone, email, insales_client_id, tags, attributes, sms_marketing_active_at, email_marketing_active_at")
     .eq("project_id", projectId)
     .eq(phone ? "phone" : "email", phone || email)
     .maybeSingle();
@@ -307,6 +307,16 @@ export async function upsertContact(projectId: string, input: UpsertContactInput
   if (input.smsActive !== undefined) patch.sms_marketing_active_at = input.smsActive ? now : null;
   if (input.emailActive !== undefined) patch.email_marketing_active_at = input.emailActive ? now : null;
   if (input.tags !== undefined) patch.tags = input.tags;
+  // Доп. поля контакта (в т.ч. из API при загрузке клиентов): мёржим поверх
+  // имеющихся, null удаляет ключ. Раньше сюда не доходили — их игнорировали.
+  if (input.attributes !== undefined) {
+    const merged: Record<string, unknown> = { ...(((existing?.attributes as object) || {}) as Record<string, unknown>) };
+    for (const [key, value] of Object.entries(input.attributes)) {
+      if (value === null) delete merged[key];
+      else merged[key] = value;
+    }
+    patch.attributes = merged;
+  }
 
   if (existing) {
     await admin.from("identities").update(patch).eq("id", existing.id);

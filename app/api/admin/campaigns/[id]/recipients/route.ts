@@ -30,7 +30,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const admin = createAdminClient();
   const { data: campaign } = await admin
     .from("campaigns")
-    .select("id, title, channel, sent_count, delivered_count, failed_count, clicked_count, opened_count, unsubscribed_count")
+    .select("id, title, channel, sent_count, delivered_count, failed_count, clicked_count, opened_count, unsubscribed_count, confirmed_count")
     .eq("id", campaignId)
     .eq("project_id", projectId)
     .maybeSingle();
@@ -38,7 +38,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
   const { data: rows } = await admin
     .from("campaign_recipients")
-    .select("channel, contact, status, clicked_at, opened_at, unsubscribed_at, created_at")
+    .select("channel, contact, status, clicked_at, opened_at, unsubscribed_at, created_at, delivered_at, provider_status")
     .eq("campaign_id", campaignId)
     .order("created_at", { ascending: true });
 
@@ -47,7 +47,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   // работает одинаково у push/sms/email (см. injectClickTracking/
   // injectClickTrackingSms в lib/sender.ts). Всегда включена (см.
   // lib/attribution.ts) — нет заказов с этой кукой, просто 0/0.
-  const { data: attrRows } = await admin.from("order_attributions").select("revenue").eq("campaign_id", campaignId);
+  const { data: attrRows } = await admin.from("order_attributions").select("revenue").eq("is_cancelled", false).eq("campaign_id", campaignId);
   const orders = attrRows?.length || 0;
   const revenue = (attrRows ?? []).reduce((sum, r) => sum + Number(r.revenue || 0), 0);
 
@@ -62,6 +62,9 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     // opened/unsubscribed — только у email (пиксель открытия и ссылка
     // отписки — см. injectOpenPixel/unsubscribe_url в lib/sender.ts); у
     // push/sms ни то, ни другое технически не отслеживается.
+    ...(campaign.channel === "sms"
+      ? [["delivered_confirmed", campaign.confirmed_count || 0].map(csvEscape).join(",")]
+      : []),
     ...(campaign.channel === "email"
       ? [
           ["opened", campaign.opened_count || 0].map(csvEscape).join(","),
@@ -76,12 +79,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const header =
     campaign.channel === "email"
       ? ["channel", "contact", "status", "clicked", "opened", "unsubscribed", "created_at"]
+      : campaign.channel === "sms"
+      ? ["channel", "contact", "status", "delivered_by_operator", "operator_status", "clicked", "created_at"]
       : ["channel", "contact", "status", "clicked", "created_at"];
   const lines = [...summary, header.join(",")];
   for (const r of rows ?? []) {
     const row =
       campaign.channel === "email"
         ? [r.channel, r.contact, r.status, r.clicked_at ? "да" : "нет", r.opened_at ? "да" : "нет", r.unsubscribed_at ? "да" : "нет", r.created_at]
+        : campaign.channel === "sms"
+        ? [r.channel, r.contact, r.status, r.delivered_at ? "да" : "нет", r.provider_status || "", r.clicked_at ? "да" : "нет", r.created_at]
         : [r.channel, r.contact, r.status, r.clicked_at ? "да" : "нет", r.created_at];
     lines.push(row.map(csvEscape).join(","));
   }

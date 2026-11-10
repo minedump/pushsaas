@@ -19,7 +19,7 @@ export default async function CampaignsPage({ params }: { params: Promise<{ id: 
   const { data: campaignsFull, error: campaignsErr } = await supabase
     .from("campaigns")
     .select(
-      "id, title, internal_title, status, channel, sent_count, delivered_count, failed_count, clicked_count, unsubscribed_count, sent_at, created_at, type, initiator, template_id"
+      "id, title, internal_title, status, channel, sent_count, delivered_count, confirmed_count, failed_count, clicked_count, unsubscribed_count, sent_at, created_at, type, initiator, template_id"
     )
     .eq("project_id", id)
     .order("created_at", { ascending: false })
@@ -64,6 +64,7 @@ export default async function CampaignsPage({ params }: { params: Promise<{ id: 
     const { data: attrRows } = await supabase
       .from("order_attributions")
       .select("campaign_id, revenue, is_paid, paid_amount")
+      .eq("is_cancelled", false)
       .in("campaign_id", list.map((c) => c.id));
     revenueByCampaign = (attrRows ?? []).reduce((m, r) => {
       if (r.campaign_id) m.set(r.campaign_id, (m.get(r.campaign_id) || 0) + Number(r.revenue || 0));
@@ -131,6 +132,7 @@ export default async function CampaignsPage({ params }: { params: Promise<{ id: 
       status: c.status,
       sent_count: c.sent_count,
       delivered_count: c.delivered_count,
+      confirmed_count: (c as { confirmed_count?: number }).confirmed_count || 0,
       clicked_count: c.clicked_count,
       unsubscribed_count: c.unsubscribed_count,
       revenue: revenueByCampaign.get(c.id) || 0,

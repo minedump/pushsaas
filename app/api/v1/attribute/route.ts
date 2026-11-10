@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePath } from "@/lib/jsonpath";
 import { upsertContact } from "@/lib/identity";
 import { logApiCall } from "@/lib/apiLog";
+import { parseExternalTime } from "@/lib/datetime";
 
 // POST /api/v1/attribute — order intake (last-click attribution, when a
 // cookie matches a live campaign, PLUS the merchant's full order stream —
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
 
   const { data: project } = await admin
     .from("projects")
-    .select("attribution_cookie_name, attribution_window_days")
+    .select("attribution_cookie_name, attribution_window_days, timezone")
     .eq("id", projectId)
     .maybeSingle();
   if (!project) return NextResponse.json({ error: "invalid key" }, { status: 401 });
@@ -90,6 +91,15 @@ export async function POST(req: Request) {
   const revenue = Number(resolvePath(body, "total_price") ?? 0) || 0;
   const isPaid = String(resolvePath(body, "financial_status") ?? "") === "paid";
   const paidAmount = isPaid ? Number(resolvePath(body, "items_price") ?? 0) || 0 : null;
+  // Статусы заказа и настоящая дата заказа (миграция 0110). Отменённый или
+  // возвращённый заказ не должен считаться выручкой: fulfillment_status
+  // declined/returned или финансовый статус refunded.
+  const financialStatus = String(resolvePath(body, "financial_status") ?? "") || null;
+  const fulfillmentStatus = String(resolvePath(body, "fulfillment_status") ?? "") || null;
+  const isCancelled = fulfillmentStatus === "declined" || fulfillmentStatus === "returned" || financialStatus === "refunded";
+  const orderedAtRaw = String(resolvePath(body, "created_at") ?? "");
+  // со смещением («+03:00») берём как есть, без смещения — время по часовому поясу проекта
+  const orderedAt = (orderedAtRaw ? parseExternalTime(orderedAtRaw, (project as { timezone?: string | null }).timezone) : null)?.toISOString() ?? new Date().toISOString();
 
   // Контакт покупателя — заводим/находим identity, чтобы заказ был виден на
   // ЕГО карточке (см. миграцию 0077), даже если push никогда не включался.
@@ -97,12 +107,23 @@ export async function POST(req: Request) {
   // рассылку это заказ не даёт, только сам факт "мы знаем этого клиента".
   const rawPhone = String(resolvePath(body, "client.phone") ?? resolvePath(body, "phone") ?? "");
   const rawEmail = String(resolvePath(body, "client.email") ?? resolvePath(body, "email") ?? "");
-  const clientName = String(resolvePath(body, "client.name") ?? "") || undefined;
+  const clientName =
+    [resolvePath(body, "client.name"), resolvePath(body, "client.surname")]
+      .map((v) => String(v ?? "").trim())
+      .filter(Boolean)
+      .join(" ") || undefined;
 
   let identityId: string | null = null;
   let subscriberId: string | null = null;
   if (rawPhone || rawEmail) {
-    const contact = await upsertContact(projectId, { phone: rawPhone || undefined, email: rawEmail || undefined, name: clientName });
+    const clientId = resolvePath(body, "client.id");
+    const contact = await upsertContact(projectId, {
+      phone: rawPhone || undefined,
+      email: rawEmail || undefined,
+      name: clientName,
+      // внешний id клиента: по нему вебхук клиентов потом находит этот же контакт
+      insalesClientId: clientId != null && clientId !== "" ? String(clientId) : undefined,
+    });
     if (contact.ok) {
       identityId = contact.id;
       const { data: link } = await admin.from("identity_devices").select("subscriber_id").eq("identity_id", identityId).limit(1).maybeSingle();
@@ -118,26 +139,33 @@ export async function POST(req: Request) {
     return NextResponse.json(responseBody);
   }
 
-  // upsert, не insert — InSales обычно шлёт отдельные вебхуки на создание И
-  // на смену статуса заказа, мерчант может законно навесить оба на этот же
-  // адрес (см. Настройки); без дедупа по (project_id, order_number) выручка
-  // заказа считалась бы по разу на каждое срабатывание (см. migration 0074).
-  await admin.from("order_attributions").upsert(
-    {
-      project_id: projectId,
-      campaign_id: campaignId,
-      subscriber_id: subscriberId,
-      identity_id: identityId,
-      order_number: orderNumber || null,
-      revenue,
-      is_paid: isPaid,
-      paid_amount: paidAmount,
-      raw_cookie: cookieVal || null,
-    },
-    { onConflict: "project_id,order_number" }
-  );
+  // upsert, не insert — InSales шлёт вебхуки и на создание, и на каждое изменение
+  // заказа, без дедупа по (project_id, order_number) выручка считалась бы по
+  // разу на каждое срабатывание (см. migration 0074). Поля, которых в этом
+  // вебхуке нет (кука, контакт), не затираем: при повторе без куки заказ не
+  // теряет уже найденную рассылку.
+  const { data: existing } = orderNumber
+    ? await admin.from("order_attributions").select("id").eq("project_id", projectId).eq("order_number", orderNumber).maybeSingle()
+    : { data: null };
+  const row: Record<string, unknown> = {
+    project_id: projectId,
+    order_number: orderNumber || null,
+    revenue,
+    is_paid: isPaid,
+    paid_amount: paidAmount,
+    ordered_at: orderedAt,
+    financial_status: financialStatus,
+    fulfillment_status: fulfillmentStatus,
+    is_cancelled: isCancelled,
+    updated_at: new Date().toISOString(),
+  };
+  if (campaignId) row.campaign_id = campaignId;
+  if (cookieVal) row.raw_cookie = cookieVal;
+  if (subscriberId) row.subscriber_id = subscriberId;
+  if (identityId) row.identity_id = identityId;
+  await admin.from("order_attributions").upsert(row, { onConflict: "project_id,order_number" });
 
-  const responseBody = { ok: true, recorded: true, campaignId, revenue, isPaid };
+  const responseBody = { ok: true, recorded: true, updated: !!existing, campaignId, revenue, isPaid, isCancelled };
   await logApiCall(admin, projectId, "attribute", 200, body, responseBody);
   return NextResponse.json(responseBody);
 }

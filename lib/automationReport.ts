@@ -648,7 +648,7 @@ export async function generateAutomationReportHtml(projectId: string): Promise<s
     : { data: [] };
   const campaignById = new Map((campaignsRaw || []).map((c) => [c.id as string, c]));
 
-  const { data: attrRaw } = campaignIds.length ? await admin.from("order_attributions").select("campaign_id, revenue, is_paid, paid_amount").in("campaign_id", campaignIds) : { data: [] };
+  const { data: attrRaw } = campaignIds.length ? await admin.from("order_attributions").select("campaign_id, revenue, is_paid, paid_amount").eq("is_cancelled", false).in("campaign_id", campaignIds) : { data: [] };
   const attrByCampaign = new Map<string, { revenue: number; paid: number }>();
   for (const r of attrRaw || []) {
     const cid = r.campaign_id as string | null;

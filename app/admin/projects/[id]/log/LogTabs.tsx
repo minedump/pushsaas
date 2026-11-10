@@ -62,6 +62,7 @@ const INITIATOR_LABEL: Record<string, string> = {
 const LOGIN_STATUS_LABEL: Record<string, string> = { verified: "код введён", locked: "попытки исчерпаны", expired: "код не введён", pending: "ожидает" };
 const ENDPOINT_LABEL: Record<string, string> = {
   attribute: "/api/v1/attribute",
+  contacts: "/api/v1/client",
   subscribers: "/api/v1/subscribers",
   templates: "/api/v1/templates",
   campaigns: "/api/v1/campaigns",

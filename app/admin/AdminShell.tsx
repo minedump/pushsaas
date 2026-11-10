@@ -14,11 +14,9 @@ import {
   IconSend,
   IconChartBar,
   IconBolt,
-  IconCreditCard,
   IconCode,
   IconLogin2,
   IconBuildingStore,
-  IconTags,
   IconUser,
   IconLogout,
   IconSun,
@@ -99,7 +97,7 @@ export default function AdminShell({
   const currentProjectId = pathname.match(/\/admin\/projects\/([0-9a-f-]{36})/i)?.[1];
   const currentProject = projects.find((pr) => pr.id === currentProjectId);
   // Заблокированному (is_active=false) владельцу — как ensureProjectAccessible
-  // на сервере (lib/guards.ts) — доступны только «Биллинг» и «Профиль».
+  // на сервере (lib/guards.ts) — доступна только страница «Проект заблокирован» и «Профиль».
   // Суперадмина ограничение не касается (та же логика, что и на сервере).
   const projectBlocked = !!currentProject && !currentProject.is_active && !isAdmin;
 
@@ -245,14 +243,12 @@ export default function AdminShell({
                       <SidebarButton href={p("/log")} label="Журнал" active={pathname.endsWith("/log")} icon={IconHistory} />
                     </>
                   )}
-                  <SidebarButton href={p("/billing")} label="Биллинг" active={pathname.endsWith("/billing")} icon={IconCreditCard} />
                 </>
               )}
               {isAdmin && (
                 <>
                   {currentProjectId && <div className="w-px h-8 mx-1 bg-border md:w-full md:h-px md:mx-0 md:my-1.5" />}
                   <SidebarButton href="/superadmin/clients" label="Клиенты" active={pathname.startsWith("/superadmin/clients")} icon={IconBuildingStore} />
-                  <SidebarButton href="/superadmin/tariffs" label="Тарифы" active={pathname.startsWith("/superadmin/tariffs")} icon={IconTags} />
                 </>
               )}
             </nav>

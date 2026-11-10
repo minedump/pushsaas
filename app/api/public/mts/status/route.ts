@@ -13,7 +13,8 @@ import { classifyMtsStatus } from "@/lib/otp/mts";
 //
 // Получателя находим по message_id: он совпадает с id, который мы сохранили при
 // отправке (campaign_recipients.provider_message_id). Окончательный провал
-// переводит получателя в failed и пересчитывает счётчики кампании (миграция 0107).
+// переводит получателя в failed и пересчитывает счётчики кампании (миграция 0107);
+// подтверждённая доставка фиксируется отдельно (delivered_at, confirmed_count — 0110).
 export const maxDuration = 30;
 
 type Item = { message_id?: string | number; status?: string | number };
@@ -36,6 +37,7 @@ export async function POST(req: Request) {
       p_message_id: String(item.message_id),
       p_status: String(item.status ?? ""),
       p_final_failed: classifyMtsStatus(item.status) === "failed",
+      p_delivered: classifyMtsStatus(item.status) === "delivered",
     });
   };
 

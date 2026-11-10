@@ -73,16 +73,17 @@ export async function GET(req: Request) {
 
     const { data: orders } = await admin
       .from("order_attributions")
-      .select("identity_id, paid_amount, created_at")
+      .select("identity_id, paid_amount, created_at, ordered_at")
       .eq("project_id", p.id)
       .eq("is_paid", true)
+      .eq("is_cancelled", false)
       .not("identity_id", "is", null);
 
     const byIdentity = new Map<string, { count: number; total: number; lastAt: number }>();
     for (const o of orders ?? []) {
       const id = o.identity_id as string;
       const amount = Number(o.paid_amount) || 0;
-      const at = new Date(o.created_at as string).getTime();
+      const at = new Date((o.ordered_at || o.created_at) as string).getTime();
       const cur = byIdentity.get(id);
       if (!cur) {
         byIdentity.set(id, { count: 1, total: amount, lastAt: at });

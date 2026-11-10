@@ -16,17 +16,41 @@ export default function AttributionSettings({
   projectId,
   domain,
   webhookUrl,
+  clientWebhookUrl,
+  initialSmsField,
   initial,
 }: {
   projectId: string;
   domain: string | null;
   webhookUrl: string;
+  clientWebhookUrl: string;
+  initialSmsField: string;
   initial: { cookieName: string; windowDays: number };
 }) {
   const router = useRouter();
   const { toast } = useDialogs();
   const [s, setS] = useState(initial);
   const [busy, setBusy] = useState(false);
+  const [smsField, setSmsField] = useState(initialSmsField);
+  const [smsBusy, setSmsBusy] = useState(false);
+
+  async function saveSmsField() {
+    if (smsBusy) return;
+    setSmsBusy(true);
+    const res = await fetch("/api/admin/attribution/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, clientSmsField: smsField }),
+    });
+    setSmsBusy(false);
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      toast(j.error || "Ошибка", "bad");
+      return;
+    }
+    toast("Сохранено", "good");
+    router.refresh();
+  }
 
   async function save() {
     if (busy) return;
@@ -51,8 +75,8 @@ export default function AttributionSettings({
       <h2 className="text-lg font-semibold mb-1">Атрибуция заказов к рассылкам</h2>
       <p className="text-[13px] text-ink-muted mt-0 mb-3">
         Добавьте вебхук ниже в настройках магазина — и заказы, оформленные после перехода по рассылке, начнут
-        появляться в Аналитике и Рассылках. Вебхук получает вообще все заказы магазина — это также питает
-        RFM-теги на карточках подписчиков.
+        появляться в Аналитике и Рассылках. Вебхук получает вообще все заказы магазина, включая изменения статуса: отменённые
+        и возвращённые не считаются выручкой. Это же питает RFM-теги на карточках подписчиков.
       </p>
 
       <Card>
@@ -98,6 +122,35 @@ export default function AttributionSettings({
 
         <div className="flex gap-2 mt-3">
           <Button onClick={save}>Сохранить</Button>
+        </div>
+      </Card>
+
+      <Card className="mt-3">
+        <div className="text-base font-semibold mb-1">Вебхук клиентов</div>
+        <p className="text-[13px] text-ink-muted mt-0 mb-3">
+          Добавьте его в настройках магазина на события «клиент зарегистрировался» и «клиент изменён». Новые клиенты
+          попадут в контакты, имя, телефон, email и бонусы обновятся сами. Согласия на рассылки приходят оттуда же: на
+          email — системное поле клиента «подписка», на SMS — дополнительное поле клиента, его имя укажите ниже. Любое
+          изменение в личном кабинете магазина (подписался или отписался) меняет согласие на нужном канале.
+        </p>
+        <CopyBox text={clientWebhookUrl} />
+
+        <div className="mt-3">
+          <label htmlFor="client-sms-field" className="text-[13px] text-ink-muted block mb-1">
+            Поле клиента с согласием на SMS
+          </label>
+          <Input
+            id="client-sms-field"
+            value={smsField}
+            onChange={(e) => setSmsField(e.target.value)}
+            placeholder="Имя (handle) дополнительного поля клиента, например sms_consent"
+          />
+          <p className="text-[12.5px] text-ink-faint mt-2 mb-0">
+            Пока поле не указано, согласие на SMS вебхук клиентов не меняет.
+          </p>
+        </div>
+        <div className="flex gap-2 mt-3">
+          <Button onClick={saveSmsField}>Сохранить</Button>
         </div>
       </Card>
     </section>

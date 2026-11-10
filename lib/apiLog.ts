@@ -13,7 +13,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export async function logApiCall(
   admin: ReturnType<typeof createAdminClient>,
   projectId: string,
-  endpoint: "attribute" | "subscribers" | "templates" | "campaigns" | "automations",
+  endpoint: "attribute" | "contacts" | "subscribers" | "templates" | "campaigns" | "automations",
   status: number,
   requestBody: unknown,
   responseBody: unknown

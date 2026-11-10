@@ -47,7 +47,7 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
   }
   const { data: attrRow } = await supabase
     .from("projects")
-    .select("attribution_cookie_name, attribution_window_days")
+    .select("attribution_cookie_name, attribution_window_days, client_sms_field")
     .eq("id", id)
     .maybeSingle();
   const attribution = {
@@ -175,6 +175,8 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
           projectId={project.id}
           domain={project.domain}
           webhookUrl={`${app}/api/v1/attribute?key=${attributionToken}`}
+          clientWebhookUrl={`${app}/api/v1/client?key=${attributionToken}`}
+          initialSmsField={(attrRow as { client_sms_field?: string | null } | null)?.client_sms_field || ""}
           initial={attribution}
         />
       )}

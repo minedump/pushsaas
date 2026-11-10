@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { ensureProjectAccessible } from "@/lib/guards";
 import { Badge, Card } from "@/app/ui";
 import AnalyticsPeriodSwitcher from "./AnalyticsPeriodSwitcher";
+import { DEFAULT_TZ, todayInTz, wallTimeToUtc } from "@/lib/datetime";
 
 const channelLabel: Record<string, string> = { push: "Push", sms: "SMS", email: "Email" };
 const MIN_SAMPLE = 3;
@@ -26,16 +27,17 @@ function formatDayLabel(iso: string): string {
 // сверху и «лучшие рассылки» считались вообще за всё время без исключения.
 // Теперь один переключатель (см. AnalyticsPeriodSwitcher) двигает границы
 // для всех период-зависимых отчётов сразу.
-function resolveRange(period: Period, fromParam?: string, toParam?: string): { since: Date; until: Date } {
+// Границы суток считаем по часовому поясу проекта, а не по UTC: иначе заказ в 01:00
+// по Москве попадал бы во «вчера».
+function resolveRange(period: Period, tz: string, fromParam?: string, toParam?: string): { since: Date; until: Date } {
   const now = new Date();
   if (period === "custom" && fromParam && toParam) {
-    const since = new Date(`${fromParam}T00:00:00.000Z`);
-    const until = new Date(`${toParam}T23:59:59.999Z`);
-    if (!isNaN(since.getTime()) && !isNaN(until.getTime()) && since <= until) return { since, until };
+    const since = wallTimeToUtc(`${fromParam}T00:00:00.000`, tz);
+    const until = wallTimeToUtc(`${toParam}T23:59:59.999`, tz);
+    if (since && until && since <= until) return { since, until };
   }
   if (period === "day") {
-    const since = new Date(now);
-    since.setUTCHours(0, 0, 0, 0);
+    const since = wallTimeToUtc(`${todayInTz(tz)}T00:00:00.000`, tz) ?? now;
     return { since, until: now };
   }
   if (period === "week") return { since: new Date(now.getTime() - 7 * 86_400_000), until: now };
@@ -58,7 +60,7 @@ export default async function AnalyticsPage({
   if (!project) notFound();
   await ensureProjectAccessible(project.id, project.is_active);
 
-  const { since, until } = resolveRange(period, sp.from, sp.to);
+  const { since, until } = resolveRange(period, project.timezone || DEFAULT_TZ, sp.from, sp.to);
   const sinceIso = since.toISOString();
   const untilIso = until.toISOString();
 
@@ -85,8 +87,9 @@ export default async function AnalyticsPage({
       .from("order_attributions")
       .select("revenue, is_paid, paid_amount")
       .eq("project_id", id)
-      .gte("created_at", sinceIso)
-      .lte("created_at", untilIso),
+      .eq("is_cancelled", false)
+      .gte("ordered_at", sinceIso)
+      .lte("ordered_at", untilIso),
     // Рост SMS/Email — по событиям включения согласия (identity_channel_events,
     // миграция 0029), т.к. у identities нет своей даты "стал подписчиком".
     // Реальное включение согласия считается тут же, что и повторное

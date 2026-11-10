@@ -278,6 +278,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
               <SortableTh label="Инициатор" sortKey="initiator" active={sortKey === "initiator"} dir={sortDir} onClick={onSortClick} />
               <SortableTh label="Статус" sortKey="status" active={sortKey === "status"} dir={sortDir} onClick={onSortClick} />
               <SortableTh label="Отправлено" sortKey="delivered_count" active={sortKey === "delivered_count"} dir={sortDir} onClick={onSortClick} right />
+              <Th right>Доставлено</Th>
               <SortableTh label="Клики" sortKey="clicked_count" active={sortKey === "clicked_count"} dir={sortDir} onClick={onSortClick} right />
               <SortableTh label="CTR" sortKey="ctr" active={sortKey === "ctr"} dir={sortDir} onClick={onSortClick} right />
               <SortableTh
@@ -429,7 +430,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={15} className="px-3.5 py-6 text-center text-ink-muted">
+                <td colSpan={16} className="px-3.5 py-6 text-center text-ink-muted">
                   Ничего не найдено
                 </td>
               </tr>

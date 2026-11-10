@@ -33,6 +33,7 @@ type RecipientRow = {
   status: string;
   clicked_at: string | null;
   opened_at: string | null;
+  delivered_at: string | null;
   created_at: string;
   campaigns: { title: string } | null;
   raw_context: Record<string, unknown> | null;
@@ -45,6 +46,8 @@ type OrderRow = {
   is_paid: boolean;
   paid_amount: number | null;
   created_at: string;
+  ordered_at: string | null;
+  is_cancelled: boolean;
   campaigns: { title: string } | null;
 };
 type SiteEventRow = { id: string; label: string; detail: string; created_at: string };
@@ -143,7 +146,7 @@ export default function SubscriberProfile({
 
   const attrs = identity.attributes || {};
   const attrKeys = Object.keys(attrs);
-  const revenueTotal = orders.reduce((sum, o) => sum + Number(o.revenue || 0), 0);
+  const revenueTotal = orders.filter((o) => !o.is_cancelled).reduce((sum, o) => sum + Number(o.revenue || 0), 0);
   // ClientID Яндекс.Метрики — пишется на устройство при подписке (см.
   // «Номер счётчика Метрики» в Настройках), поэтому берём с первого
   // устройства, у которого он есть, а не с самого контакта.
@@ -314,7 +317,7 @@ export default function SubscriberProfile({
                       <Td className="whitespace-nowrap">
                         <Badge tone="accent">{channelLabel[r.channel] || r.channel}</Badge>
                       </Td>
-                      <Td className="text-ink-muted whitespace-nowrap">{statusLabel[r.status] || r.status}</Td>
+                      <Td className="text-ink-muted whitespace-nowrap">{r.channel === "sms" && r.status === "delivered" ? (r.delivered_at ? "доставлено" : "принято, ждём статус") : statusLabel[r.status] || r.status}</Td>
                       <Td className="whitespace-nowrap">
                         {r.clicked_at && (
                           <Badge tone="good" dot>
@@ -357,9 +360,9 @@ export default function SubscriberProfile({
         </Card>
 
         <Card>
-          <h2 className="text-sm font-semibold m-0">Заказы{orders.length > 0 && ` — ${revenueTotal.toLocaleString("ru-RU")} ₽`}</h2>
+          <h2 className="text-sm font-semibold m-0">Заказы{orders.length > 0 && ` — ${revenueTotal.toLocaleString("ru-RU")} ₽ (без отменённых)`}</h2>
           {orders.length === 0 ? (
-            <p className="text-[13px] text-ink-faint mt-2 mb-0">Атрибутированных заказов нет.</p>
+            <p className="text-[13px] text-ink-faint mt-2 mb-0">Заказов нет.</p>
           ) : (
             <div className="overflow-x-auto pretty-scroll">
               <table className="w-full border-collapse text-[13px] mt-3">
@@ -377,9 +380,9 @@ export default function SubscriberProfile({
                   <tr key={o.id} className="border-t border-border first:border-t-0 row-hover">
                     <Td className="whitespace-nowrap">{o.order_number || "—"}</Td>
                     <Td className="text-ink-muted truncate max-w-[220px]">{o.campaigns?.title || "—"}</Td>
-                    <Td>{o.is_paid && <Badge tone="good">оплачен</Badge>}</Td>
+                    <Td>{o.is_cancelled ? <Badge tone="bad">отменён</Badge> : o.is_paid && <Badge tone="good">оплачен</Badge>}</Td>
                     <Td className="text-right tabular-nums">{Number(o.revenue).toLocaleString("ru-RU")} ₽</Td>
-                    <Td className="text-ink-faint whitespace-nowrap">{fmt(o.created_at, tz)}</Td>
+                    <Td className="text-ink-faint whitespace-nowrap">{fmt(o.ordered_at || o.created_at, tz)}</Td>
                   </tr>
                 ))}
                 </tbody>

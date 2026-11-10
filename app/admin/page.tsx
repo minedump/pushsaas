@@ -7,14 +7,8 @@ export default async function AdminHome() {
 
   const { data: projects } = await supabase
     .from("projects")
-    .select("id, name, domain, is_active, tariff_id")
+    .select("id, name, domain, is_active")
     .order("created_at", { ascending: false });
-
-  const tariffIds = [...new Set((projects ?? []).map((p) => p.tariff_id).filter(Boolean))];
-  const { data: tariffs } = tariffIds.length
-    ? await supabase.from("tariffs").select("id, name").in("id", tariffIds)
-    : { data: [] as { id: string; name: string }[] };
-  const tariffName = new Map((tariffs ?? []).map((t) => [t.id, t.name]));
 
   return (
     <main className="max-w-4xl mx-auto">
@@ -42,7 +36,6 @@ export default async function AdminHome() {
                 <Badge tone={p.is_active ? "good" : "bad"} dot>
                   {p.is_active ? "активен" : "заблокирован"}
                 </Badge>
-                <div className="text-ink-muted text-[13px] leading-4">{tariffName.get(p.tariff_id) || "—"}</div>
               </div>
             </Card>
           </a>

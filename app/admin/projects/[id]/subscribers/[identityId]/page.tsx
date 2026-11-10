@@ -111,6 +111,7 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
     status: string;
     clicked_at: string | null;
     opened_at: string | null;
+    delivered_at: string | null;
     created_at: string;
     campaigns: { title: string } | null;
     raw_context: Record<string, unknown> | null;
@@ -119,7 +120,7 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
   if (deviceIds.length) {
     const { data } = await supabase
       .from("campaign_recipients")
-      .select("id, channel, status, clicked_at, opened_at, created_at, campaigns(title), raw_context, rendered_content")
+      .select("id, channel, status, clicked_at, opened_at, created_at, delivered_at, campaigns(title), raw_context, rendered_content")
       .eq("project_id", id)
       .eq("channel", "push")
       .in("contact", deviceIds)
@@ -131,7 +132,7 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
   if (contactValues.length) {
     const { data } = await supabase
       .from("campaign_recipients")
-      .select("id, channel, status, clicked_at, opened_at, created_at, campaigns(title), raw_context, rendered_content")
+      .select("id, channel, status, clicked_at, opened_at, created_at, delivered_at, campaigns(title), raw_context, rendered_content")
       .eq("project_id", id)
       .in("channel", ["sms", "email"])
       .in("contact", contactValues)
@@ -146,10 +147,10 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
   // подписку), поэтому запрос больше не завязан на deviceIds.
   const { data: orderRows } = await supabase
     .from("order_attributions")
-    .select("id, order_number, revenue, is_paid, paid_amount, created_at, campaigns(title)")
+    .select("id, order_number, revenue, is_paid, paid_amount, created_at, ordered_at, is_cancelled, fulfillment_status, campaigns(title)")
     .eq("project_id", id)
     .eq("identity_id", identityId)
-    .order("created_at", { ascending: false })
+    .order("ordered_at", { ascending: false, nullsFirst: false })
     .limit(HISTORY_LIMIT);
   const orders = (orderRows ?? []) as unknown as {
     id: string;
@@ -158,6 +159,9 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
     is_paid: boolean;
     paid_amount: number | null;
     created_at: string;
+    ordered_at: string | null;
+    is_cancelled: boolean;
+    fulfillment_status: string | null;
     campaigns: { title: string } | null;
   }[];
 

@@ -7,13 +7,8 @@ export default async function ClientsPage() {
   // admin RLS -> sees all rows
   const { data: projects } = await supabase
     .from("projects")
-    .select("id, name, domain, is_active, owner_id, tariff_id, tariff_pushes_remaining, package_pushes_remaining, remaining_pushes, created_at")
+    .select("id, name, domain, is_active, owner_id, created_at")
     .order("created_at", { ascending: false });
-
-  const { data: tariffs } = await supabase
-    .from("tariffs")
-    .select("id, name, price_rub, monthly_push_limit")
-    .order("sort");
 
   // resolve owner emails/имена
   const ownerIds = [...new Set((projects ?? []).map((p) => p.owner_id).filter(Boolean))] as string[];
@@ -33,13 +28,12 @@ export default async function ClientsPage() {
     owner_email: p.owner_id ? emailById.get(p.owner_id) ?? "—" : "—",
     owner_name: p.owner_id ? nameById.get(p.owner_id) || null : null,
     subscribers: subCount.get(p.id) || 0,
-    tariff_name: tariffs?.find((t) => t.id === p.tariff_id)?.name ?? "—",
   }));
 
   return (
     <main className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-semibold">Клиенты</h1>
-      <ClientsTable rows={rows} tariffs={tariffs ?? []} />
+      <ClientsTable rows={rows} />
     </main>
   );
 }
