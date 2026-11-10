@@ -13,8 +13,8 @@ import { logWebhookReject } from "@/lib/webhookReject";
 // (на верхнем уровне или внутри `client`): id, name, surname, email, phone,
 // subscribe, registered, bonus_points, fields_values.
 //
-//  · контакт ищем по внешнему id (insales_client_id), затем по телефону, затем по email;
-//    нет — заводим (согласие на каналы этим не даётся);
+//  · контакт ищем по внешнему id (insales_client_id), затем по телефону — это пара ключей
+//    контакта; по email ищем, только если в вебхуке нет телефона; нет — заводим;
 //  · обновляем имя, телефон, email, внешний id (insales_client_id) и доп. поля: бонусы и
 //    поля магазина по соответствию из Настроек (projects.client_field_map);
 //  · согласия на каналы приходят отсюда же и меняются в обе стороны (и при
@@ -104,16 +104,19 @@ export async function POST(req: Request) {
   }
   if (typeof client.registered === "boolean") attrs.shop_registered = client.registered ? "1" : "0";
 
+  // Ключи контакта: внешний id клиента магазина (первым) и телефон. Email для поиска не используем:
+  // его находим только у клиента без телефона, когда другого ключа в вебхуке нет.
   let identity: Ident | null = null;
   if (insalesId) {
-    const { data } = await admin.from("identities").select(COLS).eq("project_id", projectId).eq("insales_client_id", insalesId).maybeSingle();
-    identity = (data as Ident | null) ?? null;
+    // limit(1) вместо maybeSingle: если по ошибке два контакта с одним id, берём самый старый, а не падаем
+    const { data } = await admin.from("identities").select(COLS).eq("project_id", projectId).eq("insales_client_id", insalesId).order("created_at", { ascending: true }).limit(1);
+    identity = ((data as Ident[] | null) ?? [])[0] ?? null;
   }
   if (!identity && phone) {
     const { data } = await admin.from("identities").select(COLS).eq("project_id", projectId).eq("phone", phone).maybeSingle();
     identity = (data as Ident | null) ?? null;
   }
-  if (!identity && email) {
+  if (!identity && !phone && email) {
     const { data } = await admin.from("identities").select(COLS).eq("project_id", projectId).eq("email", email).maybeSingle();
     identity = (data as Ident | null) ?? null;
   }
@@ -130,7 +133,16 @@ export async function POST(req: Request) {
 
   if (!identity) {
     if (!phone && !email) return respond(200, { ok: true, skipped: "no phone or email, contact not created" });
-    const res = await upsertContact(projectId, { phone, email, name, insalesClientId: insalesId || undefined, attributes: attrs });
+    // email уже у другого контакта, а ключи (id и телефон) новые: заводим контакт без этого email
+    let newEmail = email;
+    if (phone && email) {
+      const { data: taken } = await admin.from("identities").select("id").eq("project_id", projectId).eq("email", email).maybeSingle();
+      if (taken) {
+        newEmail = null;
+        notes.push("email already belongs to another contact");
+      }
+    }
+    const res = await upsertContact(projectId, { phone, email: newEmail, name, insalesClientId: insalesId || undefined, attributes: attrs });
     if (!res.ok) {
       await logWebhookReject("client", 400, res.error, req, { body });
       return respond(400, { error: res.error });
