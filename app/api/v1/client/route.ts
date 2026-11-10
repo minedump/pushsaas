@@ -5,6 +5,7 @@ import { upsertContact, logFieldChanges, applyChannelConsent, isTruthyFlag } fro
 import { normalizePhone } from "@/lib/phone";
 import { logApiCall } from "@/lib/apiLog";
 import { auditAs } from "@/lib/auditContext";
+import { logWebhookReject } from "@/lib/webhookReject";
 
 // POST /api/v1/client — вебхук магазина «клиент зарегистрировался / изменил данные»
 // (InSales: clients/create и clients/update). Тот же токен, что у вебхука заказов
@@ -43,12 +44,18 @@ const COLS = "id, name, phone, email, insales_client_id, attributes, sms_marketi
 
 export async function POST(req: Request) {
   const token = extractApiKey(req);
-  if (!token) return NextResponse.json({ error: "missing key" }, { status: 401 });
+  if (!token) {
+    await logWebhookReject("client", 401, "missing key", req);
+    return NextResponse.json({ error: "missing key" }, { status: 401 });
+  }
 
   const authAdmin = createAdminClient();
   const { data: secretRow } = await authAdmin.from("project_secrets").select("project_id").eq("attribution_token", token).maybeSingle();
   const projectId = secretRow?.project_id;
-  if (!projectId) return NextResponse.json({ error: "invalid key" }, { status: 401 });
+  if (!projectId) {
+    await logWebhookReject("client", 401, "invalid key", req, { key: token });
+    return NextResponse.json({ error: "invalid key" }, { status: 401 });
+  }
 
   // Правки контакта из этого вебхука в истории карточки подписаны источником «вебхук магазина».
   auditAs(null, "webhook");
@@ -75,7 +82,10 @@ export async function POST(req: Request) {
   const insalesId = client.id != null && client.id !== "" ? String(client.id) : "";
   const phone = client.phone ? normalizePhone(String(client.phone)) : null;
   const email = client.email ? String(client.email).trim().toLowerCase() : null;
-  if (!insalesId && !phone && !email) return respond(400, { error: "client id, phone or email required" });
+  if (!insalesId && !phone && !email) {
+    await logWebhookReject("client", 400, "client id, phone or email required", req, { body });
+    return respond(400, { error: "client id, phone or email required" });
+  }
 
   const name = [client.name, client.surname].map((v) => String(v ?? "").trim()).filter(Boolean).join(" ") || undefined;
 
@@ -115,7 +125,10 @@ export async function POST(req: Request) {
   if (!identity) {
     if (!phone && !email) return respond(200, { ok: true, skipped: "no phone or email, contact not created" });
     const res = await upsertContact(projectId, { phone, email, name, insalesClientId: insalesId || undefined, attributes: attrs });
-    if (!res.ok) return respond(400, { error: res.error });
+    if (!res.ok) {
+      await logWebhookReject("client", 400, res.error, req, { body });
+      return respond(400, { error: res.error });
+    }
     created = true;
     identityId = res.id;
     // История карточки начинается с создания: фиксируем, какие данные пришли из магазина.

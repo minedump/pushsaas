@@ -5,6 +5,7 @@ import { resolvePath } from "@/lib/jsonpath";
 import { upsertContact, applyChannelConsent, isTruthyFlag } from "@/lib/identity";
 import { logApiCall } from "@/lib/apiLog";
 import { auditAs } from "@/lib/auditContext";
+import { logWebhookReject } from "@/lib/webhookReject";
 import { parseExternalTime } from "@/lib/datetime";
 
 // POST /api/v1/attribute — order intake (last-click attribution, when a
@@ -49,12 +50,18 @@ import { parseExternalTime } from "@/lib/datetime";
 // the merchant just has to list the SAME name there as configured below.
 export async function POST(req: Request) {
   const token = extractApiKey(req);
-  if (!token) return NextResponse.json({ error: "missing key" }, { status: 401 });
+  if (!token) {
+    await logWebhookReject("attribute", 401, "missing key", req);
+    return NextResponse.json({ error: "missing key" }, { status: 401 });
+  }
 
   const authAdmin = createAdminClient();
   const { data: secretRow } = await authAdmin.from("project_secrets").select("project_id").eq("attribution_token", token).maybeSingle();
   const projectId = secretRow?.project_id;
-  if (!projectId) return NextResponse.json({ error: "invalid key" }, { status: 401 });
+  if (!projectId) {
+    await logWebhookReject("attribute", 401, "invalid key", req, { key: token });
+    return NextResponse.json({ error: "invalid key" }, { status: 401 });
+  }
 
   // Правки контакта из заказа подписаны в истории карточки источником «вебхук магазина».
   auditAs(null, "webhook");
