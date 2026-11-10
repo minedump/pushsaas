@@ -45,6 +45,33 @@ export function extractApiKey(req: Request): string | null {
   return null;
 }
 
+// Ключ вебхука магазина — только из адреса вебхука (?key=). Заголовки (Authorization,
+// X-Api-Key) для вебхуков игнорируем: посторонний заголовок, добавленный магазином или
+// посредником, раньше перекрывал верный ключ из адреса, и вызов отклонялся.
+export function extractWebhookKey(req: Request): string | null {
+  try {
+    const q = new URL(req.url).searchParams.get("key");
+    if (q && q.trim()) return q.trim();
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+// Откуда пришёл ключ — для журнала отклонённых вызовов.
+export function describeKeySource(req: Request): string {
+  const parts: string[] = [];
+  try {
+    if (new URL(req.url).searchParams.get("key")) parts.push("query");
+  } catch {
+    /* ignore */
+  }
+  const auth = req.headers.get("authorization");
+  if (auth) parts.push("authorization:" + auth.split(" ")[0]);
+  if (req.headers.get("x-api-key")) parts.push("x-api-key");
+  return parts.join("+") || "none";
+}
+
 export type ApiKeyAuth = { projectId: string; scopes: ApiScope[] };
 
 export function hasScope(key: ApiKeyAuth, scope: ApiScope): boolean {

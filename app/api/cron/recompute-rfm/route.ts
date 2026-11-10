@@ -40,11 +40,20 @@ function toSegment(r: number, f: number, m: number): Segment {
 // исходному порядку values.
 function quantileScores(values: number[]): number[] {
   const n = values.length;
-  const order = values.map((_, i) => i).sort((a, b) => values[a] - values[b]);
+  const order = values.map((_, i) => i).sort((x, y) => values[x] - values[y]);
   const scores = new Array(n).fill(1);
-  order.forEach((origIdx, rank) => {
-    scores[origIdx] = Math.min(5, Math.floor((rank * 5) / n) + 1);
-  });
+  // Одинаковые значения получают ОДИН балл (по среднему месту группы). Раньше при равных
+  // значениях (например, у всех по одному заказу) место решал порядок строк, и покупатели
+  // с одинаковым результатом попадали в разные сегменты.
+  let i = 0;
+  while (i < n) {
+    let j = i;
+    while (j + 1 < n && values[order[j + 1]] === values[order[i]]) j++;
+    const avgRank = (i + j) / 2;
+    const score = Math.min(5, Math.floor((avgRank * 5) / n) + 1);
+    for (let k = i; k <= j; k++) scores[order[k]] = score;
+    i = j + 1;
+  }
   return scores;
 }
 

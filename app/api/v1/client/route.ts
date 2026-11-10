@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { extractApiKey } from "@/lib/apikey";
+import { extractWebhookKey } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { upsertContact, logFieldChanges, applyChannelConsent, isTruthyFlag } from "@/lib/identity";
 import { normalizePhone } from "@/lib/phone";
@@ -43,7 +43,7 @@ type Ident = {
 const COLS = "id, name, phone, email, insales_client_id, attributes, sms_marketing_active_at, email_marketing_active_at";
 
 export async function POST(req: Request) {
-  const token = extractApiKey(req);
+  const token = extractWebhookKey(req);
   if (!token) {
     await logWebhookReject("client", 401, "missing key", req);
     return NextResponse.json({ error: "missing key" }, { status: 401 });

@@ -3,10 +3,11 @@
 import { Fragment, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { IconChevronDown, IconChevronLeft, IconPencil, IconEraser, IconEye, IconBraces, IconX } from "@tabler/icons-react";
+import { IconListDetails, IconChevronLeft, IconPencil, IconEraser, IconEye, IconBraces, IconX } from "@tabler/icons-react";
 import { Badge, Button, ButtonLink, Card, Input, Modal, useDialogs } from "@/app/ui";
 import { CustomSelect } from "@/app/ui/CustomSelect";
 import { MessagePreviewModal, type PreviewContent } from "../../MessagePreviewModal";
+import { OrderDetailsModal, orderStatusLabel, type OrderRow } from "./OrderDetailsModal";
 import { useProjectTz } from "../../ProjectTimeProvider";
 import { formatDateTime } from "@/lib/datetime";
 
@@ -40,44 +41,6 @@ type RecipientRow = {
   raw_context: Record<string, unknown> | null;
   rendered_content: Record<string, unknown> | null;
 };
-type OrderRow = {
-  id: string;
-  order_number: string | null;
-  revenue: number;
-  is_paid: boolean;
-  paid_amount: number | null;
-  created_at: string;
-  ordered_at: string | null;
-  is_cancelled: boolean;
-  fulfillment_status: string | null;
-  custom_status: string | null;
-  status_history: unknown;
-  campaign_id: string | null;
-  items: unknown;
-  item_history: unknown;
-  campaigns: { title: string } | null;
-};
-
-type OrderItem = { title: string; quantity: number; price: number; sum: number; sku?: string | null };
-type OrderChange = { title: string; field: "added" | "removed" | "quantity" | "price"; from: number | null; to: number | null };
-const FULFILLMENT_LABEL: Record<string, string> = {
-  new: "новый",
-  accepted: "в обработке",
-  approved: "согласован",
-  dispatched: "передан на доставку",
-  delivered: "доставлен",
-  declined: "отклонён",
-  returned: "возвращён",
-};
-const orderStatusLabel = (custom: string | null, fulfillment: string | null) => custom || (fulfillment ? FULFILLMENT_LABEL[fulfillment] || fulfillment : "—");
-const statusName = (v: string | null) => (v ? FULFILLMENT_LABEL[v] || v : "—");
-const rub = (n: number | null) => (n == null ? "—" : `${Number(n).toLocaleString("ru-RU")} ₽`);
-function changeText(c: OrderChange): string {
-  if (c.field === "added") return `добавлена позиция «${c.title}» на ${rub(c.to)}`;
-  if (c.field === "removed") return `убрана позиция «${c.title}» (${rub(c.from)})`;
-  if (c.field === "quantity") return `«${c.title}»: количество ${c.from} → ${c.to}`;
-  return `«${c.title}»: цена за штуку ${rub(c.from)} → ${rub(c.to)}${c.to != null && c.from != null ? (c.to > c.from ? " (скидка уменьшена или снята)" : " (скидка добавлена или увеличена)") : ""}`;
-}
 type SiteEventRow = { id: string; label: string; detail: string; created_at: string };
 
 const platformLabel: Record<string, string> = { ios: "iPhone", android: "Android", desktop: "Desktop", unknown: "—" };
@@ -126,7 +89,7 @@ export default function SubscriberProfile({
   const [orderQuery, setOrderQuery] = useState("");
   const [orderStatus, setOrderStatus] = useState("all");
   const [orderPay, setOrderPay] = useState("all");
-  const [openOrders, setOpenOrders] = useState<string[]>([]);
+  const [orderModal, setOrderModal] = useState<OrderRow | null>(null);
   const [previewRow, setPreviewRow] = useState<RecipientRow | null>(null);
   const [contextRow, setContextRow] = useState<RecipientRow | null>(null);
 
@@ -452,9 +415,6 @@ export default function SubscriberProfile({
                   </tr>
                 )}
                 {filteredOrders.map((o) => {
-                  const items = (Array.isArray(o.items) ? o.items : []) as OrderItem[];
-                  const history = (Array.isArray(o.item_history) ? o.item_history : []) as { at: string; changes: OrderChange[] }[];
-                  const statuses = (Array.isArray(o.status_history) ? o.status_history : []) as { at: string; from: string | null; to: string | null }[];
                   return (
                     <Fragment key={o.id}>
                       <tr className="border-t border-border first:border-t-0 row-hover">
@@ -474,63 +434,17 @@ export default function SubscriberProfile({
                         <Td className="text-right tabular-nums">{Number(o.revenue).toLocaleString("ru-RU")} ₽</Td>
                         <Td className="text-ink-faint whitespace-nowrap">{fmt(o.ordered_at || o.created_at, tz)}</Td>
                         <Td className="text-right">
-                          {(items.length > 0 || history.length > 0 || statuses.length > 0) && (
-                            <button
-                              type="button"
-                              onClick={() => setOpenOrders((cur) => (cur.includes(o.id) ? cur.filter((x) => x !== o.id) : [...cur, o.id]))}
-                              className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink transition-colors hover:bg-surface-2 cursor-pointer"
-                              aria-label="Подробнее"
-                              aria-expanded={openOrders.includes(o.id)}
-                              title="Подробнее"
-                            >
-                              <IconChevronDown size={16} stroke={1.8} className={`transition-transform ${openOrders.includes(o.id) ? "rotate-180" : ""}`} />
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => setOrderModal(o)}
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink transition-colors hover:bg-surface-2 cursor-pointer"
+                            aria-label="Подробнее о заказе"
+                            title="Подробнее"
+                          >
+                            <IconListDetails size={16} stroke={1.8} />
+                          </button>
                         </Td>
                       </tr>
-                      {openOrders.includes(o.id) && (
-                        <tr>
-                          <td colSpan={7} className="pb-3 pt-0">
-                            <div className="text-[12.5px] text-ink-muted rounded-lg bg-surface-2 px-3 py-2.5">
-                              <div className="text-ink-faint">Товары{items.length > 0 ? ` (${items.length})` : ""}</div>
-                              {items.length === 0 && <div className="mt-1">Состав заказа не получен.</div>}
-                              <ul className="m-0 mt-1 pl-5 grid gap-0.5">
-                                {items.map((it, i) => (
-                                  <li key={i}>
-                                    {it.title} × {it.quantity} — {rub(it.sum)}
-                                  </li>
-                                ))}
-                              </ul>
-                              {statuses.length > 0 && (
-                                <div className="mt-2">
-                                  <div className="text-ink-faint">Статус заказа</div>
-                                  <ul className="m-0 mt-1 pl-5 grid gap-0.5">
-                                    {statuses.map((h, i) => (
-                                      <li key={i}>
-                                        <span className="text-ink-faint">{fmt(h.at, tz)}</span> {statusName(h.from)} → {statusName(h.to)}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              )}
-                              {history.length > 0 && (
-                                <div className="mt-2">
-                                  <div className="text-ink-faint">Изменения позиций</div>
-                                  <ul className="m-0 mt-1 pl-5 grid gap-0.5">
-                                    {history.flatMap((h, i) =>
-                                      h.changes.map((c, j) => (
-                                        <li key={`${i}-${j}`}>
-                                          <span className="text-ink-faint">{fmt(h.at, tz)}</span> {changeText(c)}
-                                        </li>
-                                      ))
-                                    )}
-                                  </ul>
-                                </div>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
                     </Fragment>
                   );
                 })}
@@ -621,6 +535,7 @@ export default function SubscriberProfile({
       {previewRow?.rendered_content && (
         <MessagePreviewModal label={previewRow.campaigns?.title || "Превью"} content={recipientPreviewContent(previewRow)} onClose={() => setPreviewRow(null)} />
       )}
+      {orderModal && <OrderDetailsModal order={orderModal} tz={tz} onClose={() => setOrderModal(null)} />}
       {contextRow?.raw_context && (
         <RawContextModal label={contextRow.campaigns?.title || "Контекст отправки"} snapshot={contextRow.raw_context} onClose={() => setContextRow(null)} />
       )}

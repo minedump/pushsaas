@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { describeKeySource } from "@/lib/apikey";
 
 // Запись отклонённого вызова вебхука магазина (см. миграцию 0112). Best-effort:
 // сбой записи не должен менять ответ магазину. Ключ в таблицу не попадает,
@@ -29,6 +30,13 @@ export async function logWebhookReject(
       key_hint: key ? `${key.slice(0, 4)}…(${key.length})` : null,
       method: req.method,
       body,
+      // откуда пришёл ключ, user-agent и адрес отправителя: чтобы понять, кто стучится
+      meta: [
+        "key_from=" + describeKeySource(req),
+        "ua=" + (req.headers.get("user-agent") || "-").slice(0, 120),
+        "ip=" + ((req.headers.get("x-forwarded-for") || "-").split(",")[0] || "-").trim(),
+        "ct=" + (req.headers.get("content-type") || "-").slice(0, 60),
+      ].join("; "),
     });
     // хранить достаточно две недели
     await admin.from("webhook_rejects").delete().lt("created_at", new Date(Date.now() - 14 * 86_400_000).toISOString());

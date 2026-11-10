@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { extractApiKey } from "@/lib/apikey";
+import { extractWebhookKey } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePath } from "@/lib/jsonpath";
 import { upsertContact, applyChannelConsent, isTruthyFlag } from "@/lib/identity";
@@ -50,7 +50,7 @@ import { parseOrderLines, diffOrderLines, type OrderLine } from "@/lib/orderLine
 // `cookies.<attribution_cookie_name>`, never a merchant-specific guess —
 // the merchant just has to list the SAME name there as configured below.
 export async function POST(req: Request) {
-  const token = extractApiKey(req);
+  const token = extractWebhookKey(req);
   if (!token) {
     await logWebhookReject("attribute", 401, "missing key", req);
     return NextResponse.json({ error: "missing key" }, { status: 401 });
