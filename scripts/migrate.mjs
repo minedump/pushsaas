@@ -149,6 +149,26 @@ if (local && dbPassword) {
     alter default privileges in schema public grant all on sequences to service_role;
     grant execute on all functions in schema public to anon, authenticated, service_role;
     alter default privileges in schema public grant execute on functions to anon, authenticated, service_role;`);
+  // Функции SECURITY DEFINER выполняются с правами владельца, и многие из них (блокировка проекта,
+  // начисление и списание, статусы доставки) сами не проверяют вызывающего. Строкой выше им
+  // выдан доступ для anon и authenticated, а значит их мог вызвать любой по публичному ключу через
+  // /rest/v1/rpc. Забираем доступ у всех, кроме функций, на которые опираются политики доступа и
+  // интерфейс; серверные маршруты вызывают их от service_role, у него доступ остаётся.
+  // Делаем это при каждом старте сразу после выдачи прав, иначе она бы их возвращала.
+  await client.query(`
+    do $$
+    declare r record;
+    begin
+      for r in
+        select p.oid::regprocedure as sig
+        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.prokind = 'f' and p.prosecdef
+          and p.proname not in ('can_access_project', 'is_admin', 'transfer_project_ownership')
+      loop
+        execute format('revoke execute on function %s from public, anon, authenticated', r.sig);
+        execute format('grant execute on function %s to service_role', r.sig);
+      end loop;
+    end $$;`);
 }
 
 // Расписание (app_config, см. migration 0090): db-контейнер сидит в
