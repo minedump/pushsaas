@@ -147,7 +147,7 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
   // подписку), поэтому запрос больше не завязан на deviceIds.
   const { data: orderRows } = await supabase
     .from("order_attributions")
-    .select("id, order_number, revenue, is_paid, paid_amount, created_at, ordered_at, is_cancelled, fulfillment_status, campaigns(title)")
+    .select("id, order_number, revenue, is_paid, paid_amount, created_at, ordered_at, is_cancelled, fulfillment_status, custom_status, status_history, campaign_id, items, item_history, campaigns(title)")
     .eq("project_id", id)
     .eq("identity_id", identityId)
     .order("ordered_at", { ascending: false, nullsFirst: false })
@@ -162,6 +162,11 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
     ordered_at: string | null;
     is_cancelled: boolean;
     fulfillment_status: string | null;
+    custom_status: string | null;
+    status_history: unknown;
+    campaign_id: string | null;
+    items: unknown;
+    item_history: unknown;
     campaigns: { title: string } | null;
   }[];
 

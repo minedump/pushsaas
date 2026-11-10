@@ -7,6 +7,7 @@ import { logApiCall } from "@/lib/apiLog";
 import { auditAs } from "@/lib/auditContext";
 import { logWebhookReject } from "@/lib/webhookReject";
 import { parseExternalTime } from "@/lib/datetime";
+import { parseOrderLines, diffOrderLines, type OrderLine } from "@/lib/orderLines";
 
 // POST /api/v1/attribute — order intake (last-click attribution, when a
 // cookie matches a live campaign, PLUS the merchant's full order stream —
@@ -189,13 +190,12 @@ export async function POST(req: Request) {
   // вебхуке нет (кука, контакт), не затираем: при повторе без куки заказ не
   // теряет уже найденную рассылку.
   const { data: existing } = orderNumber
-    ? await admin.from("order_attributions").select("id").eq("project_id", projectId).eq("order_number", orderNumber).maybeSingle()
+    ? await admin.from("order_attributions").select("id, items, item_history, custom_status, fulfillment_status, status_history").eq("project_id", projectId).eq("order_number", orderNumber).maybeSingle()
     : { data: null };
   const row: Record<string, unknown> = {
     project_id: projectId,
     order_number: orderNumber || null,
     revenue,
-    total_price: totalPrice,
     is_paid: isPaid,
     paid_amount: paidAmount,
     ordered_at: orderedAt,
@@ -204,13 +204,42 @@ export async function POST(req: Request) {
     is_cancelled: isCancelled,
     updated_at: new Date().toISOString(),
   };
+  // Состав заказа: цена и сумма по позициям уже с учётом скидки (скидку отдельно не храним,
+  // InSales сам распределяет её по позициям). Изменение позиций при правке заказа, например
+  // рост цены после снятия скидки, дописываем в историю заказа.
+  const lines = parseOrderLines(body);
+  if (lines) {
+    row.items = lines;
+    const prev = ((existing as { items?: OrderLine[] } | null)?.items ?? []) as OrderLine[];
+    const prevHistory = ((existing as { item_history?: unknown[] } | null)?.item_history ?? []) as unknown[];
+    const changes = existing ? diffOrderLines(prev, lines) : [];
+    if (changes.length) {
+      const updatedRaw = String(resolvePath(body, "updated_at") ?? "");
+      const at = (updatedRaw ? parseExternalTime(updatedRaw, (project as { timezone?: string | null }).timezone) : null) ?? new Date();
+      row.item_history = [...prevHistory, { at: at.toISOString(), changes }].slice(-50);
+    }
+  }
+  // Статус заказа: название, которое видит клиент (custom_status), иначе системный. Смены
+  // статуса копим в истории заказа.
+  const customStatus = String(resolvePath(body, "custom_status.title") ?? "").trim() || null;
+  row.custom_status = customStatus;
+  if (existing) {
+    const ex = existing as { custom_status?: string | null; fulfillment_status?: string | null; status_history?: unknown[] };
+    const was = ex.custom_status || ex.fulfillment_status || null;
+    const now = customStatus || fulfillmentStatus || null;
+    if (now && was !== now) {
+      const updatedRaw = String(resolvePath(body, "updated_at") ?? "");
+      const at = (updatedRaw ? parseExternalTime(updatedRaw, (project as { timezone?: string | null }).timezone) : null) ?? new Date();
+      row.status_history = [...(ex.status_history ?? []), { at: at.toISOString(), from: was, to: now }].slice(-50);
+    }
+  }
   if (campaignId) row.campaign_id = campaignId;
   if (cookieVal) row.raw_cookie = cookieVal;
   if (subscriberId) row.subscriber_id = subscriberId;
   if (identityId) row.identity_id = identityId;
   await admin.from("order_attributions").upsert(row, { onConflict: "project_id,order_number" });
 
-  const responseBody = { ok: true, recorded: true, updated: !!existing, campaignId, revenue, isPaid, isCancelled };
+  const responseBody = { ok: true, recorded: true, updated: !!existing, campaignId, revenue, isPaid, isCancelled, items: lines ? lines.length : undefined };
   await logApiCall(admin, projectId, "attribute", 200, body, responseBody);
   return NextResponse.json(responseBody);
 }

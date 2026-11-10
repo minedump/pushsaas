@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { IconChevronLeft, IconPencil, IconEraser, IconEye, IconBraces, IconX } from "@tabler/icons-react";
-import { Badge, Button, ButtonLink, Card, Modal, useDialogs } from "@/app/ui";
+import { Badge, Button, ButtonLink, Card, Input, Modal, useDialogs } from "@/app/ui";
+import { CustomSelect } from "@/app/ui/CustomSelect";
 import { MessagePreviewModal, type PreviewContent } from "../../MessagePreviewModal";
 import { useProjectTz } from "../../ProjectTimeProvider";
 import { formatDateTime } from "@/lib/datetime";
@@ -48,8 +49,35 @@ type OrderRow = {
   created_at: string;
   ordered_at: string | null;
   is_cancelled: boolean;
+  fulfillment_status: string | null;
+  custom_status: string | null;
+  status_history: unknown;
+  campaign_id: string | null;
+  items: unknown;
+  item_history: unknown;
   campaigns: { title: string } | null;
 };
+
+type OrderItem = { title: string; quantity: number; price: number; sum: number; sku?: string | null };
+type OrderChange = { title: string; field: "added" | "removed" | "quantity" | "price"; from: number | null; to: number | null };
+const FULFILLMENT_LABEL: Record<string, string> = {
+  new: "новый",
+  accepted: "в обработке",
+  approved: "согласован",
+  dispatched: "передан на доставку",
+  delivered: "доставлен",
+  declined: "отклонён",
+  returned: "возвращён",
+};
+const orderStatusLabel = (custom: string | null, fulfillment: string | null) => custom || (fulfillment ? FULFILLMENT_LABEL[fulfillment] || fulfillment : "—");
+const statusName = (v: string | null) => (v ? FULFILLMENT_LABEL[v] || v : "—");
+const rub = (n: number | null) => (n == null ? "—" : `${Number(n).toLocaleString("ru-RU")} ₽`);
+function changeText(c: OrderChange): string {
+  if (c.field === "added") return `добавлена позиция «${c.title}» на ${rub(c.to)}`;
+  if (c.field === "removed") return `убрана позиция «${c.title}» (${rub(c.from)})`;
+  if (c.field === "quantity") return `«${c.title}»: количество ${c.from} → ${c.to}`;
+  return `«${c.title}»: цена за штуку ${rub(c.from)} → ${rub(c.to)}${c.to != null && c.from != null ? (c.to > c.from ? " (скидка уменьшена или снята)" : " (скидка добавлена или увеличена)") : ""}`;
+}
 type SiteEventRow = { id: string; label: string; detail: string; created_at: string };
 
 const platformLabel: Record<string, string> = { ios: "iPhone", android: "Android", desktop: "Desktop", unknown: "—" };
@@ -95,6 +123,9 @@ export default function SubscriberProfile({
   const tz = useProjectTz();
   const router = useRouter();
   const { confirm, toast } = useDialogs();
+  const [orderQuery, setOrderQuery] = useState("");
+  const [orderStatus, setOrderStatus] = useState("all");
+  const [orderPay, setOrderPay] = useState("all");
   const [previewRow, setPreviewRow] = useState<RecipientRow | null>(null);
   const [contextRow, setContextRow] = useState<RecipientRow | null>(null);
 
@@ -146,6 +177,16 @@ export default function SubscriberProfile({
 
   const attrs = identity.attributes || {};
   const attrKeys = Object.keys(attrs);
+  // Заказы контакта: поиск по номеру, фильтр по статусу и по оплате.
+  const orderStatusOptions = [...new Set(orders.map((o) => orderStatusLabel(o.custom_status, o.fulfillment_status)))].sort((a, b) => a.localeCompare(b, "ru"));
+  const filteredOrders = orders.filter((o) => {
+    if (orderQuery.trim() && !String(o.order_number || "").toLowerCase().includes(orderQuery.trim().toLowerCase())) return false;
+    if (orderStatus !== "all" && orderStatusLabel(o.custom_status, o.fulfillment_status) !== orderStatus) return false;
+    if (orderPay === "paid" && !(o.is_paid && !o.is_cancelled)) return false;
+    if (orderPay === "unpaid" && !(!o.is_paid && !o.is_cancelled)) return false;
+    if (orderPay === "cancelled" && !o.is_cancelled) return false;
+    return true;
+  });
   const revenueTotal = orders.filter((o) => !o.is_cancelled).reduce((sum, o) => sum + Number(o.revenue || 0), 0);
   // ClientID Яндекс.Метрики — пишется на устройство при подписке (см.
   // «Номер счётчика Метрики» в Настройках), поэтому берём с первого
@@ -364,30 +405,126 @@ export default function SubscriberProfile({
           {orders.length === 0 ? (
             <p className="text-[13px] text-ink-faint mt-2 mb-0">Заказов нет.</p>
           ) : (
+            <>
+            <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_220px_180px]">
+              <Input
+                aria-label="Поиск по номеру заказа"
+                value={orderQuery}
+                onChange={(e) => setOrderQuery(e.target.value)}
+                placeholder="Поиск по номеру заказа"
+              />
+              <CustomSelect
+                value={orderStatus}
+                onChange={setOrderStatus}
+                ariaLabel="Фильтр по статусу заказа"
+                options={[{ value: "all", label: "Все статусы" }, ...orderStatusOptions.map((v) => ({ value: v, label: v }))]}
+              />
+              <CustomSelect
+                value={orderPay}
+                onChange={setOrderPay}
+                ariaLabel="Фильтр по оплате"
+                options={[
+                  { value: "all", label: "Любая оплата" },
+                  { value: "paid", label: "Оплачен" },
+                  { value: "unpaid", label: "Не оплачен" },
+                  { value: "cancelled", label: "Отменён" },
+                ]}
+              />
+            </div>
             <div className="overflow-x-auto pretty-scroll">
               <table className="w-full border-collapse text-[13px] mt-3">
                 <thead>
                   <tr>
                     <Th>Номер</Th>
-                    <Th>Рассылка</Th>
+                    <Th>Привлечён</Th>
+                    <Th>Статус</Th>
                     <Th>Оплата</Th>
                     <Th right>Сумма</Th>
                     <Th>Когда</Th>
                   </tr>
                 </thead>
                 <tbody>
-                {orders.map((o) => (
-                  <tr key={o.id} className="border-t border-border first:border-t-0 row-hover">
-                    <Td className="whitespace-nowrap">{o.order_number || "—"}</Td>
-                    <Td className="text-ink-muted truncate max-w-[220px]">{o.campaigns?.title || "—"}</Td>
-                    <Td>{o.is_cancelled ? <Badge tone="bad">отменён</Badge> : o.is_paid && <Badge tone="good">оплачен</Badge>}</Td>
-                    <Td className="text-right tabular-nums">{Number(o.revenue).toLocaleString("ru-RU")} ₽</Td>
-                    <Td className="text-ink-faint whitespace-nowrap">{fmt(o.ordered_at || o.created_at, tz)}</Td>
+                {filteredOrders.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="py-4 text-center text-ink-faint">Ничего не найдено</td>
                   </tr>
-                ))}
+                )}
+                {filteredOrders.map((o) => {
+                  const items = (Array.isArray(o.items) ? o.items : []) as OrderItem[];
+                  const history = (Array.isArray(o.item_history) ? o.item_history : []) as { at: string; changes: OrderChange[] }[];
+                  const statuses = (Array.isArray(o.status_history) ? o.status_history : []) as { at: string; from: string | null; to: string | null }[];
+                  return (
+                    <Fragment key={o.id}>
+                      <tr className="border-t border-border first:border-t-0 row-hover">
+                        <Td className="whitespace-nowrap">{o.order_number || "—"}</Td>
+                        <Td className="max-w-[260px]">
+                          {o.campaign_id ? (
+                            <span className="inline-flex items-center gap-1.5 min-w-0">
+                              <Badge tone="good">рассылкой</Badge>
+                              <span className="text-ink-muted truncate">{o.campaigns?.title || ""}</span>
+                            </span>
+                          ) : (
+                            <Badge tone="neutral">не привлечён</Badge>
+                          )}
+                        </Td>
+                        <Td className="text-ink-muted max-w-[200px] truncate">{orderStatusLabel(o.custom_status, o.fulfillment_status)}</Td>
+                        <Td>{o.is_cancelled ? <Badge tone="bad">отменён</Badge> : o.is_paid && <Badge tone="good">оплачен</Badge>}</Td>
+                        <Td className="text-right tabular-nums">{Number(o.revenue).toLocaleString("ru-RU")} ₽</Td>
+                        <Td className="text-ink-faint whitespace-nowrap">{fmt(o.ordered_at || o.created_at, tz)}</Td>
+                      </tr>
+                      {(items.length > 0 || history.length > 0 || statuses.length > 0) && (
+                        <tr>
+                          <td colSpan={6} className="pb-2 pt-0">
+                            <details className="text-[12.5px] text-ink-muted">
+                              <summary className="cursor-pointer select-none">
+                                Товары{items.length > 0 ? ` (${items.length})` : ""}
+                                {history.length > 0 && <span className="ml-2 text-ink-faint">· позиции менялись</span>}
+                                {statuses.length > 0 && <span className="ml-2 text-ink-faint">· смены статуса: {statuses.length}</span>}
+                              </summary>
+                              <ul className="m-0 mt-1 pl-5 grid gap-0.5">
+                                {items.map((it, i) => (
+                                  <li key={i}>
+                                    {it.title} × {it.quantity} — {rub(it.sum)}
+                                  </li>
+                                ))}
+                              </ul>
+                              {statuses.length > 0 && (
+                                <div className="mt-2">
+                                  <div className="text-ink-faint">Статус заказа</div>
+                                  <ul className="m-0 mt-1 pl-5 grid gap-0.5">
+                                    {statuses.map((h, i) => (
+                                      <li key={i}>
+                                        <span className="text-ink-faint">{fmt(h.at, tz)}</span> {statusName(h.from)} → {statusName(h.to)}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {history.length > 0 && (
+                                <div className="mt-2">
+                                  <div className="text-ink-faint">Изменения позиций</div>
+                                  <ul className="m-0 mt-1 pl-5 grid gap-0.5">
+                                    {history.flatMap((h, i) =>
+                                      h.changes.map((c, j) => (
+                                        <li key={`${i}-${j}`}>
+                                          <span className="text-ink-faint">{fmt(h.at, tz)}</span> {changeText(c)}
+                                        </li>
+                                      ))
+                                    )}
+                                  </ul>
+                                </div>
+                              )}
+                            </details>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </Card>
 

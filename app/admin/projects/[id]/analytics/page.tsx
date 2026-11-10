@@ -87,6 +87,7 @@ export default async function AnalyticsPage({
       .from("order_attributions")
       .select("revenue, is_paid, paid_amount, is_cancelled, campaign_id")
       .eq("project_id", id)
+      .not("campaign_id", "is", null)
       .gte("ordered_at", sinceIso)
       .lte("ordered_at", untilIso),
     // Рост SMS/Email — по событиям включения согласия (identity_channel_events,
@@ -172,8 +173,9 @@ export default async function AnalyticsPage({
     .reverse();
   const maxChartVal = Math.max(1, ...chart.map((c) => c.delivered_count || 0));
 
-  // Заказы магазина за период по дате заказа. Оплаченные, неоплаченные и отменённые
-  // (отмена и возврат) считаем отдельно; «по рассылкам» — заказы, привязанные к рассылке.
+  // В аналитике только заказы, попавшие под атрибуцию (привязаны к рассылке). Остальные
+  // заказы магазина мы копим лишь для RFM и истории контакта, в воронках они не участвуют.
+  // Оплаченные, неоплаченные и отменённые (отмена и возврат) считаем отдельно.
   type OrderRow = { revenue: number | string | null; is_paid: boolean; paid_amount: number | string | null; is_cancelled: boolean; campaign_id: string | null };
   const orderRows = (attribution ?? []) as OrderRow[];
   const sumOrders = (rows: OrderRow[]) => ({
@@ -186,8 +188,6 @@ export default async function AnalyticsPage({
     unpaid: sumOrders(active.filter((a) => !a.is_paid)),
     cancelled: sumOrders(orderRows.filter((a) => a.is_cancelled)),
     all: sumOrders(active),
-    viaPaid: sumOrders(active.filter((a) => a.is_paid && a.campaign_id)),
-    viaUnpaid: sumOrders(active.filter((a) => !a.is_paid && a.campaign_id)),
   };
   const paidSum = orderStats.paid.total;
 
@@ -209,9 +209,9 @@ export default async function AnalyticsPage({
 
       {/* orders: paid / unpaid / cancelled separately */}
       <Card className="mt-4 sm:mt-8">
-        <div className="text-[13px] text-ink-muted mb-1">Заказы магазина за период</div>
+        <div className="text-[13px] text-ink-muted mb-1">Заказы, привлечённые рассылками</div>
         <p className="text-[12px] text-ink-faint mt-0 mb-3">
-          По дате заказа. Сумма — товары без доставки, со скидками. Отменённые и возвращённые не входят в итог.
+          Заказы после перехода по рассылке (окно атрибуции), по дате заказа. Сумма — товары без доставки, со скидками. Отменённые и возвращённые не входят в итог.
         </p>
         <div className="overflow-x-auto pretty-scroll">
           <table className="w-full border-collapse text-[13.5px] min-w-[460px]">
@@ -227,9 +227,6 @@ export default async function AnalyticsPage({
               <OrderLine label="Ожидают оплаты" s={orderStats.unpaid} />
               <OrderLine label="Всего без отменённых" s={orderStats.all} />
               <OrderLine label="Отменены и возвращены" s={orderStats.cancelled} muted />
-              <tr><td colSpan={3} className="pt-3 pb-1 text-[11px] text-ink-muted">Из них по рассылкам</td></tr>
-              <OrderLine label="Оплаченные" s={orderStats.viaPaid} strong />
-              <OrderLine label="Ожидают оплаты" s={orderStats.viaUnpaid} />
             </tbody>
           </table>
         </div>
