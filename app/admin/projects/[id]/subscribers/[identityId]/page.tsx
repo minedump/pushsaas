@@ -99,7 +99,7 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
     old_value: f.old_value,
     new_value: f.new_value,
     created_at: f.created_at,
-    actor: f.actor_id ? actorById.get(f.actor_id) ?? null : f.source === "api" ? "API" : f.source === "webhook" ? "вебхук магазина" : null,
+    actor: f.actor_id ? actorById.get(f.actor_id) ?? null : f.source === "api" ? "API" : f.source === "webhook" ? "вебхук магазина" : f.source === "import" ? "импорт файла" : null,
   }));
 
   // Рассылки, ушедшие этому контакту — push резолвится по id устройств
@@ -113,14 +113,14 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
     opened_at: string | null;
     delivered_at: string | null;
     created_at: string;
-    campaigns: { title: string } | null;
+    campaigns: { title: string; internal_title: string | null } | null;
     raw_context: Record<string, unknown> | null;
     rendered_content: Record<string, unknown> | null;
   }[] = [];
   if (deviceIds.length) {
     const { data } = await supabase
       .from("campaign_recipients")
-      .select("id, channel, status, clicked_at, opened_at, created_at, delivered_at, campaigns(title), raw_context, rendered_content")
+      .select("id, channel, status, clicked_at, opened_at, created_at, delivered_at, campaigns(title, internal_title), raw_context, rendered_content")
       .eq("project_id", id)
       .eq("channel", "push")
       .in("contact", deviceIds)
@@ -132,7 +132,7 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
   if (contactValues.length) {
     const { data } = await supabase
       .from("campaign_recipients")
-      .select("id, channel, status, clicked_at, opened_at, created_at, delivered_at, campaigns(title), raw_context, rendered_content")
+      .select("id, channel, status, clicked_at, opened_at, created_at, delivered_at, campaigns(title, internal_title), raw_context, rendered_content")
       .eq("project_id", id)
       .in("channel", ["sms", "email"])
       .in("contact", contactValues)
@@ -147,7 +147,7 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
   // подписку), поэтому запрос больше не завязан на deviceIds.
   const { data: orderRows } = await supabase
     .from("order_attributions")
-    .select("id, order_number, revenue, is_paid, paid_amount, created_at, ordered_at, is_cancelled, fulfillment_status, custom_status, status_history, campaign_id, items, item_history, campaigns(title)")
+    .select("id, order_number, revenue, is_paid, paid_amount, created_at, ordered_at, is_cancelled, fulfillment_status, custom_status, status_history, campaign_id, items, item_history, campaigns(title, internal_title)")
     .eq("project_id", id)
     .eq("identity_id", identityId)
     .order("ordered_at", { ascending: false, nullsFirst: false })
@@ -167,7 +167,7 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
     campaign_id: string | null;
     items: unknown;
     item_history: unknown;
-    campaigns: { title: string } | null;
+    campaigns: { title: string; internal_title: string | null } | null;
   }[];
 
   // Сырые трекинг-события (window.sendera.event) с сайта — то, что реально

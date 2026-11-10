@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { extractWebhookKey } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePath } from "@/lib/jsonpath";
-import { upsertContact, applyChannelConsent, isTruthyFlag } from "@/lib/identity";
+import { upsertContact, applyShopConsent, isTruthyFlag } from "@/lib/identity";
 import { logApiCall } from "@/lib/apiLog";
 import { auditAs } from "@/lib/auditContext";
 import { logWebhookReject } from "@/lib/webhookReject";
@@ -139,6 +139,7 @@ export async function POST(req: Request) {
       phone: rawPhone || undefined,
       email: rawEmail || undefined,
       name: clientName,
+      fillOnly: true,
       // внешний id клиента: по нему вебхук клиентов потом находит этот же контакт
       insalesClientId: clientId != null && clientId !== "" ? String(clientId) : undefined,
     });
@@ -164,12 +165,17 @@ export async function POST(req: Request) {
         }
       }
       const subscribe = resolvePath(body, "client.subscribe");
-      await applyChannelConsent(
+      // Клиент магазина другой, чем известный нам у контакта (гость с тем же телефоном): согласия
+      // только включаем. Тот же клиент: галочка включена даёт согласие, выключенная после включённой снимает.
+      const { data: idRow } = await admin.from("identities").select("insales_client_id").eq("id", identityId).maybeSingle();
+      const knownId = String((idRow as { insales_client_id?: string | null } | null)?.insales_client_id || "");
+      const differentAccount = !!knownId && !!clientId && knownId !== String(clientId);
+      await applyShopConsent(
         admin,
         projectId,
         identityId,
-        { sms: smsFlag, email: typeof subscribe === "boolean" ? subscribe : undefined },
-        { source: "webhook_order", grantOnly: true }
+        { sms: rawPhone ? smsFlag : undefined, email: typeof subscribe === "boolean" && rawEmail ? subscribe : undefined },
+        { source: "webhook_order", grantOnly: differentAccount }
       );
       const { data: link } = await admin.from("identity_devices").select("subscriber_id").eq("identity_id", identityId).limit(1).maybeSingle();
       subscriberId = link?.subscriber_id || null;

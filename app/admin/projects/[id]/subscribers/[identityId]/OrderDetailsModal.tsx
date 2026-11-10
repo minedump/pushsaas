@@ -21,7 +21,7 @@ export type OrderRow = {
   campaign_id: string | null;
   items: unknown;
   item_history: unknown;
-  campaigns: { title: string } | null;
+  campaigns: { title: string; internal_title?: string | null } | null;
 };
 
 export type OrderItem = {
@@ -93,7 +93,7 @@ export function OrderDetailsModal({ order: o, tz, onClose }: { order: OrderRow; 
             {o.campaign_id ? (
               <span className="inline-flex items-center gap-1.5 min-w-0">
                 <Badge tone="good">рассылкой</Badge>
-                <span className="text-ink-muted truncate">{o.campaigns?.title || ""}</span>
+                <span className="text-ink-muted truncate">{o.campaigns?.internal_title || o.campaigns?.title || "Рассылка"}</span>
               </span>
             ) : (
               <Badge tone="neutral">не привлечён</Badge>

@@ -37,7 +37,7 @@ type RecipientRow = {
   opened_at: string | null;
   delivered_at: string | null;
   created_at: string;
-  campaigns: { title: string } | null;
+  campaigns: { title: string; internal_title?: string | null } | null;
   raw_context: Record<string, unknown> | null;
   rendered_content: Record<string, unknown> | null;
 };
@@ -318,7 +318,7 @@ export default function SubscriberProfile({
                   <tbody>
                   {recipients.map((r) => (
                     <tr key={`${r.channel}-${r.id}`} className="border-t border-border first:border-t-0 row-hover">
-                      <Td className="truncate max-w-[220px]">{r.campaigns?.title || "—"}</Td>
+                      <Td className="truncate max-w-[220px]">{r.campaigns?.internal_title || r.campaigns?.title || "—"}</Td>
                       <Td className="whitespace-nowrap">
                         <Badge tone="accent">{channelLabel[r.channel] || r.channel}</Badge>
                       </Td>
@@ -423,7 +423,7 @@ export default function SubscriberProfile({
                           {o.campaign_id ? (
                             <span className="inline-flex items-center gap-1.5 min-w-0">
                               <Badge tone="good">рассылкой</Badge>
-                              <span className="text-ink-muted truncate">{o.campaigns?.title || ""}</span>
+                              <span className="text-ink-muted truncate">{o.campaigns?.internal_title || o.campaigns?.title || ""}</span>
                             </span>
                           ) : (
                             <Badge tone="neutral">не привлечён</Badge>
@@ -491,6 +491,8 @@ export default function SubscriberProfile({
                             {h.contact && <span className="ml-1.5">{h.contact}</span>}
                             {h.source === "webhook" && <span className="ml-1.5 text-ink-faint">· вебхук магазина</span>}
                             {h.source === "webhook_order" && <span className="ml-1.5 text-ink-faint">· заказ из магазина</span>}
+                            {h.source === "api" && <span className="ml-1.5 text-ink-faint">· API</span>}
+                            {h.source === "import" && <span className="ml-1.5 text-ink-faint">· импорт файла</span>}
                           </Td>
                         </>
                       ) : h.kind === "field" ? (
@@ -533,11 +535,11 @@ export default function SubscriberProfile({
       </div>
 
       {previewRow?.rendered_content && (
-        <MessagePreviewModal label={previewRow.campaigns?.title || "Превью"} content={recipientPreviewContent(previewRow)} onClose={() => setPreviewRow(null)} />
+        <MessagePreviewModal label={previewRow.campaigns?.internal_title || previewRow.campaigns?.title || "Превью"} content={recipientPreviewContent(previewRow)} onClose={() => setPreviewRow(null)} />
       )}
       {orderModal && <OrderDetailsModal order={orderModal} tz={tz} onClose={() => setOrderModal(null)} />}
       {contextRow?.raw_context && (
-        <RawContextModal label={contextRow.campaigns?.title || "Контекст отправки"} snapshot={contextRow.raw_context} onClose={() => setContextRow(null)} />
+        <RawContextModal label={contextRow.campaigns?.internal_title || contextRow.campaigns?.title || "Контекст отправки"} snapshot={contextRow.raw_context} onClose={() => setContextRow(null)} />
       )}
     </main>
   );

@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizePhone } from "@/lib/phone";
 import { fireWelcomeAutomations } from "@/lib/sender";
+import { currentAudit } from "@/lib/auditContext";
 
 // Best-effort: subset of ids whose subscriber row has paused=true. Returns an
 // empty set (excludes nobody) if the column doesn't exist yet — degrades to
@@ -268,6 +269,9 @@ export type UpsertContactInput = {
   // согласия: так делает автосоздание контакта из триггерного вебхука (согласие
   // получено и хранится во внешней системе, приветствие покупателю там не ждут).
   skipWelcome?: boolean;
+  // Только дополнять: имя и внешний id уже существующего контакта не перезаписываем (заказ гостя
+  // с тем же телефоном не должен менять данные уже известного клиента).
+  fillOnly?: boolean;
   tags?: string[];
   attributes?: Record<string, string | null>;
 };
@@ -319,6 +323,10 @@ export async function upsertContact(projectId: string, input: UpsertContactInput
   }
 
   if (existing) {
+    if (input.fillOnly) {
+      if (existing.name) delete patch.name;
+      if (existing.insales_client_id) delete patch.insales_client_id;
+    }
     await admin.from("identities").update(patch).eq("id", existing.id);
     logChannelEvents(admin, projectId, existing.id, input, phone || existing.phone, email || existing.email, {
       sms: !!existing.sms_marketing_active_at,
@@ -342,6 +350,11 @@ export async function upsertContact(projectId: string, input: UpsertContactInput
     .select("id")
     .single();
   if (error || !created) return { ok: false, error: error?.message || "insert failed" };
+  // История карточки начинается с создания: что пришло при заведении контакта (через API,
+  // импорт файла, вебхуки магазина). Источник правок подставляет триггер из контекста запроса.
+  const first: Record<string, unknown> = { name: input.name?.trim() || null, phone, email, insales_client_id: input.insalesClientId?.trim() || null, tags: input.tags };
+  for (const [k, v] of Object.entries(input.attributes ?? {})) if (v !== null) first[`attr:${k}`] = v;
+  logFieldChanges(admin, projectId, created.id, {}, first);
   logChannelEvents(admin, projectId, created.id, input, phone, email, { sms: false, email: false });
   return { ok: true, id: created.id, created: true };
 }
@@ -369,13 +382,16 @@ function logChannelEvents(
   // редактирования подписчика присылает smsActive/emailActive отражением
   // текущих чекбоксов при КАЖДОМ сохранении, даже если их не трогали, иначе
   // "включён"/"выключен" задваивалось бы при каждой правке любого другого поля.
-  const rows: { project_id: string; identity_id: string; channel: "sms" | "email"; active: boolean; contact: string }[] = [];
+  // откуда пришла смена согласия: api, import, webhook; правка из интерфейса — без пометки
+  const src = currentAudit()?.source;
+  const source = src && src !== "ui" && src !== "system" ? src : null;
+  const rows: { project_id: string; identity_id: string; channel: "sms" | "email"; active: boolean; contact: string; source: string | null }[] = [];
   if (input.smsActive !== undefined && input.smsActive !== before.sms && contactPhone) {
-    rows.push({ project_id: projectId, identity_id: identityId, channel: "sms", active: input.smsActive, contact: contactPhone });
+    rows.push({ project_id: projectId, identity_id: identityId, channel: "sms", active: input.smsActive, contact: contactPhone, source });
     if (input.smsActive && !input.skipWelcome) fireWelcomeAutomations(projectId, "sms", { identityId }).catch(() => {});
   }
   if (input.emailActive !== undefined && input.emailActive !== before.email && contactEmail) {
-    rows.push({ project_id: projectId, identity_id: identityId, channel: "email", active: input.emailActive, contact: contactEmail });
+    rows.push({ project_id: projectId, identity_id: identityId, channel: "email", active: input.emailActive, contact: contactEmail, source });
     if (input.emailActive && !input.skipWelcome) fireWelcomeAutomations(projectId, "email", { identityId }).catch(() => {});
   }
   if (rows.length) admin.from("identity_channel_events").insert(rows).then(() => {}, () => {});
@@ -609,5 +625,39 @@ export async function applyChannelConsent(
     await admin.from("identities").update({ ...upd, updated_at: now }).eq("id", identityId);
     await admin.from("identity_channel_events").insert(events).then(() => {}, () => {});
   }
+  return changed;
+}
+
+
+// Согласия из флажков магазина (вебхуки заказов и клиентов). Флажок «включён» даёт согласие.
+// «Выключен» снимает его только если раньше этот флажок у контакта был включён: так мы
+// отличаем настоящую отписку в личном кабинете от нового гостевого клиента, у которого
+// галочки просто не отмечены (согласие, полученное иначе, например файлом, не трогаем).
+// grantOnly — только включение (клиент магазина другой, чем известный нам у контакта).
+export async function applyShopConsent(
+  admin: ReturnType<typeof createAdminClient>,
+  projectId: string,
+  identityId: string,
+  flags: { sms?: boolean; email?: boolean },
+  opts: { source: string; grantOnly?: boolean }
+): Promise<string[]> {
+  if (flags.sms === undefined && flags.email === undefined) return [];
+  const { data: row } = await admin.from("identities").select("insales_flags").eq("id", identityId).maybeSingle();
+  const prev = ((row as { insales_flags?: Record<string, boolean> } | null)?.insales_flags || {}) as Record<string, boolean>;
+  const next: Record<string, boolean> = { ...prev };
+  const want: { sms?: boolean; email?: boolean } = {};
+  for (const ch of ["sms", "email"] as const) {
+    const v = flags[ch];
+    if (v === undefined) continue;
+    if (v) {
+      want[ch] = true;
+      next[ch] = true;
+    } else if (!opts.grantOnly) {
+      if (prev[ch] === true) want[ch] = false;
+      next[ch] = false;
+    }
+  }
+  const changed = await applyChannelConsent(admin, projectId, identityId, want, { source: opts.source });
+  if (JSON.stringify(next) !== JSON.stringify(prev)) await admin.from("identities").update({ insales_flags: next }).eq("id", identityId);
   return changed;
 }

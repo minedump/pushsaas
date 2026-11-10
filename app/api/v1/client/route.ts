@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { extractWebhookKey } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { upsertContact, logFieldChanges, applyChannelConsent, isTruthyFlag } from "@/lib/identity";
+import { upsertContact, logFieldChanges, applyShopConsent, isTruthyFlag } from "@/lib/identity";
 import { normalizePhone } from "@/lib/phone";
 import { logApiCall } from "@/lib/apiLog";
 import { auditAs } from "@/lib/auditContext";
@@ -118,6 +118,12 @@ export async function POST(req: Request) {
     identity = (data as Ident | null) ?? null;
   }
 
+  // Контакт найден по телефону или email, а у него уже другой внешний id: это другая учётная
+  // запись магазина с тем же человеком (например, гостевой клиент при оформлении заказа).
+  // Такие данные только дополняют контакт: имя и id не перезаписываем, пустые поля не стираем,
+  // согласия только включаем.
+  const differentAccount = !!identity && !!identity.insales_client_id && !!insalesId && identity.insales_client_id !== insalesId;
+
   let created = false;
   let identityId: string;
   const notes: string[] = [];
@@ -131,10 +137,6 @@ export async function POST(req: Request) {
     }
     created = true;
     identityId = res.id;
-    // История карточки начинается с создания: фиксируем, какие данные пришли из магазина.
-    const first: Record<string, unknown> = { name, phone, email, insales_client_id: insalesId || null };
-    for (const [k, v] of Object.entries(attrs)) if (v !== null) first[`attr:${k}`] = v;
-    logFieldChanges(admin, projectId, identityId, {}, first);
   } else {
     const current: Ident = identity;
     identityId = current.id;
@@ -147,8 +149,8 @@ export async function POST(req: Request) {
       before[key] = current[key];
       after[key] = value;
     };
-    set("name", name);
-    set("insales_client_id", insalesId);
+    if (!differentAccount || !current.name) set("name", name);
+    if (!differentAccount) set("insales_client_id", insalesId);
     // телефон/email меняем, только если они не заняты другим контактом
     for (const [key, value] of [["phone", phone], ["email", email]] as const) {
       if (!value || value === current[key]) continue;
@@ -159,6 +161,7 @@ export async function POST(req: Request) {
     if (Object.keys(attrs).length) {
       const merged = { ...(current.attributes || {}) } as Record<string, unknown>;
       for (const [k, v] of Object.entries(attrs)) {
+        if (differentAccount && (v === null || merged[k] != null)) continue;
         if ((merged[k] ?? null) !== v) {
           before[`attr:${k}`] = merged[k];
           after[`attr:${k}`] = v;
@@ -176,13 +179,14 @@ export async function POST(req: Request) {
   }
 
   // Согласия на каналы (см. шапку): желаемое состояние из тела вебхука.
-  const wantEmail: boolean | undefined = typeof client.subscribe === "boolean" ? client.subscribe : undefined;
+  // флажок email учитываем, только если у клиента магазина указан email; нет email — ничего не отписываем
+  const wantEmail: boolean | undefined = typeof client.subscribe === "boolean" && email ? client.subscribe : undefined;
   let wantSms: boolean | undefined;
-  if (smsField) {
+  if (smsField && phone) {
     const f = findField(smsField);
     if (f) wantSms = isTruthyFlag(f.value);
   }
-  const consentChanged = await applyChannelConsent(admin, projectId, identityId, { sms: wantSms, email: wantEmail }, { source: "webhook" });
+  const consentChanged = await applyShopConsent(admin, projectId, identityId, { sms: wantSms, email: wantEmail }, { source: "webhook", grantOnly: differentAccount });
 
   return respond(200, { ok: true, created, updated: !created, consent: consentChanged, ...(notes.length ? { notes } : {}) });
 }

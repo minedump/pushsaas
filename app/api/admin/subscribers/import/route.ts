@@ -62,7 +62,7 @@ export async function POST(req: Request) {
   }
 
   const access = await assertProjectAccess(projectId);
-  if (access.user) auditAs(access.user.id);
+  if (access.user) auditAs(access.user.id, "import");
   if (!access.ok) return NextResponse.json({ error: "Нет доступа" }, { status: access.status });
 
   const admin = createAdminClient();
@@ -196,14 +196,14 @@ export async function POST(req: Request) {
       identityPatch.updated_at = new Date().toISOString();
       await admin.from("identities").update(identityPatch).eq("id", identity.id);
       if ("sms_marketing_active_at" in identityPatch || "email_marketing_active_at" in identityPatch) {
-        const events: { project_id: string; identity_id: string; channel: "sms" | "email"; active: boolean; contact: string }[] = [];
+        const events: { project_id: string; identity_id: string; channel: "sms" | "email"; active: boolean; contact: string; source: string }[] = [];
         if ("sms_marketing_active_at" in identityPatch) {
           const phone = (identityPatch.phone as string | undefined) || (matchAgainst === "phone" ? normalizePhone(rawKey) || "" : "");
-          if (phone) events.push({ project_id: projectId, identity_id: identity.id, channel: "sms", active: !!identityPatch.sms_marketing_active_at, contact: phone });
+          if (phone) events.push({ project_id: projectId, identity_id: identity.id, channel: "sms", active: !!identityPatch.sms_marketing_active_at, contact: phone, source: "import" });
         }
         if ("email_marketing_active_at" in identityPatch) {
           const email = (identityPatch.email as string | undefined) || (matchAgainst === "email" ? rawKey.trim().toLowerCase() : "");
-          if (email) events.push({ project_id: projectId, identity_id: identity.id, channel: "email", active: !!identityPatch.email_marketing_active_at, contact: email });
+          if (email) events.push({ project_id: projectId, identity_id: identity.id, channel: "email", active: !!identityPatch.email_marketing_active_at, contact: email, source: "import" });
         }
         if (events.length) await admin.from("identity_channel_events").insert(events).then(() => {}, () => {});
       }
