@@ -426,6 +426,7 @@ export default function SubscriberProfile({
                             <Badge tone={h.active ? "good" : "neutral"}>{h.active ? "включён" : "отключён"}</Badge>
                             {h.contact && <span className="ml-1.5">{h.contact}</span>}
                             {h.source === "webhook" && <span className="ml-1.5 text-ink-faint">· вебхук магазина</span>}
+                            {h.source === "webhook_order" && <span className="ml-1.5 text-ink-faint">· заказ из магазина</span>}
                           </Td>
                         </>
                       ) : h.kind === "field" ? (

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { extractApiKey } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { upsertContact, logFieldChanges } from "@/lib/identity";
+import { upsertContact, logFieldChanges, applyChannelConsent, isTruthyFlag } from "@/lib/identity";
 import { normalizePhone } from "@/lib/phone";
 import { logApiCall } from "@/lib/apiLog";
 import { auditAs } from "@/lib/auditContext";
@@ -24,7 +24,7 @@ import { auditAs } from "@/lib/auditContext";
 //              согласие, «нет» снимает. Поля в теле нет — SMS не трогаем.
 //    Каналы независимы: отписка от SMS не касается email и наоборот. Приветственные
 //    автоматизации не запускаем: согласие получено и хранится в магазине.
-// В заказах магазин присылает тот же subscribe, но вебхук заказов согласия не меняет.
+// Галочки при оформлении заказа обрабатывает вебхук заказов: только включает согласия.
 export const maxDuration = 30;
 
 type Obj = Record<string, unknown>;
@@ -163,40 +163,13 @@ export async function POST(req: Request) {
   }
 
   // Согласия на каналы (см. шапку): желаемое состояние из тела вебхука.
-  const truthy = (v: unknown) => !/^(|0|false|no|off|n|нет|ложь)$/i.test(String(v ?? "").trim());
-  let wantEmail: boolean | undefined = typeof client.subscribe === "boolean" ? client.subscribe : undefined;
+  const wantEmail: boolean | undefined = typeof client.subscribe === "boolean" ? client.subscribe : undefined;
   let wantSms: boolean | undefined;
   if (smsField) {
     const f = findField(smsField);
-    if (f) wantSms = truthy(f.value);
+    if (f) wantSms = isTruthyFlag(f.value);
   }
-
-  const consentChanged: string[] = [];
-  if (wantEmail !== undefined || wantSms !== undefined) {
-    const { data: curRow } = await admin
-      .from("identities")
-      .select("phone, email, sms_marketing_active_at, email_marketing_active_at")
-      .eq("id", identityId)
-      .maybeSingle();
-    const cur = curRow as Pick<Ident, "phone" | "email" | "sms_marketing_active_at" | "email_marketing_active_at"> | null;
-    const now = new Date().toISOString();
-    const events: { project_id: string; identity_id: string; channel: "sms" | "email"; active: boolean; contact: string; source: string }[] = [];
-    const upd: Obj = {};
-    if (cur && wantSms !== undefined && wantSms !== !!cur.sms_marketing_active_at && cur.phone) {
-      upd.sms_marketing_active_at = wantSms ? now : null;
-      consentChanged.push(wantSms ? "sms:on" : "sms:off");
-      events.push({ project_id: projectId, identity_id: identityId, channel: "sms", active: wantSms, contact: cur.phone, source: "webhook" });
-    }
-    if (cur && wantEmail !== undefined && wantEmail !== !!cur.email_marketing_active_at && cur.email) {
-      upd.email_marketing_active_at = wantEmail ? now : null;
-      consentChanged.push(wantEmail ? "email:on" : "email:off");
-      events.push({ project_id: projectId, identity_id: identityId, channel: "email", active: wantEmail, contact: cur.email, source: "webhook" });
-    }
-    if (Object.keys(upd).length) {
-      await admin.from("identities").update({ ...upd, updated_at: now }).eq("id", identityId);
-      await admin.from("identity_channel_events").insert(events).then(() => {}, () => {});
-    }
-  }
+  const consentChanged = await applyChannelConsent(admin, projectId, identityId, { sms: wantSms, email: wantEmail }, { source: "webhook" });
 
   return respond(200, { ok: true, created, updated: !created, consent: consentChanged, ...(notes.length ? { notes } : {}) });
 }

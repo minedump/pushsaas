@@ -36,10 +36,10 @@ export async function POST(req: Request) {
     const seen = new Set<string>();
     for (const row of Array.isArray(clientFieldMap) ? clientFieldMap.slice(0, 50) : []) {
       const handle = String(row?.handle ?? "").trim().slice(0, 80);
-      const key = String(row?.key ?? "").trim().toLowerCase().replace(/s+/g, "_");
+      const key = String(row?.key ?? "").trim().toLowerCase().replace(/\s+/g, "_");
       if (!handle && !key) continue;
       if (!handle || !key) return NextResponse.json({ error: "Заполните обе части: поле в магазине и поле у нас" }, { status: 400 });
-      if (!/^[p{L}p{N}_]{1,40}$/u.test(key)) return NextResponse.json({ error: `Название поля «${key}»: только буквы, цифры и «_», до 40 символов` }, { status: 400 });
+      if (!/^[\p{L}\p{N}_]{1,40}$/u.test(key)) return NextResponse.json({ error: `Название поля «${key}»: только буквы, цифры и «_», до 40 символов` }, { status: 400 });
       if (RESERVED.has(key)) return NextResponse.json({ error: `Поле «${key}» занято самим контактом, выберите другое название` }, { status: 400 });
       if (seen.has(handle.toLowerCase())) return NextResponse.json({ error: `Поле магазина «${handle}» указано дважды` }, { status: 400 });
       seen.add(handle.toLowerCase());

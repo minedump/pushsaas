@@ -565,3 +565,49 @@ export async function enrichIdentityFields(
     await admin.from("identities").update(patch).eq("id", identityId);
   }
 }
+
+
+// Значение флажка из внешней системы: «нет», «0», «false», пустое — выключено, остальное — включено.
+export function isTruthyFlag(v: unknown): boolean {
+  return !/^(|0|false|no|off|n|нет|ложь)$/i.test(String(v ?? "").trim());
+}
+
+// Применяет согласия на SMS/email из вебхука магазина к контакту. Меняет только то,
+// что реально изменилось, пишет событие в историю контакта с источником source.
+// grantOnly — только включение (так делаем по заказу: галочка при оформлении заказа
+// согласие даёт, а её отсутствие согласие не снимает). Приветственные автоматизации
+// не запускаются: согласие получено и хранится в магазине.
+export async function applyChannelConsent(
+  admin: ReturnType<typeof createAdminClient>,
+  projectId: string,
+  identityId: string,
+  want: { sms?: boolean; email?: boolean },
+  opts: { source: string; grantOnly?: boolean }
+): Promise<string[]> {
+  if (want.sms === undefined && want.email === undefined) return [];
+  const { data: cur } = await admin
+    .from("identities")
+    .select("phone, email, sms_marketing_active_at, email_marketing_active_at")
+    .eq("id", identityId)
+    .maybeSingle();
+  if (!cur) return [];
+  const now = new Date().toISOString();
+  const changed: string[] = [];
+  const events: { project_id: string; identity_id: string; channel: "sms" | "email"; active: boolean; contact: string; source: string }[] = [];
+  const upd: Record<string, unknown> = {};
+  const consider = (channel: "sms" | "email", wanted: boolean | undefined, activeAt: string | null, contact: string | null, col: string) => {
+    if (wanted === undefined || !contact) return;
+    if (wanted === !!activeAt) return;
+    if (opts.grantOnly && !wanted) return;
+    upd[col] = wanted ? now : null;
+    changed.push(`${channel}:${wanted ? "on" : "off"}`);
+    events.push({ project_id: projectId, identity_id: identityId, channel, active: wanted, contact, source: opts.source });
+  };
+  consider("sms", want.sms, cur.sms_marketing_active_at, cur.phone, "sms_marketing_active_at");
+  consider("email", want.email, cur.email_marketing_active_at, cur.email, "email_marketing_active_at");
+  if (Object.keys(upd).length) {
+    await admin.from("identities").update({ ...upd, updated_at: now }).eq("id", identityId);
+    await admin.from("identity_channel_events").insert(events).then(() => {}, () => {});
+  }
+  return changed;
+}

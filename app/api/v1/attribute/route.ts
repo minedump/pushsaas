@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { extractApiKey } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePath } from "@/lib/jsonpath";
-import { upsertContact } from "@/lib/identity";
+import { upsertContact, applyChannelConsent, isTruthyFlag } from "@/lib/identity";
 import { logApiCall } from "@/lib/apiLog";
 import { auditAs } from "@/lib/auditContext";
 import { parseExternalTime } from "@/lib/datetime";
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
 
   const { data: project } = await admin
     .from("projects")
-    .select("attribution_cookie_name, attribution_window_days, timezone")
+    .select("attribution_cookie_name, attribution_window_days, timezone, client_sms_field")
     .eq("id", projectId)
     .maybeSingle();
   if (!project) return NextResponse.json({ error: "invalid key" }, { status: 401 });
@@ -108,8 +108,8 @@ export async function POST(req: Request) {
 
   // Контакт покупателя — заводим/находим identity, чтобы заказ был виден на
   // ЕГО карточке (см. миграцию 0077), даже если push никогда не включался.
-  // Каналы НЕ включаем (smsActive/emailActive не передаём) — согласие на
-  // рассылку это заказ не даёт, только сам факт "мы знаем этого клиента".
+  // Согласия на каналы выставляются ниже из галочек, отмеченных при оформлении
+  // заказа (только включение, см. applyChannelConsent).
   const rawPhone = String(resolvePath(body, "client.phone") ?? resolvePath(body, "phone") ?? "");
   const rawEmail = String(resolvePath(body, "client.email") ?? resolvePath(body, "email") ?? "");
   const clientName =
@@ -131,6 +131,33 @@ export async function POST(req: Request) {
     });
     if (contact.ok) {
       identityId = contact.id;
+      // Согласия, данные при оформлении заказа (галочки в корзине), в том числе гостем:
+      // email — системное поле клиента subscribe, SMS — дополнительное поле клиента
+      // (его имя задано в Настройках; ищем и среди полей клиента, и среди полей заказа).
+      // По заказу согласие только включаем: не отмеченная галочка согласие не снимает.
+      const smsHandle = String((project as { client_sms_field?: string | null }).client_sms_field || "").trim().toLowerCase();
+      const fieldLists = [resolvePath(body, "client.fields_values"), resolvePath(body, "fields_values")];
+      let smsFlag: boolean | undefined;
+      if (smsHandle) {
+        for (const list of fieldLists) {
+          if (!Array.isArray(list)) continue;
+          const f = (list as Record<string, unknown>[]).find((x) =>
+            [x?.handle, x?.name, x?.field_id].some((k) => k != null && String(k).trim().toLowerCase() === smsHandle)
+          );
+          if (f) {
+            smsFlag = isTruthyFlag(f.value);
+            break;
+          }
+        }
+      }
+      const subscribe = resolvePath(body, "client.subscribe");
+      await applyChannelConsent(
+        admin,
+        projectId,
+        identityId,
+        { sms: smsFlag, email: typeof subscribe === "boolean" ? subscribe : undefined },
+        { source: "webhook_order", grantOnly: true }
+      );
       const { data: link } = await admin.from("identity_devices").select("subscriber_id").eq("identity_id", identityId).limit(1).maybeSingle();
       subscriberId = link?.subscriber_id || null;
     }
