@@ -76,57 +76,67 @@ export default function AttributionSettings({
     router.refresh();
   }
 
+  // Оба вебхука оформлены одинаково: заголовок карточки → описание → адрес с копированием →
+  // поля (подпись над полем, пояснение под полем) → кнопка «Сохранить».
+  const labelCls = "text-[13px] text-ink-muted block mb-1";
+  const hintCls = "text-[12.5px] text-ink-faint mt-2 mb-0";
+
   return (
     <section className="mt-4 sm:mt-8">
-      <h2 className="text-lg font-semibold mb-1">Атрибуция заказов к рассылкам</h2>
-      <p className="text-[13px] text-ink-muted mt-0 mb-3">
-        Добавьте вебхук ниже в настройках магазина — и заказы, оформленные после перехода по рассылке, начнут
-        появляться в Аналитике и Рассылках. Вебхук получает вообще все заказы магазина, включая изменения статуса: отменённые
-        и возвращённые не считаются выручкой. Это же питает RFM-теги на карточках подписчиков.
-      </p>
+      <h2 className="text-lg font-semibold mb-1">Вебхуки магазина</h2>
+      <p className="text-[13px] text-ink-muted mt-0 mb-3">Адреса, которые нужно добавить в настройках магазина: заказы и клиенты.</p>
 
       <Card>
-        <div className="text-base font-semibold mb-3">Вебхук атрибуции</div>
+        <div className="text-base font-semibold mb-1">Вебхук заказов</div>
+        <p className="text-[13px] text-ink-muted mt-0 mb-3">
+          Добавьте его в настройках магазина на события «заказ создан» и «заказ изменён». Вебхук получает все заказы магазина,
+          включая изменения статуса: отменённые и возвращённые не считаются выручкой. Заказы, оформленные после перехода по
+          рассылке, попадают в Аналитику и Рассылки, а все заказы питают RFM-теги и историю контакта.
+        </p>
         <CopyBox text={webhookUrl} />
 
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="mt-4 grid gap-4">
           <div>
-            <label htmlFor="attr-cookie-name" className="text-[13px] text-ink-muted block mb-1">
-              Имя куки
-            </label>
-            <Input
-              id="attr-cookie-name"
-              value={s.cookieName}
-              onChange={(e) => setS({ ...s, cookieName: e.target.value })}
-              placeholder="pss_attr"
-            />
-          </div>
-          <div>
-            <label htmlFor="attr-window-days" className="text-[13px] text-ink-muted block mb-1">
-              Окно атрибуции (дней)
-            </label>
-            <Input
-              id="attr-window-days"
-              type="number"
-              min={1}
-              value={s.windowDays}
-              onChange={(e) => setS({ ...s, windowDays: Number(e.target.value) })}
-            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor="attr-cookie-name" className={labelCls}>
+                  Имя куки
+                </label>
+                <Input
+                  id="attr-cookie-name"
+                  value={s.cookieName}
+                  onChange={(e) => setS({ ...s, cookieName: e.target.value })}
+                  placeholder="pss_attr"
+                />
+              </div>
+              <div>
+                <label htmlFor="attr-window-days" className={labelCls}>
+                  Окно атрибуции (дней)
+                </label>
+                <Input
+                  id="attr-window-days"
+                  type="number"
+                  min={1}
+                  value={s.windowDays}
+                  onChange={(e) => setS({ ...s, windowDays: Number(e.target.value) })}
+                />
+              </div>
+            </div>
+            <p className={hintCls}>
+              Впишите это же имя в InSales:{" "}
+              {domain ? (
+                <a href={`https://${domain}/admin2/checkout`} target="_blank" rel="noreferrer" className="text-accent">
+                  Настройки оформления заказа
+                </a>
+              ) : (
+                "Настройки оформления заказа"
+              )}{" "}
+              → «Список cookies, которые требуется сохранить при оформлении заказа».
+            </p>
           </div>
         </div>
-        <p className="text-[12.5px] text-ink-faint mt-2 mb-0">
-          Впишите это же имя в InSales:{" "}
-          {domain ? (
-            <a href={`https://${domain}/admin2/checkout`} target="_blank" rel="noreferrer" className="text-accent">
-              Настройки оформления заказа
-            </a>
-          ) : (
-            "Настройки оформления заказа"
-          )}{" "}
-          → «Список cookies, которые требуется сохранить при оформлении заказа».
-        </p>
 
-        <div className="flex gap-2 mt-3">
+        <div className="flex gap-2 mt-4">
           <Button onClick={save}>Сохранить</Button>
         </div>
       </Card>
@@ -134,76 +144,77 @@ export default function AttributionSettings({
       <Card className="mt-3">
         <div className="text-base font-semibold mb-1">Вебхук клиентов</div>
         <p className="text-[13px] text-ink-muted mt-0 mb-3">
-          Добавьте его в настройках магазина на события «клиент зарегистрировался» и «клиент изменён». Новые клиенты
-          попадут в контакты, имя, телефон, email и бонусы обновятся сами. Согласия на рассылки приходят оттуда же: на
-          email — системное поле клиента «подписка», на SMS — дополнительное поле клиента, его имя укажите ниже. Любое
-          изменение в личном кабинете магазина (подписался или отписался) меняет согласие на нужном канале.
+          Добавьте его в настройках магазина на события «клиент зарегистрировался» и «клиент изменён». Новые клиенты попадут в
+          контакты, имя, телефон, email и бонусы обновятся сами. Согласия на рассылки приходят оттуда же: на email из
+          системного поля клиента «подписка», на SMS из дополнительного поля клиента. Любое изменение в личном кабинете
+          магазина (подписался или отписался) меняет согласие на нужном канале.
         </p>
         <CopyBox text={clientWebhookUrl} />
 
-        <div className="mt-3">
-          <label htmlFor="client-sms-field" className="text-[13px] text-ink-muted block mb-1">
-            Поле клиента с согласием на SMS
-          </label>
-          <Input
-            id="client-sms-field"
-            value={smsField}
-            onChange={(e) => setSmsField(e.target.value)}
-            placeholder="Имя (handle) дополнительного поля клиента, например sms_consent"
-          />
-          <p className="text-[12.5px] text-ink-faint mt-2 mb-0">
-            Пока поле не указано, согласие на SMS вебхук клиентов не меняет.
-          </p>
+        <div className="mt-4 grid gap-4">
+          <div>
+            <label htmlFor="client-sms-field" className={labelCls}>
+              Поле клиента с согласием на SMS
+            </label>
+            <Input
+              id="client-sms-field"
+              value={smsField}
+              onChange={(e) => setSmsField(e.target.value)}
+              placeholder="Имя (handle) дополнительного поля клиента, например sms_consent"
+            />
+            <p className={hintCls}>Пока поле не указано, согласие на SMS вебхук клиентов не меняет.</p>
+          </div>
+
+          <div>
+            <div className={labelCls}>Доп. поля клиента → поля контакта</div>
+            <datalist id="client-known-keys">
+              {knownKeys.map((k) => (
+                <option key={k} value={k} />
+              ))}
+            </datalist>
+            <div className="grid gap-2">
+              {fieldMap.map((row, i) => (
+                <div key={i} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] items-center">
+                  <Input
+                    aria-label="Поле в магазине"
+                    value={row.handle}
+                    onChange={(e) => setFieldMap(fieldMap.map((r, j) => (j === i ? { ...r, handle: e.target.value } : r)))}
+                    placeholder="Поле в магазине (handle), например birthday"
+                  />
+                  <Input
+                    aria-label="Поле контакта"
+                    list="client-known-keys"
+                    value={row.key}
+                    onChange={(e) => setFieldMap(fieldMap.map((r, j) => (j === i ? { ...r, key: e.target.value } : r)))}
+                    placeholder="Поле контакта: выберите или впишите новое"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setFieldMap(fieldMap.filter((_, j) => j !== i))}
+                    className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-ink-muted hover:text-ink transition-colors hover:bg-surface-2 cursor-pointer"
+                    aria-label="Убрать поле"
+                    title="Убрать поле"
+                  >
+                    <IconTrash size={16} stroke={1.8} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className={fieldMap.length ? "mt-2" : ""}>
+              <Button variant="secondary" size="sm" onClick={() => setFieldMap([...fieldMap, { handle: "", key: "" }])}>
+                <IconPlus size={14} stroke={2} />
+                Добавить доп. поле
+              </Button>
+            </div>
+            <p className={hintCls}>
+              Укажите имя поля в магазине и поле контакта у нас, куда сохранять его значение. Поле у нас можно выбрать из уже
+              существующих или вписать новое: оно появится у контактов при первой записи значения. Поля, которых здесь нет, не
+              сохраняются.
+            </p>
+          </div>
         </div>
 
-        <div className="mt-4">
-          <div className="text-[13px] text-ink-muted mb-1">Доп. поля клиента → поля контакта</div>
-          <p className="text-[12.5px] text-ink-faint mt-0 mb-2">
-            Укажите имя поля в магазине и поле контакта у нас, куда сохранять его значение. Поле у нас можно выбрать из уже
-            существующих или вписать новое: оно появится у контактов при первой записи значения. Поля, которых здесь нет, не
-            сохраняются.
-          </p>
-          <datalist id="client-known-keys">
-            {knownKeys.map((k) => (
-              <option key={k} value={k} />
-            ))}
-          </datalist>
-          <div className="grid gap-2">
-            {fieldMap.map((row, i) => (
-              <div key={i} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] items-center">
-                <Input
-                  aria-label="Поле в магазине"
-                  value={row.handle}
-                  onChange={(e) => setFieldMap(fieldMap.map((r, j) => (j === i ? { ...r, handle: e.target.value } : r)))}
-                  placeholder="Поле в магазине (handle), например birthday"
-                />
-                <Input
-                  aria-label="Поле контакта"
-                  list="client-known-keys"
-                  value={row.key}
-                  onChange={(e) => setFieldMap(fieldMap.map((r, j) => (j === i ? { ...r, key: e.target.value } : r)))}
-                  placeholder="Поле контакта: выберите или впишите новое"
-                />
-                <button
-                  type="button"
-                  onClick={() => setFieldMap(fieldMap.filter((_, j) => j !== i))}
-                  className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-ink-muted hover:text-ink transition-colors hover:bg-surface-2 cursor-pointer"
-                  aria-label="Убрать поле"
-                  title="Убрать поле"
-                >
-                  <IconTrash size={16} stroke={1.8} />
-                </button>
-              </div>
-            ))}
-          </div>
-          <div className="mt-2">
-            <Button variant="secondary" size="sm" onClick={() => setFieldMap([...fieldMap, { handle: "", key: "" }])}>
-              <IconPlus size={14} stroke={2} />
-              Добавить доп. поле
-            </Button>
-          </div>
-        </div>
-        <div className="flex gap-2 mt-3">
+        <div className="flex gap-2 mt-4">
           <Button onClick={saveSmsField}>Сохранить</Button>
         </div>
       </Card>
