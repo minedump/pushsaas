@@ -3,7 +3,7 @@
 import { Fragment, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { IconChevronLeft, IconPencil, IconEraser, IconEye, IconBraces, IconX } from "@tabler/icons-react";
+import { IconChevronDown, IconChevronLeft, IconPencil, IconEraser, IconEye, IconBraces, IconX } from "@tabler/icons-react";
 import { Badge, Button, ButtonLink, Card, Input, Modal, useDialogs } from "@/app/ui";
 import { CustomSelect } from "@/app/ui/CustomSelect";
 import { MessagePreviewModal, type PreviewContent } from "../../MessagePreviewModal";
@@ -126,6 +126,7 @@ export default function SubscriberProfile({
   const [orderQuery, setOrderQuery] = useState("");
   const [orderStatus, setOrderStatus] = useState("all");
   const [orderPay, setOrderPay] = useState("all");
+  const [openOrders, setOpenOrders] = useState<string[]>([]);
   const [previewRow, setPreviewRow] = useState<RecipientRow | null>(null);
   const [contextRow, setContextRow] = useState<RecipientRow | null>(null);
 
@@ -441,12 +442,13 @@ export default function SubscriberProfile({
                     <Th>Оплата</Th>
                     <Th right>Сумма</Th>
                     <Th>Когда</Th>
+                    <Th>{" "}</Th>
                   </tr>
                 </thead>
                 <tbody>
                 {filteredOrders.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="py-4 text-center text-ink-faint">Ничего не найдено</td>
+                    <td colSpan={7} className="py-4 text-center text-ink-faint">Ничего не найдено</td>
                   </tr>
                 )}
                 {filteredOrders.map((o) => {
@@ -468,19 +470,30 @@ export default function SubscriberProfile({
                           )}
                         </Td>
                         <Td className="text-ink-muted max-w-[200px] truncate">{orderStatusLabel(o.custom_status, o.fulfillment_status)}</Td>
-                        <Td>{o.is_cancelled ? <Badge tone="bad">отменён</Badge> : o.is_paid && <Badge tone="good">оплачен</Badge>}</Td>
+                        <Td>{o.is_cancelled ? <Badge tone="bad">отменён</Badge> : o.is_paid ? <Badge tone="good">оплачен</Badge> : <Badge tone="warn">не оплачен</Badge>}</Td>
                         <Td className="text-right tabular-nums">{Number(o.revenue).toLocaleString("ru-RU")} ₽</Td>
                         <Td className="text-ink-faint whitespace-nowrap">{fmt(o.ordered_at || o.created_at, tz)}</Td>
+                        <Td className="text-right">
+                          {(items.length > 0 || history.length > 0 || statuses.length > 0) && (
+                            <button
+                              type="button"
+                              onClick={() => setOpenOrders((cur) => (cur.includes(o.id) ? cur.filter((x) => x !== o.id) : [...cur, o.id]))}
+                              className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink transition-colors hover:bg-surface-2 cursor-pointer"
+                              aria-label="Подробнее"
+                              aria-expanded={openOrders.includes(o.id)}
+                              title="Подробнее"
+                            >
+                              <IconChevronDown size={16} stroke={1.8} className={`transition-transform ${openOrders.includes(o.id) ? "rotate-180" : ""}`} />
+                            </button>
+                          )}
+                        </Td>
                       </tr>
-                      {(items.length > 0 || history.length > 0 || statuses.length > 0) && (
+                      {openOrders.includes(o.id) && (
                         <tr>
-                          <td colSpan={6} className="pb-2 pt-0">
-                            <details className="text-[12.5px] text-ink-muted">
-                              <summary className="cursor-pointer select-none">
-                                Товары{items.length > 0 ? ` (${items.length})` : ""}
-                                {history.length > 0 && <span className="ml-2 text-ink-faint">· позиции менялись</span>}
-                                {statuses.length > 0 && <span className="ml-2 text-ink-faint">· смены статуса: {statuses.length}</span>}
-                              </summary>
+                          <td colSpan={7} className="pb-3 pt-0">
+                            <div className="text-[12.5px] text-ink-muted rounded-lg bg-surface-2 px-3 py-2.5">
+                              <div className="text-ink-faint">Товары{items.length > 0 ? ` (${items.length})` : ""}</div>
+                              {items.length === 0 && <div className="mt-1">Состав заказа не получен.</div>}
                               <ul className="m-0 mt-1 pl-5 grid gap-0.5">
                                 {items.map((it, i) => (
                                   <li key={i}>
@@ -514,7 +527,7 @@ export default function SubscriberProfile({
                                   </ul>
                                 </div>
                               )}
-                            </details>
+                            </div>
                           </td>
                         </tr>
                       )}
