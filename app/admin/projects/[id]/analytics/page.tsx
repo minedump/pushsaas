@@ -85,9 +85,8 @@ export default async function AnalyticsPage({
     // paid_amount — миграция 0075, тоже best-effort на случай отставания.
     supabase
       .from("order_attributions")
-      .select("revenue, is_paid, paid_amount")
+      .select("revenue, is_paid, paid_amount, is_cancelled, campaign_id")
       .eq("project_id", id)
-      .eq("is_cancelled", false)
       .gte("ordered_at", sinceIso)
       .lte("ordered_at", untilIso),
     // Рост SMS/Email — по событиям включения согласия (identity_channel_events,
@@ -173,8 +172,24 @@ export default async function AnalyticsPage({
     .reverse();
   const maxChartVal = Math.max(1, ...chart.map((c) => c.delivered_count || 0));
 
-  const revenue = (attribution ?? []).reduce((s, a) => s + Number(a.revenue || 0), 0);
-  const paidSum = (attribution ?? []).filter((a) => a.is_paid).reduce((s, a) => s + Number(a.paid_amount || 0), 0);
+  // Заказы магазина за период по дате заказа. Оплаченные, неоплаченные и отменённые
+  // (отмена и возврат) считаем отдельно; «по рассылкам» — заказы, привязанные к рассылке.
+  type OrderRow = { revenue: number | string | null; is_paid: boolean; paid_amount: number | string | null; is_cancelled: boolean; campaign_id: string | null };
+  const orderRows = (attribution ?? []) as OrderRow[];
+  const sumOrders = (rows: OrderRow[]) => ({
+    count: rows.length,
+    total: rows.reduce((t, a) => t + Number(a.revenue || 0), 0),
+  });
+  const active = orderRows.filter((a) => !a.is_cancelled);
+  const orderStats = {
+    paid: sumOrders(active.filter((a) => a.is_paid)),
+    unpaid: sumOrders(active.filter((a) => !a.is_paid)),
+    cancelled: sumOrders(orderRows.filter((a) => a.is_cancelled)),
+    all: sumOrders(active),
+    viaPaid: sumOrders(active.filter((a) => a.is_paid && a.campaign_id)),
+    viaUnpaid: sumOrders(active.filter((a) => !a.is_paid && a.campaign_id)),
+  };
+  const paidSum = orderStats.paid.total;
 
   const widgetStats = computeWidgetStats(widgetEvents ?? []);
 
@@ -188,9 +203,37 @@ export default async function AnalyticsPage({
       <div className="flex gap-3 mt-4 sm:mt-8 flex-wrap">
         <Tile label="Отправлено" value={totalSent} />
         <Tile label="CTR по рассылкам" value={`${ctr}%`} />
-        <Tile label="Выручка" value={`${revenue.toLocaleString("ru-RU")} ₽`} />
         <Tile label="Оплачено" value={`${paidSum.toLocaleString("ru-RU")} ₽`} />
+        <Tile label="Ожидает оплаты" value={`${orderStats.unpaid.total.toLocaleString("ru-RU")} ₽`} />
       </div>
+
+      {/* orders: paid / unpaid / cancelled separately */}
+      <Card className="mt-4 sm:mt-8">
+        <div className="text-[13px] text-ink-muted mb-1">Заказы магазина за период</div>
+        <p className="text-[12px] text-ink-faint mt-0 mb-3">
+          По дате заказа. Сумма — товары без доставки, со скидками. Отменённые и возвращённые не входят в итог.
+        </p>
+        <div className="overflow-x-auto pretty-scroll">
+          <table className="w-full border-collapse text-[13.5px] min-w-[460px]">
+            <thead>
+              <tr className="text-left text-[11px] text-ink-muted">
+                <th className="py-1.5 pr-3 font-normal"></th>
+                <th className="py-1.5 px-3 font-normal text-right">Заказов</th>
+                <th className="py-1.5 pl-3 font-normal text-right">Сумма, ₽</th>
+              </tr>
+            </thead>
+            <tbody>
+              <OrderLine label="Оплаченные" s={orderStats.paid} strong />
+              <OrderLine label="Ожидают оплаты" s={orderStats.unpaid} />
+              <OrderLine label="Всего без отменённых" s={orderStats.all} />
+              <OrderLine label="Отменены и возвращены" s={orderStats.cancelled} muted />
+              <tr><td colSpan={3} className="pt-3 pb-1 text-[11px] text-ink-muted">Из них по рассылкам</td></tr>
+              <OrderLine label="Оплаченные" s={orderStats.viaPaid} strong />
+              <OrderLine label="Ожидают оплаты" s={orderStats.viaUnpaid} />
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
       {/* delivered/clicked per recent campaign */}
       {chart.length > 0 && (
@@ -470,6 +513,17 @@ function computeBestSendTimes(
       .slice(0, 5);
 
   return { push: rank("push"), sms: rank("sms"), email: rank("email"), hasEmail };
+}
+
+function OrderLine({ label, s, strong, muted }: { label: string; s: { count: number; total: number }; strong?: boolean; muted?: boolean }) {
+  const cls = `border-t border-border ${muted ? "text-ink-faint" : strong ? "font-semibold" : ""}`;
+  return (
+    <tr className={cls}>
+      <td className="py-2 pr-3">{label}</td>
+      <td className="py-2 px-3 text-right tabular-nums">{s.count}</td>
+      <td className="py-2 pl-3 text-right tabular-nums">{s.total.toLocaleString("ru-RU")}</td>
+    </tr>
+  );
 }
 
 function Tile({ label, value }: { label: string; value: number | string }) {

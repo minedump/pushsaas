@@ -100,9 +100,14 @@ export async function POST(req: Request) {
   }
 
   const orderNumber = String(resolvePath(body, "number") ?? "");
-  const revenue = Number(resolvePath(body, "total_price") ?? 0) || 0;
+  // База выручки — товары без доставки, со скидками (items_price). Сумма с доставкой
+  // (total_price) хранится справочно. Нет items_price — берём сумму минус доставка.
+  const totalPrice = Number(resolvePath(body, "total_price") ?? 0) || 0;
+  const itemsRaw = resolvePath(body, "items_price");
+  const deliveryPrice = Number(resolvePath(body, "full_delivery_price") ?? resolvePath(body, "delivery_price") ?? 0) || 0;
+  const revenue = itemsRaw != null && itemsRaw !== "" ? Number(itemsRaw) || 0 : Math.max(0, totalPrice - deliveryPrice);
   const isPaid = String(resolvePath(body, "financial_status") ?? "") === "paid";
-  const paidAmount = isPaid ? Number(resolvePath(body, "items_price") ?? 0) || 0 : null;
+  const paidAmount = isPaid ? revenue : null;
   // Статусы заказа и настоящая дата заказа (миграция 0110). Отменённый или
   // возвращённый заказ не должен считаться выручкой: fulfillment_status
   // declined/returned или финансовый статус refunded.
@@ -190,6 +195,7 @@ export async function POST(req: Request) {
     project_id: projectId,
     order_number: orderNumber || null,
     revenue,
+    total_price: totalPrice,
     is_paid: isPaid,
     paid_amount: paidAmount,
     ordered_at: orderedAt,
