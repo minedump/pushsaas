@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconDownload, IconUpload } from "@tabler/icons-react";
-import { Button, Label, Modal, useDialogs } from "@/app/ui";
+import { Button, Checkbox, Label, Modal, useDialogs } from "@/app/ui";
 import { CustomSelect } from "@/app/ui/CustomSelect";
 
 // Minimal CSV parser: handles quoted fields with commas/semicolons/newlines/escaped quotes.
@@ -72,6 +72,7 @@ export default function ExportImport({ projectId }: { projectId: string }) {
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [keyColumn, setKeyColumn] = useState("");
   const [matchAgainst, setMatchAgainst] = useState<"phone" | "email" | "insales_client_id">("phone");
+  const [createNew, setCreateNew] = useState(false);
   const [busy, setBusy] = useState(false);
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -91,7 +92,7 @@ export default function ExportImport({ projectId }: { projectId: string }) {
     const res = await fetch("/api/admin/subscribers/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, keyColumn, matchAgainst, rows }),
+      body: JSON.stringify({ projectId, keyColumn, matchAgainst, rows, createNew }),
     });
     const json = await res.json();
     setBusy(false);
@@ -99,8 +100,13 @@ export default function ExportImport({ projectId }: { projectId: string }) {
       toast(json.error || "Ошибка импорта", "bad");
       return;
     }
-    toast(`Обогащено ${json.matched}, не найдено ${json.unmatched}`, "good");
+    const parts = [`обновлено ${json.matched}`];
+    if (createNew) parts.push(`создано ${json.created ?? 0}`);
+    parts.push(`не найдено ${json.unmatched}`);
+    if (json.skipped) parts.push(`пропущено без телефона и email ${json.skipped}`);
+    toast(parts.join(", ").replace(/^./, (c: string) => c.toUpperCase()), "good");
     setOpen(false);
+    setCreateNew(false);
     setHeaders([]);
     setRows([]);
     if (fileRef.current) fileRef.current.value = "";
@@ -142,6 +148,15 @@ export default function ExportImport({ projectId }: { projectId: string }) {
                 className="w-full"
               />
             </div>
+          </div>
+
+          <div className="mt-4">
+            <Checkbox checked={createNew} onChange={setCreateNew} label="Создавать новых" />
+            <p className="text-[12.5px] text-ink-faint mt-1.5 mb-0">
+              Если контакт по выбранному ключу не найден, он будет создан из строки файла. Нужен телефон или email (в ключе или в
+              отдельных столбцах phone и email). Согласия берутся из столбцов sms_active и email_active, без них контакт создаётся
+              без согласия.
+            </p>
           </div>
 
           <div className="flex justify-end gap-2 mt-5">

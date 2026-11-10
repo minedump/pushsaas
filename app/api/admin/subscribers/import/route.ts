@@ -3,7 +3,7 @@ import { assertProjectAccess } from "@/lib/auth";
 import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizePhone } from "@/lib/phone";
-import { logFieldChanges } from "@/lib/identity";
+import { logFieldChanges, upsertContact } from "@/lib/identity";
 import { writeAudit } from "@/lib/audit";
 
 const PLATFORMS = ["ios", "android", "desktop", "unknown"] as const;
@@ -44,12 +44,15 @@ function isTruthy(v: string): boolean {
 //      dispatchCampaign), которые нужны и анонимным подписчикам без
 //      identity вообще — CSV-импорт клиентов их не трогает.
 // Пустая ячейка = «не трогать это поле», а не «очистить».
+export const maxDuration = 120;
+
 export async function POST(req: Request) {
-  const { projectId, keyColumn, matchAgainst, rows } = (await req.json().catch(() => ({}))) as {
+  const { projectId, keyColumn, matchAgainst, rows, createNew } = (await req.json().catch(() => ({}))) as {
     projectId?: string;
     keyColumn?: string;
     matchAgainst?: string;
     rows?: Record<string, string>[];
+    createNew?: boolean;
   };
   if (!projectId || !keyColumn || !matchAgainst || !Array.isArray(rows) || !rows.length) {
     return NextResponse.json({ error: "projectId, keyColumn, matchAgainst, rows required" }, { status: 400 });
@@ -65,6 +68,8 @@ export async function POST(req: Request) {
   const admin = createAdminClient();
   let matched = 0;
   let unmatched = 0;
+  let created = 0;
+  let skipped = 0;
 
   for (const row of rows.slice(0, 5000)) {
     const rawKey = (row[keyColumn] || "").trim();
@@ -134,6 +139,50 @@ export async function POST(req: Request) {
     }
 
     if (!identity) {
+      // «Создавать новых»: контакт не найден по ключу — заводим его из строки файла.
+      // Нужен телефон или email: из ключа или из столбцов phone/email. Согласия только из
+      // sms_active/email_active; приветственные автоматизации не запускаем (согласие уже
+      // получено, файл его и фиксирует).
+      if (createNew) {
+        const phoneRaw = matchAgainst === "phone" ? rawKey : String(row["phone"] || "").trim();
+        const emailRaw = matchAgainst === "email" ? rawKey : String(row["email"] || "").trim();
+        const insalesId = matchAgainst === "insales_client_id" ? rawKey : String(row["insales_client_id"] || row["insalesClientId"] || "").trim();
+        const phoneOk = phoneRaw && normalizePhone(phoneRaw) ? phoneRaw : "";
+        const emailOk = emailRaw && emailRaw.includes("@") ? emailRaw : "";
+        if (!phoneOk && !emailOk) {
+          skipped++;
+          unmatched++;
+          continue;
+        }
+        const attrs: Record<string, string | null> = {};
+        for (const [k, v] of Object.entries(row)) {
+          if (v === "" || READONLY_COLUMNS.has(k) || PAUSE_COLUMNS.has(k)) continue;
+          if (["name", "phone", "email", "insales_client_id", "insalesClientId", "tags", "sms_active", "email_active"].includes(k) || k === keyColumn) continue;
+          attrs[k] = v;
+        }
+        const newTags = String(row["tags"] || "")
+          .split("|")
+          .map((t) => t.trim().toLowerCase())
+          .filter(Boolean);
+        const res = await upsertContact(projectId, {
+          phone: phoneOk || undefined,
+          email: emailOk || undefined,
+          name: String(row["name"] || "").trim() || undefined,
+          insalesClientId: insalesId || undefined,
+          tags: newTags.length ? newTags : undefined,
+          attributes: Object.keys(attrs).length ? attrs : undefined,
+          smsActive: row["sms_active"] !== undefined && row["sms_active"] !== "" ? isTruthy(row["sms_active"]) : undefined,
+          emailActive: row["email_active"] !== undefined && row["email_active"] !== "" ? isTruthy(row["email_active"]) : undefined,
+          skipWelcome: true,
+        });
+        if (res.ok && res.created) created++;
+        else if (res.ok) matched++; // нашёлся по другому полю (например, по телефону) — обновлён
+        else {
+          skipped++;
+          unmatched++;
+        }
+        continue;
+      }
       unmatched++;
       continue;
     }
@@ -191,6 +240,6 @@ export async function POST(req: Request) {
     }
   }
 
-  await writeAudit({ projectId, entity: "subscribers", action: "import", changes: { matched, unmatched, matchAgainst } });
-  return NextResponse.json({ ok: true, matched, unmatched });
+  await writeAudit({ projectId, entity: "subscribers", action: "import", changes: { matched, unmatched, created, skipped, matchAgainst, createNew: !!createNew } });
+  return NextResponse.json({ ok: true, matched, unmatched, created, skipped });
 }
