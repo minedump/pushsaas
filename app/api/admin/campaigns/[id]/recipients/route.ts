@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 function csvEscape(v: unknown): string {
   const s = v === null || v === undefined ? "" : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 // GET /api/admin/campaigns/[id]/recipients?projectId=...  -> CSV со статусом
@@ -53,26 +53,26 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
   const ctr = campaign.delivered_count ? Math.round(((campaign.clicked_count || 0) / campaign.delivered_count) * 100) : 0;
   const summary = [
-    ["campaign", (campaign as { internal_title?: string | null }).internal_title || campaign.title].map(csvEscape).join(","),
-    ["sent", campaign.sent_count].map(csvEscape).join(","),
-    ["delivered", campaign.delivered_count].map(csvEscape).join(","),
-    ["failed", campaign.failed_count].map(csvEscape).join(","),
-    ["clicked", campaign.clicked_count || 0].map(csvEscape).join(","),
-    ["ctr", `${ctr}%`].map(csvEscape).join(","),
+    ["campaign", (campaign as { internal_title?: string | null }).internal_title || campaign.title].map(csvEscape).join(";"),
+    ["sent", campaign.sent_count].map(csvEscape).join(";"),
+    ["delivered", campaign.delivered_count].map(csvEscape).join(";"),
+    ["failed", campaign.failed_count].map(csvEscape).join(";"),
+    ["clicked", campaign.clicked_count || 0].map(csvEscape).join(";"),
+    ["ctr", `${ctr}%`].map(csvEscape).join(";"),
     // opened/unsubscribed — только у email (пиксель открытия и ссылка
     // отписки — см. injectOpenPixel/unsubscribe_url в lib/sender.ts); у
     // push/sms ни то, ни другое технически не отслеживается.
     ...(campaign.channel === "sms"
-      ? [["delivered_confirmed", campaign.confirmed_count || 0].map(csvEscape).join(",")]
+      ? [["delivered_confirmed", campaign.confirmed_count || 0].map(csvEscape).join(";")]
       : []),
     ...(campaign.channel === "email"
       ? [
-          ["opened", campaign.opened_count || 0].map(csvEscape).join(","),
-          ["unsubscribed", campaign.unsubscribed_count || 0].map(csvEscape).join(","),
+          ["opened", campaign.opened_count || 0].map(csvEscape).join(";"),
+          ["unsubscribed", campaign.unsubscribed_count || 0].map(csvEscape).join(";"),
         ]
       : []),
-    ["orders", orders].map(csvEscape).join(","),
-    ["revenue", revenue].map(csvEscape).join(","),
+    ["orders", orders].map(csvEscape).join(";"),
+    ["revenue", revenue].map(csvEscape).join(";"),
     "",
   ];
 
@@ -82,7 +82,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       : campaign.channel === "sms"
       ? ["channel", "contact", "status", "delivered_by_operator", "operator_status", "clicked", "created_at"]
       : ["channel", "contact", "status", "clicked", "created_at"];
-  const lines = [...summary, header.join(",")];
+  const lines = [...summary, header.join(";")];
   for (const r of rows ?? []) {
     const row =
       campaign.channel === "email"
@@ -90,10 +90,14 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
         : campaign.channel === "sms"
         ? [r.channel, r.contact, r.status, r.delivered_at ? "да" : "нет", r.provider_status || "", r.clicked_at ? "да" : "нет", r.created_at]
         : [r.channel, r.contact, r.status, r.clicked_at ? "да" : "нет", r.created_at];
-    lines.push(row.map(csvEscape).join(","));
+    lines.push(row.map(csvEscape).join(";"));
   }
 
-  return new Response(lines.join("\n"), {
+  // BOM и разделитель ";" как в выгрузке подписчиков: иначе Excel с русской локалью открывает UTF-8 как ANSI
+
+  // (кракозябры) и не раскладывает файл по столбцам.
+
+  return new Response("\uFEFF" + lines.join("\n"), {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": `attachment; filename="campaign-${campaignId}-recipients.csv"`,
