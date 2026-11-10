@@ -10,7 +10,7 @@ import { friendlyError } from "@/lib/errors";
 // куки и окно атрибуции. Флага "включено" нет — вебхук всегда живой по
 // своему токену (см. lib/attribution.ts).
 export async function POST(req: Request) {
-  const { projectId, cookieName, windowDays, clientSmsField } = await req.json().catch(() => ({}));
+  const { projectId, cookieName, windowDays, clientSmsField, clientFieldMap } = await req.json().catch(() => ({}));
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
 
   const access = await assertProjectAccess(projectId);
@@ -28,6 +28,25 @@ export async function POST(req: Request) {
     patch.attribution_revenue_path = "total_price";
   }
   if (clientSmsField !== undefined) patch.client_sms_field = String(clientSmsField).trim().slice(0, 80) || null;
+  if (clientFieldMap !== undefined) {
+    // [{handle, key}]: handle поля в магазине → доп. поле контакта. Ключ нормализуем
+    // (пробелы в «_», нижний регистр) и не даём занять поля самого контакта.
+    const RESERVED = new Set(["name", "phone", "email", "tags", "insales_client_id", "id", "created_at"]);
+    const out: { handle: string; key: string }[] = [];
+    const seen = new Set<string>();
+    for (const row of Array.isArray(clientFieldMap) ? clientFieldMap.slice(0, 50) : []) {
+      const handle = String(row?.handle ?? "").trim().slice(0, 80);
+      const key = String(row?.key ?? "").trim().toLowerCase().replace(/s+/g, "_");
+      if (!handle && !key) continue;
+      if (!handle || !key) return NextResponse.json({ error: "Заполните обе части: поле в магазине и поле у нас" }, { status: 400 });
+      if (!/^[p{L}p{N}_]{1,40}$/u.test(key)) return NextResponse.json({ error: `Название поля «${key}»: только буквы, цифры и «_», до 40 символов` }, { status: 400 });
+      if (RESERVED.has(key)) return NextResponse.json({ error: `Поле «${key}» занято самим контактом, выберите другое название` }, { status: 400 });
+      if (seen.has(handle.toLowerCase())) return NextResponse.json({ error: `Поле магазина «${handle}» указано дважды` }, { status: 400 });
+      seen.add(handle.toLowerCase());
+      out.push({ handle, key });
+    }
+    patch.client_field_map = out;
+  }
   if (!Object.keys(patch).length) return NextResponse.json({ ok: true });
   const { error } = await admin.from("projects").update(patch).eq("id", projectId);
 

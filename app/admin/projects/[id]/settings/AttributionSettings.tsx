@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { IconPlus, IconTrash } from "@tabler/icons-react";
 import { Button, Card, Input, useDialogs } from "@/app/ui";
 import CopyBox from "../CopyBox";
 
@@ -18,6 +19,8 @@ export default function AttributionSettings({
   webhookUrl,
   clientWebhookUrl,
   initialSmsField,
+  initialFieldMap,
+  knownKeys,
   initial,
 }: {
   projectId: string;
@@ -25,6 +28,8 @@ export default function AttributionSettings({
   webhookUrl: string;
   clientWebhookUrl: string;
   initialSmsField: string;
+  initialFieldMap: { handle: string; key: string }[];
+  knownKeys: string[];
   initial: { cookieName: string; windowDays: number };
 }) {
   const router = useRouter();
@@ -33,6 +38,7 @@ export default function AttributionSettings({
   const [busy, setBusy] = useState(false);
   const [smsField, setSmsField] = useState(initialSmsField);
   const [smsBusy, setSmsBusy] = useState(false);
+  const [fieldMap, setFieldMap] = useState<{ handle: string; key: string }[]>(initialFieldMap);
 
   async function saveSmsField() {
     if (smsBusy) return;
@@ -40,7 +46,7 @@ export default function AttributionSettings({
     const res = await fetch("/api/admin/attribution/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, clientSmsField: smsField }),
+      body: JSON.stringify({ projectId, clientSmsField: smsField, clientFieldMap: fieldMap }),
     });
     setSmsBusy(false);
     if (!res.ok) {
@@ -148,6 +154,54 @@ export default function AttributionSettings({
           <p className="text-[12.5px] text-ink-faint mt-2 mb-0">
             Пока поле не указано, согласие на SMS вебхук клиентов не меняет.
           </p>
+        </div>
+
+        <div className="mt-4">
+          <div className="text-[13px] text-ink-muted mb-1">Доп. поля клиента → поля контакта</div>
+          <p className="text-[12.5px] text-ink-faint mt-0 mb-2">
+            Укажите имя поля в магазине и поле контакта у нас, куда сохранять его значение. Поле у нас можно выбрать из уже
+            существующих или вписать новое: оно появится у контактов при первой записи значения. Поля, которых здесь нет, не
+            сохраняются.
+          </p>
+          <datalist id="client-known-keys">
+            {knownKeys.map((k) => (
+              <option key={k} value={k} />
+            ))}
+          </datalist>
+          <div className="grid gap-2">
+            {fieldMap.map((row, i) => (
+              <div key={i} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] items-center">
+                <Input
+                  aria-label="Поле в магазине"
+                  value={row.handle}
+                  onChange={(e) => setFieldMap(fieldMap.map((r, j) => (j === i ? { ...r, handle: e.target.value } : r)))}
+                  placeholder="Поле в магазине (handle), например birthday"
+                />
+                <Input
+                  aria-label="Поле контакта"
+                  list="client-known-keys"
+                  value={row.key}
+                  onChange={(e) => setFieldMap(fieldMap.map((r, j) => (j === i ? { ...r, key: e.target.value } : r)))}
+                  placeholder="Поле контакта: выберите или впишите новое"
+                />
+                <button
+                  type="button"
+                  onClick={() => setFieldMap(fieldMap.filter((_, j) => j !== i))}
+                  className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-ink-muted hover:text-ink transition-colors hover:bg-surface-2 cursor-pointer"
+                  aria-label="Убрать поле"
+                  title="Убрать поле"
+                >
+                  <IconTrash size={16} stroke={1.8} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2">
+            <Button variant="secondary" size="sm" onClick={() => setFieldMap([...fieldMap, { handle: "", key: "" }])}>
+              <IconPlus size={14} stroke={2} />
+              Добавить доп. поле
+            </Button>
+          </div>
         </div>
         <div className="flex gap-2 mt-3">
           <Button onClick={saveSmsField}>Сохранить</Button>

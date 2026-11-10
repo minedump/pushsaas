@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { upsertContact, logFieldChanges } from "@/lib/identity";
 import { normalizePhone } from "@/lib/phone";
 import { logApiCall } from "@/lib/apiLog";
+import { auditAs } from "@/lib/auditContext";
 
 // POST /api/v1/client — вебхук магазина «клиент зарегистрировался / изменил данные»
 // (InSales: clients/create и clients/update). Тот же токен, что у вебхука заказов
@@ -13,7 +14,8 @@ import { logApiCall } from "@/lib/apiLog";
 //
 //  · контакт ищем по внешнему id (insales_client_id), затем по телефону, затем по email;
 //    нет — заводим (согласие на каналы этим не даётся);
-//  · обновляем имя, телефон, email, внешний id и доп. поля (бонусы, дата рождения);
+//  · обновляем имя, телефон, email, внешний id (insales_client_id) и доп. поля: бонусы и
+//    поля магазина по соответствию из Настроек (projects.client_field_map);
 //  · согласия на каналы приходят отсюда же и меняются в обе стороны (и при
 //    регистрации, и при правке в личном кабинете магазина):
 //      email — системное поле клиента subscribe (true даёт согласие, false снимает);
@@ -43,10 +45,14 @@ export async function POST(req: Request) {
   const token = extractApiKey(req);
   if (!token) return NextResponse.json({ error: "missing key" }, { status: 401 });
 
-  const admin = createAdminClient();
-  const { data: secretRow } = await admin.from("project_secrets").select("project_id").eq("attribution_token", token).maybeSingle();
+  const authAdmin = createAdminClient();
+  const { data: secretRow } = await authAdmin.from("project_secrets").select("project_id").eq("attribution_token", token).maybeSingle();
   const projectId = secretRow?.project_id;
   if (!projectId) return NextResponse.json({ error: "invalid key" }, { status: 401 });
+
+  // Правки контакта из этого вебхука в истории карточки подписаны источником «вебхук магазина».
+  auditAs(null, "webhook");
+  const admin = createAdminClient();
 
   const body = (await req.json().catch(() => ({}))) as Obj;
   const client = ((body.client && typeof body.client === "object" ? body.client : body) as Obj) || {};
@@ -56,8 +62,15 @@ export async function POST(req: Request) {
     return NextResponse.json(responseBody, { status });
   };
 
-  const { data: projRow } = await admin.from("projects").select("client_sms_field").eq("id", projectId).maybeSingle();
-  const smsField = String((projRow as { client_sms_field?: string | null } | null)?.client_sms_field || "").trim().toLowerCase();
+  const { data: projRow } = await admin.from("projects").select("client_sms_field, client_field_map").eq("id", projectId).maybeSingle();
+  const projCfg = projRow as { client_sms_field?: string | null; client_field_map?: unknown } | null;
+  const smsField = String(projCfg?.client_sms_field || "").trim().toLowerCase();
+  const fieldMap = (Array.isArray(projCfg?.client_field_map) ? projCfg!.client_field_map : []) as { handle?: string; key?: string }[];
+  // поле клиента из тела вебхука: по handle, названию или id поля
+  const findField = (want: string): Obj | undefined =>
+    Array.isArray(client.fields_values)
+      ? (client.fields_values as Obj[]).find((x) => [x?.handle, x?.name, x?.field_id].some((k) => k != null && String(k).trim().toLowerCase() === want.trim().toLowerCase()))
+      : undefined;
 
   const insalesId = client.id != null && client.id !== "" ? String(client.id) : "";
   const phone = client.phone ? normalizePhone(String(client.phone)) : null;
@@ -66,15 +79,18 @@ export async function POST(req: Request) {
 
   const name = [client.name, client.surname].map((v) => String(v ?? "").trim()).filter(Boolean).join(" ") || undefined;
 
-  // доп. поля контакта: бонусы и поля клиента магазина по их handle (например birthday)
+  // доп. поля контакта: бонусы и регистрация (системные поля клиента)
   const attrs: Record<string, string | null> = {};
   if (client.bonus_points != null) attrs.bonus_points = String(client.bonus_points);
-  if (Array.isArray(client.fields_values)) {
-    for (const f of client.fields_values as Obj[]) {
-      const handle = String(f?.handle ?? "").trim();
-      const value = f?.value;
-      if (handle && value != null && value !== "") attrs[handle] = String(value);
-    }
+  // Доп. поля клиента сохраняем только по соответствию из Настроек (поле магазина → поле контакта).
+  // Пустое значение убирает поле у контакта, поля нет в теле вебхука — не трогаем.
+  for (const m of fieldMap) {
+    const handle = String(m?.handle ?? "").trim();
+    const key = String(m?.key ?? "").trim();
+    if (!handle || !key) continue;
+    const f = findField(handle);
+    if (!f) continue;
+    attrs[key] = f.value == null || String(f.value).trim() === "" ? null : String(f.value).trim();
   }
   if (typeof client.registered === "boolean") attrs.shop_registered = client.registered ? "1" : "0";
 
@@ -102,6 +118,10 @@ export async function POST(req: Request) {
     if (!res.ok) return respond(400, { error: res.error });
     created = true;
     identityId = res.id;
+    // История карточки начинается с создания: фиксируем, какие данные пришли из магазина.
+    const first: Record<string, unknown> = { name, phone, email, insales_client_id: insalesId || null };
+    for (const [k, v] of Object.entries(attrs)) if (v !== null) first[`attr:${k}`] = v;
+    logFieldChanges(admin, projectId, identityId, {}, first);
   } else {
     const current: Ident = identity;
     identityId = current.id;
@@ -126,10 +146,11 @@ export async function POST(req: Request) {
     if (Object.keys(attrs).length) {
       const merged = { ...(current.attributes || {}) } as Record<string, unknown>;
       for (const [k, v] of Object.entries(attrs)) {
-        if (merged[k] !== v) {
+        if ((merged[k] ?? null) !== v) {
           before[`attr:${k}`] = merged[k];
           after[`attr:${k}`] = v;
-          merged[k] = v;
+          if (v === null) delete merged[k];
+          else merged[k] = v;
         }
       }
       patch.attributes = merged;
@@ -145,10 +166,8 @@ export async function POST(req: Request) {
   const truthy = (v: unknown) => !/^(|0|false|no|off|n|нет|ложь)$/i.test(String(v ?? "").trim());
   let wantEmail: boolean | undefined = typeof client.subscribe === "boolean" ? client.subscribe : undefined;
   let wantSms: boolean | undefined;
-  if (smsField && Array.isArray(client.fields_values)) {
-    const f = (client.fields_values as Obj[]).find(
-      (x) => [x?.handle, x?.name, x?.field_id].some((k) => k != null && String(k).trim().toLowerCase() === smsField)
-    );
+  if (smsField) {
+    const f = findField(smsField);
     if (f) wantSms = truthy(f.value);
   }
 
@@ -161,17 +180,17 @@ export async function POST(req: Request) {
       .maybeSingle();
     const cur = curRow as Pick<Ident, "phone" | "email" | "sms_marketing_active_at" | "email_marketing_active_at"> | null;
     const now = new Date().toISOString();
-    const events: { project_id: string; identity_id: string; channel: "sms" | "email"; active: boolean; contact: string }[] = [];
+    const events: { project_id: string; identity_id: string; channel: "sms" | "email"; active: boolean; contact: string; source: string }[] = [];
     const upd: Obj = {};
     if (cur && wantSms !== undefined && wantSms !== !!cur.sms_marketing_active_at && cur.phone) {
       upd.sms_marketing_active_at = wantSms ? now : null;
       consentChanged.push(wantSms ? "sms:on" : "sms:off");
-      events.push({ project_id: projectId, identity_id: identityId, channel: "sms", active: wantSms, contact: cur.phone });
+      events.push({ project_id: projectId, identity_id: identityId, channel: "sms", active: wantSms, contact: cur.phone, source: "webhook" });
     }
     if (cur && wantEmail !== undefined && wantEmail !== !!cur.email_marketing_active_at && cur.email) {
       upd.email_marketing_active_at = wantEmail ? now : null;
       consentChanged.push(wantEmail ? "email:on" : "email:off");
-      events.push({ project_id: projectId, identity_id: identityId, channel: "email", active: wantEmail, contact: cur.email });
+      events.push({ project_id: projectId, identity_id: identityId, channel: "email", active: wantEmail, contact: cur.email, source: "webhook" });
     }
     if (Object.keys(upd).length) {
       await admin.from("identities").update({ ...upd, updated_at: now }).eq("id", identityId);

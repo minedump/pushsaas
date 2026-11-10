@@ -76,7 +76,7 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
   // поля, миграция 0041) — на карточке сводятся в один список.
   const { data: channelEvents } = await supabase
     .from("identity_channel_events")
-    .select("id, channel, active, contact, created_at")
+    .select("id, channel, active, contact, created_at, source")
     .eq("identity_id", identityId)
     .order("created_at", { ascending: false })
     .limit(HISTORY_LIMIT);
@@ -99,7 +99,7 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
     old_value: f.old_value,
     new_value: f.new_value,
     created_at: f.created_at,
-    actor: f.actor_id ? actorById.get(f.actor_id) ?? null : f.source === "api" ? "API" : null,
+    actor: f.actor_id ? actorById.get(f.actor_id) ?? null : f.source === "api" ? "API" : f.source === "webhook" ? "вебхук магазина" : null,
   }));
 
   // Рассылки, ушедшие этому контакту — push резолвится по id устройств

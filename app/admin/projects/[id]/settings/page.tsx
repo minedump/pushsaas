@@ -47,13 +47,17 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
   }
   const { data: attrRow } = await supabase
     .from("projects")
-    .select("attribution_cookie_name, attribution_window_days, client_sms_field")
+    .select("attribution_cookie_name, attribution_window_days, client_sms_field, client_field_map")
     .eq("id", id)
     .maybeSingle();
   const attribution = {
     cookieName: attrRow?.attribution_cookie_name || "pss_attr",
     windowDays: attrRow?.attribution_window_days || 7,
   };
+
+  // Доп. поля контактов, которые уже есть у проекта: из них выбираем, куда сохранять поля клиента магазина.
+  const { data: attrOwners } = await supabase.from("identities").select("attributes").eq("project_id", id).limit(5000);
+  const knownAttrKeys = [...new Set((attrOwners ?? []).flatMap((i) => Object.keys((i.attributes as object) || {})))].sort((a, b) => a.localeCompare(b, "ru"));
 
   // отдельные best-effort запросы: до миграций 0005/0006 колонок нет —
   // страница не падает, просто пустые форма и статусы
@@ -177,6 +181,8 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
           webhookUrl={`${app}/api/v1/attribute?key=${attributionToken}`}
           clientWebhookUrl={`${app}/api/v1/client?key=${attributionToken}`}
           initialSmsField={(attrRow as { client_sms_field?: string | null } | null)?.client_sms_field || ""}
+          initialFieldMap={Array.isArray((attrRow as { client_field_map?: unknown } | null)?.client_field_map) ? ((attrRow as { client_field_map: { handle: string; key: string }[] }).client_field_map) : []}
+          knownKeys={knownAttrKeys}
           initial={attribution}
         />
       )}

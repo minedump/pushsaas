@@ -25,7 +25,7 @@ type Identity = {
   created_at: string;
 };
 type DeviceRow = { id: string; platform: string; is_active: boolean; paused: boolean; created_at: string; attributes: Record<string, unknown> | null };
-type ChannelEventRow = { id: number; channel: string; active: boolean; contact: string | null; created_at: string };
+type ChannelEventRow = { id: number; channel: string; active: boolean; contact: string | null; created_at: string; source?: string | null };
 type FieldChangeRow = { id: number; field: string; old_value: string | null; new_value: string | null; created_at: string; actor: string | null };
 type RecipientRow = {
   id: number;
@@ -67,7 +67,7 @@ function fmt(d: string, tz: string) {
 }
 
 type HistoryEntry =
-  | { kind: "channel"; key: string; created_at: string; channel: string; active: boolean; contact: string | null }
+  | { kind: "channel"; key: string; created_at: string; channel: string; active: boolean; contact: string | null; source: string | null }
   | { kind: "field"; key: string; created_at: string; field: string; old_value: string | null; new_value: string | null; actor: string | null }
   | { kind: "device"; key: string; created_at: string; platform: string; is_active: boolean; paused: boolean; ymClientId: string | undefined };
 
@@ -153,7 +153,7 @@ export default function SubscriberProfile({
   const ymClientId = devices.find((d) => d.attributes?.ym_client_id)?.attributes?.ym_client_id as string | undefined;
 
   const history: HistoryEntry[] = [
-    ...channelEvents.map((e) => ({ kind: "channel" as const, key: `c${e.id}`, created_at: e.created_at, channel: e.channel, active: e.active, contact: e.contact })),
+    ...channelEvents.map((e) => ({ kind: "channel" as const, key: `c${e.id}`, created_at: e.created_at, channel: e.channel, active: e.active, contact: e.contact, source: e.source ?? null })),
     ...fieldChanges.map((f) => ({ kind: "field" as const, key: `f${f.id}`, created_at: f.created_at, field: f.field, old_value: f.old_value, new_value: f.new_value, actor: f.actor })),
     ...devices.map((d) => ({
       kind: "device" as const,
@@ -425,6 +425,7 @@ export default function SubscriberProfile({
                           <Td className="text-ink-muted truncate max-w-[280px]">
                             <Badge tone={h.active ? "good" : "neutral"}>{h.active ? "включён" : "отключён"}</Badge>
                             {h.contact && <span className="ml-1.5">{h.contact}</span>}
+                            {h.source === "webhook" && <span className="ml-1.5 text-ink-faint">· вебхук магазина</span>}
                           </Td>
                         </>
                       ) : h.kind === "field" ? (

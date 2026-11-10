@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePath } from "@/lib/jsonpath";
 import { upsertContact } from "@/lib/identity";
 import { logApiCall } from "@/lib/apiLog";
+import { auditAs } from "@/lib/auditContext";
 import { parseExternalTime } from "@/lib/datetime";
 
 // POST /api/v1/attribute — order intake (last-click attribution, when a
@@ -50,10 +51,14 @@ export async function POST(req: Request) {
   const token = extractApiKey(req);
   if (!token) return NextResponse.json({ error: "missing key" }, { status: 401 });
 
-  const admin = createAdminClient();
-  const { data: secretRow } = await admin.from("project_secrets").select("project_id").eq("attribution_token", token).maybeSingle();
+  const authAdmin = createAdminClient();
+  const { data: secretRow } = await authAdmin.from("project_secrets").select("project_id").eq("attribution_token", token).maybeSingle();
   const projectId = secretRow?.project_id;
   if (!projectId) return NextResponse.json({ error: "invalid key" }, { status: 401 });
+
+  // Правки контакта из заказа подписаны в истории карточки источником «вебхук магазина».
+  auditAs(null, "webhook");
+  const admin = createAdminClient();
 
   const { data: project } = await admin
     .from("projects")
