@@ -1,7 +1,7 @@
 // Состав заказа из вебхука магазина (InSales: order_lines). Храним по позиции то, что
 // нужно для истории покупок: товар, количество и цену уже со скидкой. Саму скидку и
-// доставку не храним: InSales сам распределяет скидку по позициям (sale_price и
-// total_price — после скидки), сумма по позициям равна items_price заказа.
+// доставку не храним: InSales сам распределяет скидку по позициям (full_sale_price и
+// full_total_price — после скидки), сумма по позициям равна items_price заказа.
 export type OrderLine = {
   line_id: string | null;
   product_id: string | null;
@@ -33,8 +33,13 @@ export function parseOrderLines(body: unknown): OrderLine[] | null {
   return raw.slice(0, 200).map((l) => {
     const x = (l || {}) as Record<string, unknown>;
     const quantity = num(x.quantity) || 1;
-    const sum = x.total_price != null ? num(x.total_price) : num(x.sale_price) * quantity;
-    const price = x.sale_price != null ? num(x.sale_price) : quantity ? sum / quantity : 0;
+    // InSales распределяет скидку заказа по позициям: full_total_price и full_sale_price — после
+    // всех скидок (сумма по позициям равна items_price заказа), total_price и sale_price — до
+    // скидки заказа. Берём значения после скидки, если они есть.
+    const sumRaw = x.full_total_price ?? x.total_price;
+    const priceRaw = x.full_sale_price ?? x.sale_price;
+    const sum = sumRaw != null ? num(sumRaw) : num(priceRaw) * quantity;
+    const price = priceRaw != null ? num(priceRaw) : quantity ? sum / quantity : 0;
     return {
       line_id: str(x.id),
       product_id: str(x.product_id),

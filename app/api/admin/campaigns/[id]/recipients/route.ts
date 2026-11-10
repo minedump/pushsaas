@@ -30,7 +30,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const admin = createAdminClient();
   const { data: campaign } = await admin
     .from("campaigns")
-    .select("id, title, channel, sent_count, delivered_count, failed_count, clicked_count, opened_count, unsubscribed_count, confirmed_count")
+    .select("id, title, internal_title, channel, sent_count, delivered_count, failed_count, clicked_count, opened_count, unsubscribed_count, confirmed_count")
     .eq("id", campaignId)
     .eq("project_id", projectId)
     .maybeSingle();
@@ -53,7 +53,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
   const ctr = campaign.delivered_count ? Math.round(((campaign.clicked_count || 0) / campaign.delivered_count) * 100) : 0;
   const summary = [
-    ["campaign", campaign.title].map(csvEscape).join(","),
+    ["campaign", (campaign as { internal_title?: string | null }).internal_title || campaign.title].map(csvEscape).join(","),
     ["sent", campaign.sent_count].map(csvEscape).join(","),
     ["delivered", campaign.delivered_count].map(csvEscape).join(","),
     ["failed", campaign.failed_count].map(csvEscape).join(","),

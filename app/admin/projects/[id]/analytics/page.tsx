@@ -75,7 +75,7 @@ export default async function AnalyticsPage({
       .lte("created_at", untilIso),
     supabase
       .from("campaigns")
-      .select("id, channel, status, sent_count, delivered_count, failed_count, clicked_count, title, sent_at")
+      .select("id, channel, status, sent_count, delivered_count, failed_count, clicked_count, title, internal_title, sent_at")
       .eq("project_id", id)
       .eq("status", "sent")
       .gte("sent_at", sinceIso)
@@ -156,7 +156,8 @@ export default async function AnalyticsPage({
   }
   const maxDay = Math.max(1, ...days.map((d) => d.push + d.sms + d.email));
 
-  const camp = campaigns ?? [];
+  // у рассылок, созданных по API, title пустой или равен тексту: показываем внутреннее название
+  const camp = (campaigns ?? []).map((c) => ({ ...c, title: (c as { internal_title?: string | null }).internal_title || c.title || "Рассылка" }));
   const totalSent = camp.reduce((s, c) => s + (c.sent_count || 0), 0);
   const totalDelivered = camp.reduce((s, c) => s + (c.delivered_count || 0), 0);
   const totalClicked = camp.reduce((s, c) => s + (c.clicked_count || 0), 0);

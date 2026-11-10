@@ -25,6 +25,8 @@ type Row = {
   initiator: "manual" | "api" | "welcome" | "event" | "trigger" | "recurring" | "automation" | "auth";
   sent_count: number;
   delivered_count: number;
+  // подтверждено оператором (только SMS, МТС): колонка «Доставлено»
+  confirmed_count?: number;
   clicked_count: number;
   unsubscribed_count: number;
   created_at: string;
@@ -365,6 +367,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
                     </Badge>
                   </Td>
                   <Td right>{hasStats ? c.delivered_count : "—"}</Td>
+                  <Td right>{hasStats && c.channel === "sms" ? c.confirmed_count ?? 0 : "—"}</Td>
                   <Td right>{hasStats ? c.clicked_count : "—"}</Td>
                   <Td right>{hasStats && c.status === "sent" ? `${cctr}%` : "—"}</Td>
                   <Td right>{hasUnsubStats ? c.unsubscribed_count : "—"}</Td>
