@@ -3,8 +3,8 @@ import { assertProjectAccess } from "@/lib/auth";
 import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizePhone } from "@/lib/phone";
-import { logFieldChanges, upsertContact, namePatch, addYmClientIds, setIdentityTimezone } from "@/lib/identity";
-import { parseTimezone, parseYmClientId, parseYmClientIds } from "@/lib/shopFields";
+import { logFieldChanges, upsertContact, namePatch, addYmClientIds, setIdentityTimezone, setIdentityTelegramId } from "@/lib/identity";
+import { parseTimezone, parseYmClientId, parseYmClientIds, parseTelegramId } from "@/lib/shopFields";
 import { writeAudit } from "@/lib/audit";
 
 const PLATFORMS = ["ios", "android", "desktop", "unknown"] as const;
@@ -25,7 +25,7 @@ function isTruthy(v: string): boolean {
 
 // Enrich contacts from a CSV the merchant uploaded. `keyColumn` names the
 // CSV column used to find the contact; `matchAgainst` says how to look it
-// up — ТОЛЬКО "phone", "email" или "insales_client_id" (все три резолвятся
+// up — ТОЛЬКО "phone", "email", "insales_client_id", "ym_client_id" или "telegram_id" (все резолвятся
 // через identities). Одна строка файла = один КОНТАКТ (см. export/route.ts —
 // та же строка, что видна в разделе «Подписчики»), не устройство.
 //
@@ -59,8 +59,8 @@ export async function POST(req: Request) {
   if (!projectId || !keyColumn || !matchAgainst || !Array.isArray(rows) || !rows.length) {
     return NextResponse.json({ error: "projectId, keyColumn, matchAgainst, rows required" }, { status: 400 });
   }
-  if (matchAgainst !== "phone" && matchAgainst !== "email" && matchAgainst !== "insales_client_id" && matchAgainst !== "ym_client_id") {
-    return NextResponse.json({ error: "Сопоставление возможно только по телефону, email, внешнему ID или UUID метрики" }, { status: 400 });
+  if (matchAgainst !== "phone" && matchAgainst !== "email" && matchAgainst !== "insales_client_id" && matchAgainst !== "ym_client_id" && matchAgainst !== "telegram_id") {
+    return NextResponse.json({ error: "Сопоставление возможно только по телефону, email, внешнему ID, UUID метрики или Telegram ID" }, { status: 400 });
   }
 
   const access = await assertProjectAccess(projectId);
@@ -86,6 +86,7 @@ export async function POST(req: Request) {
     const extra: Record<string, string> = {};
     let rowTimezone: string | null = null; // часовой пояс из файла (IANA), пишется контакту и найденным по UUID метрики устройствам
     const rowYmIds: string[] = []; // ClientID Метрики из файла: добавляются к контакту
+    let rowTelegram: string | null = matchAgainst === "telegram_id" ? parseTelegramId(rawKey) : null; // Telegram ID из файла (или из ключевого столбца)
     const pausePatch: Partial<Record<(typeof PLATFORMS)[number], boolean>> = {};
     for (const [k, v] of Object.entries(row)) {
       if (k === keyColumn || v === "" || READONLY_COLUMNS.has(k)) continue;
@@ -116,6 +117,9 @@ export async function POST(req: Request) {
         if (rowTimezone) identityPatch.timezone = rowTimezone;
       } else if (k === "ym_client_id" || k === "ym_client_ids") {
         rowYmIds.push(...parseYmClientIds(v));
+      } else if (k === "telegram_id" || k === "telegramId") {
+        rowTelegram = parseTelegramId(v) ?? rowTelegram;
+        if (rowTelegram) identityPatch.telegram_id = rowTelegram;
       } else if (k === "sms_active") {
         identityPatch.sms_marketing_active_at = isTruthy(v) ? new Date().toISOString() : null;
       } else if (k === "email_active") {
@@ -134,11 +138,12 @@ export async function POST(req: Request) {
       phone: string | null;
       email: string | null;
       insales_client_id: string | null;
+      telegram_id: string | null;
       tags: string[] | null;
       attributes: Record<string, unknown> | null;
       timezone: string | null;
     };
-    const SNAPSHOT_COLS = "id, name, first_name, last_name, middle_name, phone, email, insales_client_id, tags, attributes, timezone";
+    const SNAPSHOT_COLS = "id, name, first_name, last_name, middle_name, phone, email, insales_client_id, telegram_id, tags, attributes, timezone";
     let identity: IdentitySnapshot | null = null;
     let ymKey: string | null = null; // ClientID из ключевого столбца (сопоставление по UUID метрики)
     let ymDeviceIds: string[] = []; // устройства с этим ClientID
@@ -174,6 +179,12 @@ export async function POST(req: Request) {
         .eq("email", rawKey.trim().toLowerCase())
         .maybeSingle();
       identity = data;
+    } else if (matchAgainst === "telegram_id") {
+      if (rowTelegram) {
+        // limit(1): если по ошибке у двух контактов один Telegram ID, берём самый старый, а не падаем
+        const { data } = await admin.from("identities").select(SNAPSHOT_COLS).eq("project_id", projectId).eq("telegram_id", rowTelegram).order("created_at", { ascending: true }).limit(1);
+        identity = ((data as IdentitySnapshot[] | null) ?? [])[0] ?? null;
+      }
     } else {
       const { data } = await admin.from("identities").select(SNAPSHOT_COLS).eq("project_id", projectId).eq("insales_client_id", rawKey).maybeSingle();
       identity = data;
@@ -206,7 +217,7 @@ export async function POST(req: Request) {
         const attrs: Record<string, string | null> = {};
         for (const [k, v] of Object.entries(row)) {
           if (v === "" || READONLY_COLUMNS.has(k) || PAUSE_COLUMNS.has(k)) continue;
-          if (["name", "last_name", "first_name", "middle_name", "lastName", "firstName", "middleName", "phone", "email", "insales_client_id", "insalesClientId", "tags", "sms_active", "email_active", "timezone", "ym_client_id", "ym_client_ids"].includes(k) || k === keyColumn) continue;
+          if (["name", "last_name", "first_name", "middle_name", "lastName", "firstName", "middleName", "phone", "email", "insales_client_id", "insalesClientId", "tags", "sms_active", "email_active", "timezone", "ym_client_id", "ym_client_ids", "telegram_id", "telegramId"].includes(k) || k === keyColumn) continue;
           attrs[k] = v;
         }
         const newTags = String(row["tags"] || "")
@@ -228,6 +239,7 @@ export async function POST(req: Request) {
           // системные поля из файла: ClientID Метрики (в том числе из ключевого столбца) и часовой пояс
           await addYmClientIds(admin, projectId, res.id, [...(ymKey ? [ymKey] : []), ...rowYmIds]);
           if (rowTimezone) await setIdentityTimezone(admin, projectId, res.id, rowTimezone);
+          if (rowTelegram) await setIdentityTelegramId(admin, projectId, res.id, rowTelegram);
         }
         if (res.ok && res.created) created++;
         else if (res.ok) matched++; // нашёлся по другому полю (например, по телефону) — обновлён
@@ -266,7 +278,7 @@ export async function POST(req: Request) {
       // затронутые этой строкой файла (пустые ячейки уже отфильтрованы выше).
       const before: Record<string, unknown> = {};
       const after: Record<string, unknown> = {};
-      for (const key of ["name", "last_name", "first_name", "middle_name", "phone", "email", "insales_client_id", "tags", "timezone"] as const) {
+      for (const key of ["name", "last_name", "first_name", "middle_name", "phone", "email", "insales_client_id", "telegram_id", "tags", "timezone"] as const) {
         if (key in identityPatch) {
           before[key] = identity[key];
           after[key] = identityPatch[key];

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { extractWebhookKey } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePath } from "@/lib/jsonpath";
-import { upsertContact, applyShopConsent, isTruthyFlag, addYmClientIds, setIdentityTimezone } from "@/lib/identity";
+import { upsertContact, applyShopConsent, isTruthyFlag, addYmClientIds, setIdentityTimezone, setIdentityTelegramId } from "@/lib/identity";
 import { mapShopFields, type FieldMapRow } from "@/lib/shopFields";
 import { logApiCall } from "@/lib/apiLog";
 import { auditAs } from "@/lib/auditContext";
@@ -194,6 +194,7 @@ export async function POST(req: Request) {
         { source: "webhook_order", grantOnly: differentAccount }
       );
       if (mapped.timezone) await setIdentityTimezone(admin, projectId, identityId, mapped.timezone, differentAccount);
+      if (mapped.telegramId) await setIdentityTelegramId(admin, projectId, identityId, mapped.telegramId, differentAccount);
       if (mapped.ymIds.length) await addYmClientIds(admin, projectId, identityId, mapped.ymIds);
       const { data: link } = await admin.from("identity_devices").select("subscriber_id").eq("identity_id", identityId).limit(1).maybeSingle();
       subscriberId = link?.subscriber_id || null;

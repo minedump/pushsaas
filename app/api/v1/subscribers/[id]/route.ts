@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { authenticateApiKey, hasScope } from "@/lib/apikey";
 import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { updateContact, setIdentityTimezone, setYmClientIds } from "@/lib/identity";
+import { updateContact, setIdentityTimezone, setIdentityTelegramId, setYmClientIds } from "@/lib/identity";
 import { logApiCall } from "@/lib/apiLog";
 import { parseSystemFields } from "@/lib/shopFields";
 
@@ -21,6 +21,7 @@ function toSubscriber(row: {
   email_marketing_active_at: string | null;
   timezone?: string | null;
   ym_client_ids?: string[] | null;
+  telegram_id?: string | null;
   created_at?: string;
 }) {
   return {
@@ -38,6 +39,7 @@ function toSubscriber(row: {
     emailActive: !!row.email_marketing_active_at,
     timezone: row.timezone ?? null,
     ymClientIds: row.ym_client_ids ?? [],
+    telegramId: row.telegram_id ?? null,
     createdAt: row.created_at,
   };
 }
@@ -54,7 +56,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const admin = createAdminClient();
   const { data } = await admin
     .from("identities")
-    .select("id, phone, email, name, last_name, first_name, middle_name, insales_client_id, tags, attributes, sms_marketing_active_at, email_marketing_active_at, timezone, ym_client_ids, created_at")
+    .select("id, phone, email, name, last_name, first_name, middle_name, insales_client_id, tags, attributes, sms_marketing_active_at, email_marketing_active_at, timezone, ym_client_ids, telegram_id, created_at")
     .eq("id", id)
     .eq("project_id", projectId)
     .maybeSingle();
@@ -88,7 +90,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (!existing) return NextResponse.json({ error: "subscriber not found" }, { status: 404 });
 
   const body = await req.json().catch(() => ({}));
-  const sys = parseSystemFields(body as { timezone?: unknown; ymClientIds?: unknown });
+  const sys = parseSystemFields(body as { timezone?: unknown; ymClientIds?: unknown; telegramId?: unknown });
   if ("error" in sys) return NextResponse.json({ error: sys.error }, { status: 400 });
   const { phone, email, name, lastName, firstName, middleName, insalesClientId, tags, attributes, smsActive, emailActive } = body as {
     phone?: string | null;
@@ -120,6 +122,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (result.ok) {
     if (sys.timezone !== undefined) await setIdentityTimezone(admin, projectId, id, sys.timezone);
     if (sys.ymClientIds !== undefined) await setYmClientIds(admin, projectId, id, sys.ymClientIds);
+    if (sys.telegramId !== undefined) await setIdentityTelegramId(admin, projectId, id, sys.telegramId);
   }
   const httpStatus = result.ok ? 200 : result.error === "not found" ? 404 : 400;
   const responseBody = result.ok ? { ok: true, id: result.id } : { error: result.error };

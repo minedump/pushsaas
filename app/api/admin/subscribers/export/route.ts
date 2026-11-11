@@ -53,7 +53,7 @@ export async function GET(req: Request) {
 
   const { data: identities } = await admin
     .from("identities")
-    .select("id, phone, email, name, last_name, first_name, middle_name, insales_client_id, tags, sms_marketing_active_at, email_marketing_active_at, attributes, timezone, ym_client_ids, created_at")
+    .select("id, phone, email, name, last_name, first_name, middle_name, insales_client_id, telegram_id, tags, sms_marketing_active_at, email_marketing_active_at, attributes, timezone, ym_client_ids, created_at")
     .eq("project_id", projectId)
     .order("created_at", { ascending: false });
 
@@ -77,7 +77,7 @@ export async function GET(req: Request) {
   const attrKeys = [...new Set((identities ?? []).flatMap((i) => Object.keys((i.attributes as object) || {})))];
   const platformCols = PLATFORMS.flatMap((p) => [`${p}_active`, `${p}_paused`]);
   // name в файл не выгружаем: он собирается из имени и фамилии. В старых файлах с name импорт его по-прежнему понимает.
-  const header = ["id", "last_name", "first_name", "middle_name", "phone", "email", "insales_client_id", "tags", ...platformCols, "sms_active", "email_active", "created_at", "timezone", "ym_client_ids", ...attrKeys];
+  const header = ["id", "last_name", "first_name", "middle_name", "phone", "email", "insales_client_id", "telegram_id", "tags", ...platformCols, "sms_active", "email_active", "created_at", "timezone", "ym_client_ids", ...attrKeys];
 
   const lines = [header.join(";")];
   for (const i of identities ?? []) {
@@ -97,6 +97,7 @@ export async function GET(req: Request) {
       i.phone ? `+${i.phone}` : "",
       i.email || "",
       i.insales_client_id || "",
+      i.telegram_id || "",
       (i.tags || []).join("|"),
       ...PLATFORMS.flatMap((p) => {
         const d = byPlatform.get(p);

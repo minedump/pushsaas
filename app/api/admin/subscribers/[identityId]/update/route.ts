@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
 import { auditAs } from "@/lib/auditContext";
-import { updateContact, composeName, setIdentityTimezone, setYmClientIds } from "@/lib/identity";
+import { updateContact, composeName, setIdentityTimezone, setIdentityTelegramId, setYmClientIds } from "@/lib/identity";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { parseSystemFields } from "@/lib/shopFields";
 import { writeAudit } from "@/lib/audit";
@@ -29,12 +29,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ identit
   if (access.user) auditAs(access.user.id);
   if (!access.ok) return NextResponse.json({ error: "Нет доступа" }, { status: access.status });
 
-  // часовой пояс (IANA) и ClientID Метрики (список заменяется целиком): не переданы — не трогаем
-  const sys = parseSystemFields(body as { timezone?: unknown; ymClientIds?: unknown });
+  // часовой пояс (IANA), ClientID Метрики (список заменяется целиком) и Telegram ID: не переданы — не трогаем
+  const sys = parseSystemFields(body as { timezone?: unknown; ymClientIds?: unknown; telegramId?: unknown });
   if ("error" in sys) {
     const msg = sys.error.startsWith("invalid timezone")
       ? "Часовой пояс: укажите название IANA, например Europe/Moscow"
-      : "UUID метрики: 5–64 символа, буквы, цифры, «_» и «-», несколько через запятую";
+      : sys.error.startsWith("invalid telegramId")
+        ? "Telegram ID: только цифры, от 5 до 15"
+        : "UUID метрики: 5–64 символа, буквы, цифры, «_» и «-», несколько через запятую";
     return NextResponse.json({ error: msg }, { status: 400 });
   }
 
@@ -55,6 +57,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ identit
   const admin = createAdminClient();
   if (sys.timezone !== undefined) await setIdentityTimezone(admin, projectId, identityId, sys.timezone);
   if (sys.ymClientIds !== undefined) await setYmClientIds(admin, projectId, identityId, sys.ymClientIds);
+  if (sys.telegramId !== undefined) await setIdentityTelegramId(admin, projectId, identityId, sys.telegramId);
   await writeAudit({
     projectId,
     entity: "subscriber",

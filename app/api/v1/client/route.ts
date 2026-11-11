@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { extractWebhookKey } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { upsertContact, namePatch, logFieldChanges, applyShopConsent, isTruthyFlag, addYmClientIds, setIdentityTimezone } from "@/lib/identity";
+import { upsertContact, namePatch, logFieldChanges, applyShopConsent, isTruthyFlag, addYmClientIds, setIdentityTimezone, setIdentityTelegramId } from "@/lib/identity";
 import { mapShopFields, type FieldMapRow } from "@/lib/shopFields";
 import { normalizePhone } from "@/lib/phone";
 import { logApiCall } from "@/lib/apiLog";
@@ -215,6 +215,7 @@ export async function POST(req: Request) {
   // несколько, новые дописываются). У другой учётной записи магазина (гость с тем же телефоном)
   // часовой пояс не перезаписываем.
   if (mapped.timezone) await setIdentityTimezone(admin, projectId, identityId, mapped.timezone, differentAccount);
+  if (mapped.telegramId) await setIdentityTelegramId(admin, projectId, identityId, mapped.telegramId, differentAccount);
   if (mapped.ymIds.length) await addYmClientIds(admin, projectId, identityId, mapped.ymIds);
   notes.push(...mapped.notes);
 

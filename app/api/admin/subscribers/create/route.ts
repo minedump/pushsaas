@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
 import { auditAs } from "@/lib/auditContext";
-import { upsertContact, composeName } from "@/lib/identity";
+import { upsertContact, composeName, setIdentityTelegramId } from "@/lib/identity";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { parseTelegramId } from "@/lib/shopFields";
 import { writeAudit } from "@/lib/audit";
 
 // Ручное добавление контакта из раздела «Подписчики» — по аналогии с «Новый
@@ -14,7 +16,7 @@ import { writeAudit } from "@/lib/audit";
 // такого телефона/email в проекте ещё нет.
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const { projectId, phone, email, name, lastName, firstName, middleName, insalesClientId, smsActive, emailActive, tags } = body as {
+  const { projectId, phone, email, name, lastName, firstName, middleName, insalesClientId, telegramId, smsActive, emailActive, tags } = body as {
     projectId?: string;
     phone?: string;
     email?: string;
@@ -23,6 +25,7 @@ export async function POST(req: Request) {
     firstName?: string;
     middleName?: string;
     insalesClientId?: string;
+    telegramId?: string;
     smsActive?: boolean;
     emailActive?: boolean;
     tags?: string[];
@@ -31,6 +34,8 @@ export async function POST(req: Request) {
   const phoneTrim = phone?.trim() || "";
   const emailTrim = email?.trim() || "";
   if (!phoneTrim && !emailTrim) return NextResponse.json({ error: "Укажите телефон или email" }, { status: 400 });
+  const telegram = telegramId?.trim() ? parseTelegramId(telegramId) : null;
+  if (telegramId?.trim() && !telegram) return NextResponse.json({ error: "Telegram ID: только цифры, от 5 до 15" }, { status: 400 });
 
   const access = await assertProjectAccess(projectId);
   if (access.user) auditAs(access.user.id);
@@ -49,6 +54,7 @@ export async function POST(req: Request) {
     tags: Array.isArray(tags) ? tags : undefined,
   });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+  if (telegram) await setIdentityTelegramId(createAdminClient(), projectId, result.id, telegram);
   await writeAudit({
     projectId,
     entity: "subscriber",

@@ -770,6 +770,24 @@ export async function setIdentityTimezone(
   return true;
 }
 
+// Telegram ID контакта. onlyIfEmpty — не перезаписывать уже известный (вебхук другой учётной записи
+// магазина не должен менять id, который уже записан).
+export async function setIdentityTelegramId(
+  admin: ReturnType<typeof createAdminClient>,
+  projectId: string,
+  identityId: string,
+  telegramId: string | null,
+  onlyIfEmpty = false
+): Promise<boolean> {
+  const { data } = await admin.from("identities").select("telegram_id").eq("id", identityId).eq("project_id", projectId).maybeSingle();
+  if (!data) return false;
+  const current = (data as { telegram_id?: string | null }).telegram_id ?? null;
+  if (current === telegramId || (onlyIfEmpty && current)) return false;
+  await admin.from("identities").update({ telegram_id: telegramId, updated_at: new Date().toISOString() }).eq("id", identityId);
+  logFieldChanges(admin, projectId, identityId, { telegram_id: current }, { telegram_id: telegramId });
+  return true;
+}
+
 // Устройство привязали к контакту (вход по коду, identify): переносим на контакт то, что известно
 // об устройстве, — ClientID Метрики и часовой пояс (последний только если у контакта пояса ещё нет).
 export async function syncDeviceToIdentity(

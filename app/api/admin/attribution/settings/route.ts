@@ -29,8 +29,8 @@ export async function POST(req: Request) {
   }
   if (clientSmsField !== undefined) patch.client_sms_field = String(clientSmsField).trim().slice(0, 80) || null;
   // [{handle, key}]: handle поля в магазине → поле у нас. Ключ нормализуем (пробелы в «_», нижний регистр)
-  // и не даём занять поля самого контакта. Системные ключи timezone и ym_client_id разрешены: они
-  // пишутся в сам контакт (часовой пояс, ClientID Метрики).
+  // и не даём занять поля самого контакта. Системные ключи timezone, ym_client_id и telegram_id разрешены: они
+  // пишутся в сам контакт (часовой пояс, ClientID Метрики, Telegram ID).
   function cleanMap(input: unknown, auto: string[] = []): { out: { handle: string; key: string }[] } | { error: string } {
     const RESERVED = new Set(["name", "first_name", "last_name", "middle_name", "phone", "email", "tags", "insales_client_id", "id", "created_at"]);
     const out: { handle: string; key: string }[] = [];

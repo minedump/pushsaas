@@ -20,6 +20,7 @@ type Identity = {
   attributes: Record<string, unknown> | null;
   timezone: string | null;
   ym_client_ids: string[] | null;
+  telegram_id: string | null;
 };
 
 export default function EditSubscriberForm({
@@ -40,6 +41,7 @@ export default function EditSubscriberForm({
   const [phone, setPhone] = useState(identity.phone ? `+${identity.phone}` : "");
   const [email, setEmail] = useState(identity.email || "");
   const [insalesClientId, setInsalesClientId] = useState(identity.insales_client_id || "");
+  const [telegramId, setTelegramId] = useState(identity.telegram_id || "");
   const [tags, setTags] = useState<string[]>(identity.tags || []);
   const [timezone, setTimezone] = useState(identity.timezone || "");
   // ClientID Метрики: у человека их может быть несколько, вводятся через запятую
@@ -87,6 +89,7 @@ export default function EditSubscriberForm({
         // на части) пустые поля формы иначе стёрли бы name
         ...(nameChanged ? { lastName: lastName.trim(), firstName: firstName.trim(), middleName: middleName.trim() } : {}),
         insalesClientId: insalesClientId.trim(),
+        telegramId: telegramId.trim(),
         smsActive,
         emailActive,
         tags,
@@ -168,6 +171,10 @@ export default function EditSubscriberForm({
         <div>
           <Label>Внешний ID</Label>
           <Input value={insalesClientId} onChange={(e) => setInsalesClientId(e.target.value)} placeholder="Например, ID клиента в InSales" />
+        </div>
+        <div>
+          <Label>Telegram ID</Label>
+          <Input value={telegramId} onChange={(e) => setTelegramId(e.target.value)} inputMode="numeric" placeholder="Числовой идентификатор, например 123456789" />
         </div>
         <div>
           <Label>Теги</Label>

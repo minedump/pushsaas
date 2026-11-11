@@ -1,10 +1,11 @@
 // Доп. поля из вебхуков магазина (клиент и заказ): соответствие «поле магазина → поле у нас».
 // Часть ключей системные: они пишутся в сам контакт, а не в доп. поля.
 //   timezone      — часовой пояс контакта (IANA, например Europe/Moscow);
-//   ym_client_id  — ClientID Яндекс.Метрики (у контакта их может быть несколько).
+//   ym_client_id  — ClientID Яндекс.Метрики (у контакта их может быть несколько);
+//   telegram_id   — числовой Telegram ID контакта (один).
 // Остальные ключи — обычные доп. поля контакта (в вебхуке клиента) или заказа (в вебхуке заказа).
 
-export const SYSTEM_FIELD_KEYS = ["timezone", "ym_client_id"] as const;
+export const SYSTEM_FIELD_KEYS = ["timezone", "ym_client_id", "telegram_id"] as const;
 export type FieldMapRow = { handle: string; key: string };
 
 export function isSystemFieldKey(key: string): boolean {
@@ -29,6 +30,13 @@ export function parseYmClientId(v: unknown): string | null {
   return /^[A-Za-z0-9_-]{5,64}$/.test(s) ? s : null;
 }
 
+// Telegram ID: только цифры (от 5 до 15), пробелы внутри и по краям отбрасываем. @имя пользователя не принимаем:
+// оно меняется, а числовой id постоянный.
+export function parseTelegramId(v: unknown): string | null {
+  const s = String(v ?? "").replace(/\s+/g, "");
+  return /^\d{5,15}$/.test(s) ? s : null;
+}
+
 // В одной ячейке может быть несколько id через запятую, «;», «|» или пробел.
 export function parseYmClientIds(v: unknown): string[] {
   const out = new Set<string>();
@@ -43,6 +51,7 @@ export type MappedFields = {
   custom: Record<string, string | null>; // обычные доп. поля: пустое значение = убрать поле
   timezone?: string;
   ymIds: string[];
+  telegramId?: string;
   notes: string[];
 };
 
@@ -67,6 +76,11 @@ export function mapShopFields(map: FieldMapRow[], find: (handle: string) => Reco
       const ids = parseYmClientIds(raw);
       if (ids.length) res.ymIds.push(...ids);
       else res.notes.push("ym_client_id value is not a valid Metrica ClientID");
+    } else if (key === "telegram_id") {
+      if (!raw) continue;
+      const tg = parseTelegramId(raw);
+      if (tg) res.telegramId = tg;
+      else res.notes.push("telegram_id value is not a valid Telegram ID (digits only, 5 to 15)");
     } else {
       res.custom[key] = raw === "" ? null : raw;
     }
@@ -77,8 +91,18 @@ export function mapShopFields(map: FieldMapRow[], find: (handle: string) => Reco
 
 // timezone (IANA или null) и ymClientIds (массив ClientID Метрики) из тела запроса API: проверенные
 // значения либо текст ошибки. undefined значит «поле не передано, не трогаем».
-export function parseSystemFields(body: { timezone?: unknown; ymClientIds?: unknown }): { timezone?: string | null; ymClientIds?: string[] } | { error: string } {
-  const out: { timezone?: string | null; ymClientIds?: string[] } = {};
+export function parseSystemFields(
+  body: { timezone?: unknown; ymClientIds?: unknown; telegramId?: unknown }
+): { timezone?: string | null; ymClientIds?: string[]; telegramId?: string | null } | { error: string } {
+  const out: { timezone?: string | null; ymClientIds?: string[]; telegramId?: string | null } = {};
+  if (body.telegramId !== undefined) {
+    if (body.telegramId === null || body.telegramId === "") out.telegramId = null;
+    else {
+      const tg = parseTelegramId(body.telegramId);
+      if (!tg) return { error: "invalid telegramId: expected digits only, 5 to 15" };
+      out.telegramId = tg;
+    }
+  }
   if (body.timezone !== undefined) {
     if (body.timezone === null || body.timezone === "") out.timezone = null;
     else {

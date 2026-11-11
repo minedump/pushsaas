@@ -21,6 +21,7 @@ export default function NewSubscriberForm({ projectId }: { projectId: string }) 
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [insalesClientId, setInsalesClientId] = useState("");
+  const [telegramId, setTelegramId] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [smsActive, setSmsActive] = useState(false);
   const [emailActive, setEmailActive] = useState(false);
@@ -42,6 +43,7 @@ export default function NewSubscriberForm({ projectId }: { projectId: string }) 
         firstName: firstName.trim() || undefined,
         middleName: middleName.trim() || undefined,
         insalesClientId: insalesClientId.trim() || undefined,
+        telegramId: telegramId.trim() || undefined,
         smsActive,
         emailActive,
         tags,
@@ -91,6 +93,10 @@ export default function NewSubscriberForm({ projectId }: { projectId: string }) 
         <div>
           <Label>Внешний ID</Label>
           <Input value={insalesClientId} onChange={(e) => setInsalesClientId(e.target.value)} placeholder="Например, ID клиента в InSales" />
+        </div>
+        <div>
+          <Label>Telegram ID</Label>
+          <Input value={telegramId} onChange={(e) => setTelegramId(e.target.value)} inputMode="numeric" placeholder="Числовой идентификатор, например 123456789" />
         </div>
         <div>
           <Label>Теги</Label>

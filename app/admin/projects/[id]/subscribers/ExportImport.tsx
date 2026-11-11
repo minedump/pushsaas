@@ -71,7 +71,7 @@ export default function ExportImport({ projectId }: { projectId: string }) {
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [keyColumn, setKeyColumn] = useState("");
-  const [matchAgainst, setMatchAgainst] = useState<"phone" | "email" | "insales_client_id" | "ym_client_id">("phone");
+  const [matchAgainst, setMatchAgainst] = useState<"phone" | "email" | "insales_client_id" | "ym_client_id" | "telegram_id">("phone");
   const [createNew, setCreateNew] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -146,6 +146,7 @@ export default function ExportImport({ projectId }: { projectId: string }) {
                   { value: "email", label: "Email подписчика" },
                   { value: "insales_client_id", label: "Внешний ID" },
                   { value: "ym_client_id", label: "UUID метрики" },
+                  { value: "telegram_id", label: "Telegram ID" },
                 ]}
                 className="w-full"
               />

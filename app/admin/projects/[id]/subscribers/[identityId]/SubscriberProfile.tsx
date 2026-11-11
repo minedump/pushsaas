@@ -20,6 +20,7 @@ type Identity = {
   first_name: string | null;
   middle_name: string | null;
   insales_client_id: string | null;
+  telegram_id: string | null;
   tags: string[] | null;
   attributes: Record<string, unknown> | null;
   sms_marketing_active_at: string | null;
@@ -50,7 +51,7 @@ type SiteEventRow = { id: string; label: string; detail: string; created_at: str
 const platformLabel: Record<string, string> = { ios: "iPhone", android: "Android", desktop: "Desktop", unknown: "—" };
 const channelLabel: Record<string, string> = { push: "Push", sms: "SMS", email: "Email" };
 const statusLabel: Record<string, string> = { delivered: "доставлено", failed: "ошибка" };
-const fieldLabel: Record<string, string> = { name: "Имя (для текстов)", last_name: "Фамилия", first_name: "Имя", middle_name: "Отчество", phone: "Телефон", email: "Email", insales_client_id: "Внешний ID", tags: "Теги", timezone: "Часовой пояс", ym_client_ids: "UUID метрики" };
+const fieldLabel: Record<string, string> = { name: "Имя (для текстов)", last_name: "Фамилия", first_name: "Имя", middle_name: "Отчество", phone: "Телефон", email: "Email", insales_client_id: "Внешний ID", telegram_id: "Telegram ID", tags: "Теги", timezone: "Часовой пояс", ym_client_ids: "UUID метрики" };
 
 function displayField(field: string): string {
   if (field.startsWith("attr:")) return `Доп. поле «${field.slice(5)}»`;
@@ -238,6 +239,11 @@ export default function SubscriberProfile({
             {identity.insales_client_id && (
               <div>
                 Внешний ID: <span className="font-mono text-ink">{identity.insales_client_id}</span>
+              </div>
+            )}
+            {identity.telegram_id && (
+              <div>
+                Telegram ID: <span className="font-mono text-ink">{identity.telegram_id}</span>
               </div>
             )}
             {(identity.timezone || deviceTimezone) && (
