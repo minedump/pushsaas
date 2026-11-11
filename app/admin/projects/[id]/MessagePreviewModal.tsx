@@ -160,7 +160,6 @@ function SmsPreview({ content }: { content: PreviewContent }) {
       <div className="self-start max-w-[85%] bg-white rounded-2xl rounded-bl-sm px-3.5 py-2.5 text-[13.5px] text-[#111] shadow-sm whitespace-pre-wrap break-words">
         {content.body ? shown.text : "—"}
       </div>
-      {shown.replaced && <div className="text-[11px] text-[#6b6f78] mt-2">Ссылка условная: при отправке платформа сократит её через clck.ru, код будет другой.</div>}
     </div>
   );
 }

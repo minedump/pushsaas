@@ -1815,7 +1815,8 @@ export async function sendWelcomeNow(
                 const smsSender = (oidc?.config as { sms_sender?: string } | null)?.sms_sender || undefined;
                 const attrs = { ...contactAttrs, ...eventContext, template: templateCtx, context: {}, automation: automationCtx };
                 const smsBody = applyTemplate(tpl.body!, attrs);
-                const text = campaignId ? await injectClickTrackingSms(smsBody, campaignId, token) : smsBody;
+                // с рассылкой: ссылки с метками и сокращённые; без неё (событийная автоматизация без кампании) тоже сокращённые
+                const text = campaignId ? await injectClickTrackingSms(smsBody, campaignId, token) : await shortenBodyLinks(smsBody, new Map());
                 renderedContent = { body: text };
                 const result = await sendSmsByProvider(provider, secrets, contact, text, smsSender);
                 providerMessageId = result.messageId;
@@ -2488,7 +2489,9 @@ export async function sendTestMessage(
     const smsSender = (oidc?.config as { sms_sender?: string } | null)?.sms_sender || undefined;
 
     const { template: smsTemplateCtx, context: smsSendCtx } = await resolveTemplateData(projectId, content.data);
-    const text = applyTemplate(content.text, { ...smsSendCtx, template: smsTemplateCtx, context: smsSendCtx, automation: {} });
+    // Ссылки сокращаются так же, как в боевой рассылке (clck.ru/XXXXXX), чтобы тест показывал то, что получит клиент.
+    // Меток клика и заказа в тесте нет: он не привязан к рассылке.
+    const text = await shortenBodyLinks(applyTemplate(content.text, { ...smsSendCtx, template: smsTemplateCtx, context: smsSendCtx, automation: {} }), new Map());
     const result = await sendSmsByProvider(provider, secrets, phone, text, smsSender);
     return result.ok ? { ok: true } : { ok: false, error: "Провайдер отклонил отправку" };
   }
