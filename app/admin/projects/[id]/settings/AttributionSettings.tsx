@@ -90,7 +90,8 @@ export default function AttributionSettings({
   const handleOptions: ComboOption[] = storeFields.map((f) => ({ value: f.handle, label: f.name ? `${f.handle} · ${f.name}` : f.handle }));
   const contactKeyOptions: ComboOption[] = [
     ...SYSTEM_KEY_HINTS.map((o) => ({ value: o.value, label: `${o.value} · ${o.label}` })),
-    ...knownKeys.filter((k) => !SYSTEM_KEY_HINTS.some((o) => o.value === k)).map((k) => ({ value: k, label: k })),
+    // bonus_points и shop_registered вебхук клиентов заполняет сам (бонусы и признак регистрации), выбирать их нельзя
+    ...knownKeys.filter((k) => !SYSTEM_KEY_HINTS.some((o) => o.value === k) && !AUTO_CONTACT_KEYS.includes(k)).map((k) => ({ value: k, label: k })),
   ];
   const orderKeyOptions: ComboOption[] = [
     ...SYSTEM_KEY_HINTS.map((o) => ({ value: o.value, label: `${o.value} · ${o.label}` })),
@@ -234,6 +235,7 @@ export default function AttributionSettings({
 // Строки соответствия «поле в магазине → поле у нас». В обоих полях выпадающий список с поиском:
 // показываются первые подсказки, остальные находятся вводом, а своё значение можно просто вписать.
 // Системные поля контакта (timezone, ym_client_id) подсказываются вместе с уже существующими доп. полями.
+const AUTO_CONTACT_KEYS = ["bonus_points", "shop_registered"];
 const SYSTEM_KEY_HINTS = [
   { value: "timezone", label: "Часовой пояс" },
   { value: "ym_client_id", label: "ClientID Метрики" },

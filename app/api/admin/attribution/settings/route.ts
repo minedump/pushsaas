@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   // [{handle, key}]: handle поля в магазине → поле у нас. Ключ нормализуем (пробелы в «_», нижний регистр)
   // и не даём занять поля самого контакта. Системные ключи timezone и ym_client_id разрешены: они
   // пишутся в сам контакт (часовой пояс, ClientID Метрики).
-  function cleanMap(input: unknown): { out: { handle: string; key: string }[] } | { error: string } {
+  function cleanMap(input: unknown, auto: string[] = []): { out: { handle: string; key: string }[] } | { error: string } {
     const RESERVED = new Set(["name", "phone", "email", "tags", "insales_client_id", "id", "created_at"]);
     const out: { handle: string; key: string }[] = [];
     const seen = new Set<string>();
@@ -42,6 +42,7 @@ export async function POST(req: Request) {
       if (!handle || !key) return { error: "Заполните обе части: поле в магазине и поле у нас" };
       if (!/^[\p{L}\p{N}_]{1,40}$/u.test(key)) return { error: `Название поля «${key}»: только буквы, цифры и «_», до 40 символов` };
       if (RESERVED.has(key)) return { error: `Поле «${key}» занято самим контактом, выберите другое название` };
+      if (auto.includes(key)) return { error: `Поле «${key}» заполняется автоматически вебхуком клиентов, выберите другое название` };
       if (seen.has(handle.toLowerCase())) return { error: `Поле магазина «${handle}» указано дважды` };
       seen.add(handle.toLowerCase());
       out.push({ handle, key });
@@ -49,7 +50,8 @@ export async function POST(req: Request) {
     return { out };
   }
   if (clientFieldMap !== undefined) {
-    const r = cleanMap(clientFieldMap);
+    // бонусы (bonus_points) и признак регистрации (shop_registered) вебхук клиентов заполняет сам
+    const r = cleanMap(clientFieldMap, ["bonus_points", "shop_registered"]);
     if ("error" in r) return NextResponse.json({ error: r.error }, { status: 400 });
     patch.client_field_map = r.out;
   }
