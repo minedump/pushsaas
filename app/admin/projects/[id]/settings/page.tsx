@@ -59,6 +59,30 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
   const { data: attrOwners } = await supabase.from("identities").select("attributes").eq("project_id", id).limit(5000);
   const knownAttrKeys = [...new Set((attrOwners ?? []).flatMap((i) => Object.keys((i.attributes as object) || {})))].sort((a, b) => a.localeCompare(b, "ru"));
 
+  // Подсказки для соответствия полей: поля магазина, которые уже приходили в вебхуках клиента и заказа
+  // (handle и название из последних вызовов), и доп. поля уже сохранённых заказов.
+  const { data: recentCalls } = await supabase
+    .from("api_call_log")
+    .select("request_body")
+    .eq("project_id", id)
+    .in("endpoint", ["contacts", "attribute"])
+    .order("created_at", { ascending: false })
+    .limit(300);
+  const storeFieldNames = new Map<string, string>();
+  for (const call of recentCalls ?? []) {
+    const body = ((call as { request_body?: unknown }).request_body ?? {}) as { fields_values?: unknown; client?: { fields_values?: unknown } };
+    for (const list of [body.fields_values, body.client?.fields_values]) {
+      if (!Array.isArray(list)) continue;
+      for (const f of list as { handle?: unknown; name?: unknown }[]) {
+        const handle = typeof f?.handle === "string" ? f.handle.trim() : "";
+        if (handle && !storeFieldNames.has(handle)) storeFieldNames.set(handle, typeof f?.name === "string" ? f.name.trim() : "");
+      }
+    }
+  }
+  const storeFields = [...storeFieldNames.entries()].map(([handle, name]) => ({ handle, name })).sort((a, b) => a.handle.localeCompare(b.handle, "ru"));
+  const { data: orderAttrOwners } = await supabase.from("order_attributions").select("attributes").eq("project_id", id).order("created_at", { ascending: false }).limit(2000);
+  const knownOrderKeys = [...new Set((orderAttrOwners ?? []).flatMap((o) => Object.keys((o.attributes as object) || {})))].sort((a, b) => a.localeCompare(b, "ru"));
+
   // отдельные best-effort запросы: до миграций 0005/0006 колонок нет —
   // страница не падает, просто пустые форма и статусы
   let manifestInitial: { manifest: string; headSnippet: string; icons: ManifestConfig["icons"] } | null = null;
@@ -184,6 +208,8 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
           initialFieldMap={Array.isArray((attrRow as { client_field_map?: unknown } | null)?.client_field_map) ? ((attrRow as { client_field_map: { handle: string; key: string }[] }).client_field_map) : []}
           initialOrderFieldMap={Array.isArray((attrRow as { order_field_map?: unknown } | null)?.order_field_map) ? ((attrRow as { order_field_map: { handle: string; key: string }[] }).order_field_map) : []}
           knownKeys={knownAttrKeys}
+          knownOrderKeys={knownOrderKeys}
+          storeFields={storeFields}
           initial={attribution}
         />
       )}

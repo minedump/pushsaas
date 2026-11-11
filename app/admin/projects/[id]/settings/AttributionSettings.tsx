@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconPlus, IconTrash } from "@tabler/icons-react";
-import { Button, Card, Input, useDialogs } from "@/app/ui";
+import { Button, Card, Input, SearchSelect, useDialogs } from "@/app/ui";
+import type { ComboOption } from "@/app/ui/CustomSelect";
 import CopyBox from "../CopyBox";
 
 // Атрибуция заказов к пушам — вебхук всегда живой по своему токену, никакого
@@ -22,6 +23,8 @@ export default function AttributionSettings({
   initialFieldMap,
   initialOrderFieldMap,
   knownKeys,
+  knownOrderKeys,
+  storeFields,
   initial,
 }: {
   projectId: string;
@@ -32,6 +35,9 @@ export default function AttributionSettings({
   initialFieldMap: { handle: string; key: string }[];
   initialOrderFieldMap: { handle: string; key: string }[];
   knownKeys: string[];
+  knownOrderKeys: string[];
+  // поля магазина, которые уже приходили в вебхуках: handle и название
+  storeFields: { handle: string; name: string }[];
   initial: { cookieName: string; windowDays: number };
 }) {
   const router = useRouter();
@@ -78,6 +84,18 @@ export default function AttributionSettings({
     toast("Сохранено", "good");
     router.refresh();
   }
+
+  // Подсказки в выпадающих списках: поля магазина, которые уже приходили в вебхуках («handle · название»),
+  // системные поля контакта и доп. поля, уже сохранённые у контактов или заказов.
+  const handleOptions: ComboOption[] = storeFields.map((f) => ({ value: f.handle, label: f.name ? `${f.handle} · ${f.name}` : f.handle }));
+  const contactKeyOptions: ComboOption[] = [
+    ...SYSTEM_KEY_HINTS.map((o) => ({ value: o.value, label: `${o.value} · ${o.label}` })),
+    ...knownKeys.filter((k) => !SYSTEM_KEY_HINTS.some((o) => o.value === k)).map((k) => ({ value: k, label: k })),
+  ];
+  const orderKeyOptions: ComboOption[] = [
+    ...SYSTEM_KEY_HINTS.map((o) => ({ value: o.value, label: `${o.value} · ${o.label}` })),
+    ...knownOrderKeys.filter((k) => !SYSTEM_KEY_HINTS.some((o) => o.value === k)).map((k) => ({ value: k, label: k })),
+  ];
 
   // Оба вебхука оформлены одинаково: заголовок карточки → описание → адрес с копированием →
   // поля (подпись над полем, пояснение под полем) → кнопка «Сохранить».
@@ -143,10 +161,10 @@ export default function AttributionSettings({
             <FieldMapEditor
               rows={orderFieldMap}
               setRows={setOrderFieldMap}
-              listId="order-known-keys"
-              keyOptions={[]}
-              handlePlaceholder="Поле в магазине (handle), например delivery_type"
-              keyPlaceholder="Поле заказа: впишите название, например delivery_type"
+              handleOptions={handleOptions}
+              keyOptions={orderKeyOptions}
+              handlePlaceholder="Поле в магазине: выберите или впишите handle"
+              keyPlaceholder="Поле заказа: выберите или впишите название"
             />
             <p className={hintCls}>
               Значения этих полей сохраняются в заказе и видны в окне «Подробнее» заказа. Поле можно взять из полей заказа или из
@@ -191,9 +209,9 @@ export default function AttributionSettings({
             <FieldMapEditor
               rows={fieldMap}
               setRows={setFieldMap}
-              listId="client-known-keys"
-              keyOptions={knownKeys}
-              handlePlaceholder="Поле в магазине (handle), например birthday"
+              handleOptions={handleOptions}
+              keyOptions={contactKeyOptions}
+              handlePlaceholder="Поле в магазине: выберите или впишите handle"
               keyPlaceholder="Поле контакта: выберите или впишите новое"
             />
             <p className={hintCls}>
@@ -213,8 +231,9 @@ export default function AttributionSettings({
   );
 }
 
-// Строки соответствия «поле в магазине → поле у нас». Системные поля контакта (timezone, ym_client_id)
-// подсказываются в списке вместе с уже существующими доп. полями.
+// Строки соответствия «поле в магазине → поле у нас». В обоих полях выпадающий список с поиском:
+// показываются первые подсказки, остальные находятся вводом, а своё значение можно просто вписать.
+// Системные поля контакта (timezone, ym_client_id) подсказываются вместе с уже существующими доп. полями.
 const SYSTEM_KEY_HINTS = [
   { value: "timezone", label: "Часовой пояс контакта (системное поле)" },
   { value: "ym_client_id", label: "ClientID Метрики (системное поле)" },
@@ -223,44 +242,38 @@ const SYSTEM_KEY_HINTS = [
 function FieldMapEditor({
   rows,
   setRows,
-  listId,
+  handleOptions,
   keyOptions,
   handlePlaceholder,
   keyPlaceholder,
 }: {
   rows: { handle: string; key: string }[];
   setRows: (rows: { handle: string; key: string }[]) => void;
-  listId: string;
-  keyOptions: string[];
+  handleOptions: ComboOption[];
+  keyOptions: ComboOption[];
   handlePlaceholder: string;
   keyPlaceholder: string;
 }) {
   return (
     <>
-      <datalist id={listId}>
-        {SYSTEM_KEY_HINTS.map((o) => (
-          <option key={o.value} value={o.value} label={o.label} />
-        ))}
-        {keyOptions
-          .filter((k) => !SYSTEM_KEY_HINTS.some((o) => o.value === k))
-          .map((k) => (
-            <option key={k} value={k} />
-          ))}
-      </datalist>
       <div className="grid gap-2">
         {rows.map((row, i) => (
           <div key={i} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] items-center">
-            <Input
-              aria-label="Поле в магазине"
+            <SearchSelect
+              allowCustom
+              limit={8}
               value={row.handle}
-              onChange={(e) => setRows(rows.map((r, j) => (j === i ? { ...r, handle: e.target.value } : r)))}
+              onChange={(v) => setRows(rows.map((r, j) => (j === i ? { ...r, handle: v } : r)))}
+              options={handleOptions}
               placeholder={handlePlaceholder}
+              emptyText="Таких полей ещё не приходило: впишите handle вручную"
             />
-            <Input
-              aria-label="Поле у нас"
-              list={listId}
+            <SearchSelect
+              allowCustom
+              limit={8}
               value={row.key}
-              onChange={(e) => setRows(rows.map((r, j) => (j === i ? { ...r, key: e.target.value } : r)))}
+              onChange={(v) => setRows(rows.map((r, j) => (j === i ? { ...r, key: v } : r)))}
+              options={keyOptions}
               placeholder={keyPlaceholder}
             />
             <button

@@ -29,6 +29,7 @@ export function SearchSelect({
   emptyText = "Ничего не найдено",
   className,
   allowCustom = false,
+  limit,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -37,9 +38,15 @@ export function SearchSelect({
   emptyText?: string;
   className?: string;
   allowCustom?: boolean;
+  // Сколько вариантов показывать, пока человек ничего не ввёл: остальные находятся поиском.
+  // Нужен там, где подсказок много, а раскрытый список на весь экран только мешает.
+  limit?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  // Поиск начинается с первой набранной буквы: при открытии показываем подсказки, а не только
+  // совпадающие с уже записанным значением (иначе из заполненного поля нельзя выбрать другой вариант).
+  const [typed, setTyped] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
@@ -64,11 +71,13 @@ export function SearchSelect({
       if (listRef.current?.contains(t)) return;
       setOpen(false);
       setQuery("");
+      setTyped(false);
     }
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
         setOpen(false);
         setQuery("");
+        setTyped(false);
       }
     }
     function onReposition() {
@@ -86,7 +95,13 @@ export function SearchSelect({
     };
   }, [open]);
 
-  const filtered = query.trim() ? options.filter((o) => o.label.toLowerCase().includes(query.trim().toLowerCase())) : options;
+  const q = typed ? query.trim().toLowerCase() : "";
+  const matches = q ? options.filter((o) => o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q)) : options;
+  const filtered = !q && limit ? matches.slice(0, limit) : matches;
+  const hiddenCount = matches.length - filtered.length;
+  // свой вариант: напечатанного нет среди подсказок, а свободный ввод разрешён
+  const customText = allowCustom && typed ? query.trim() : "";
+  const showCustom = !!customText && !options.some((o) => o.value === customText);
 
   return (
     <div ref={rootRef} className={cn("relative", className)}>
@@ -96,11 +111,13 @@ export function SearchSelect({
           value={open ? query : allowCustom ? value : selected?.label || ""}
           onChange={(e) => {
             setQuery(e.target.value);
+            setTyped(true);
             if (!open) setOpen(true);
             if (allowCustom) onChange(e.target.value);
           }}
           onFocus={(e) => {
             setOpen(true);
+            setTyped(false);
             setQuery(allowCustom ? value : "");
             e.target.select();
           }}
@@ -129,7 +146,23 @@ export function SearchSelect({
             className="fixed z-[200] max-h-72 overflow-auto pretty-scroll rounded-xl border border-border bg-surface shadow-lg p-1"
             style={{ top: pos.top, left: pos.left, width: pos.width, animation: "ui-pop .12s ease-out" }}
           >
-            {filtered.length === 0 && <li className="px-3 py-2 text-sm text-ink-faint">{emptyText}</li>}
+            {showCustom && (
+              <li role="option" aria-selected>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChange(customText);
+                    setOpen(false);
+                    setQuery("");
+                    setTyped(false);
+                  }}
+                  className="flex items-center gap-2 w-full text-left text-sm px-3 py-2 rounded-lg text-accent bg-accent-tint cursor-pointer"
+                >
+                  <span className="truncate">Использовать «{customText}»</span>
+                </button>
+              </li>
+            )}
+            {filtered.length === 0 && !showCustom && <li className="px-3 py-2 text-sm text-ink-faint">{emptyText}</li>}
             {filtered.map((o) => (
               <li key={o.value} role="option" aria-selected={o.value === value} aria-disabled={o.disabled}>
                 <button
@@ -139,6 +172,7 @@ export function SearchSelect({
                     onChange(o.value);
                     setOpen(false);
                     setQuery("");
+                    setTyped(false);
                   }}
                   className={cn(
                     "flex items-center justify-between gap-2 w-full text-left text-sm px-3 py-2 rounded-lg transition-colors",
@@ -153,6 +187,7 @@ export function SearchSelect({
                 </button>
               </li>
             ))}
+            {hiddenCount > 0 && <li className="px-3 py-2 text-xs text-ink-faint">Ещё {hiddenCount}: начните вводить, чтобы найти</li>}
           </ul>,
           document.body
         )}
