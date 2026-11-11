@@ -330,7 +330,9 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
                         href={`/admin/projects/${projectId}/templates/${c.templateId}/edit`}
                         className="inline-flex items-center gap-1 max-w-[160px] font-semibold text-ink hover:underline"
                       >
-                        <span className="min-w-0 truncate">{c.templateName || "Шаблон"}</span>
+                        <span className="min-w-0 truncate" title={c.templateName || "Шаблон"}>
+                          {c.templateName || "Шаблон"}
+                        </span>
                         <IconChevronRight size={13} stroke={2} className="shrink-0" />
                       </Link>
                     ) : (
@@ -487,7 +489,9 @@ function InlineTitle({ value, editable, onSave }: { value: string; editable: boo
 
   return (
     <span className="inline-flex items-center gap-1.5 max-w-full">
-      <span className="truncate max-w-[220px]">{value}</span>
+      <span className="truncate max-w-[220px]" title={value}>
+        {value}
+      </span>
       {editable && (
         <button
           type="button"
