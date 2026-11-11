@@ -54,13 +54,17 @@ function FeedStructureDocsModal({ onClose }: { onClose: () => void }) {
       <category id="2" parentId="1">Брюки</category>
     </categories>
     <offers>
-      <offer id="SKU-123" group_id="MODEL-1">
-        <name>Брюки классические</name>
+      <offer id="2335267761" group_id="1920349057" available="true">
+        <name>Брюки классические (S / Чёрный)</name>
+        <vendorCode>1B7PT01002786BLC0</vendorCode>
+        <barcode>2000000530970</barcode>
+        <quantity>3</quantity>
         <price>2990</price>
         <oldprice>3990</oldprice>
         <picture>https://site.ru/img/123.jpg</picture>
         <url>https://site.ru/product/123</url>
         <categoryId>2</categoryId>
+        <param name="Размер">S</param>
         <param name="Цвет товара">Чёрный</param>
         <vendor>Бренд</vendor>
       </offer>
@@ -73,25 +77,38 @@ function FeedStructureDocsModal({ onClose }: { onClose: () => void }) {
         <section>
           <div className="font-semibold text-ink mb-1">2. Товар — {"<offer>"}</div>
           <p className="m-0">
-            Обязательно: атрибут <code className="font-mono">id</code> (уникален в рамках фида — это и есть{" "}
-            <code className="font-mono">product_id</code> для трекинга/контекста, см. «Как работать с контекстом» у шаблона) и{" "}
-            <code className="font-mono">{"<name>"}</code> (если имени нет — берётся <code className="font-mono">{"<vendor>"}</code> +{" "}
-            <code className="font-mono">{"<model>"}</code>, тоже валидно).
+            Один <code className="font-mono">{"<offer>"}</code> — один <b>вариант</b> товара (конкретный размер и цвет). Обязательно:
+          </p>
+          <ul className="m-0 mt-1.5 pl-5 flex flex-col gap-1">
+            <li>
+              атрибут <code className="font-mono">id</code> — <b>id варианта</b>, уникален в рамках фида. В InSales это{" "}
+              <code className="font-mono">variant_id</code>, тот же, что приходит в позициях заказа. По нему вариант связывается с заказами и
+              с событиями на сайте: в <code className="font-mono">sendera.event()</code> в поле{" "}
+              <code className="font-mono">product_id</code> передавайте id варианта (см. «Как работать с контекстом» у шаблона);
+            </li>
+            <li>
+              <code className="font-mono">{"<name>"}</code> — название варианта целиком, вместе с опциями, как его видит покупатель, например
+              «Брюки классические (S / Чёрный)» (если имени нет, берётся <code className="font-mono">{"<vendor>"}</code> +{" "}
+              <code className="font-mono">{"<model>"}</code>).
+            </li>
+          </ul>
+          <p className="m-0 mt-1.5">
+            Атрибут <code className="font-mono">group_id</code> на <code className="font-mono">{"<offer>"}</code> — <b>id товара</b>, общий для всех
+            его вариантов. В InSales это <code className="font-mono">product_id</code> (он же приходит в позициях заказа). По нему варианты одного
+            товара объединяются и доступны как <code className="font-mono">{"{{ product.group_id }}"}</code>. Необязательный: оставьте пустым, если
+            варианты объединять не нужно.
           </p>
           <p className="m-0 mt-1.5">
             Необязательно: <code className="font-mono">{"<price>"}</code>, <code className="font-mono">{"<oldprice>"}</code> (для «было/стало»),{" "}
             <code className="font-mono">{"<picture>"}</code>, <code className="font-mono">{"<url>"}</code>,{" "}
-            <code className="font-mono">{"<param name=\"…\">…</param>"}</code> — любое количество, ключ — атрибут{" "}
+            <code className="font-mono">{"<vendorCode>"}</code> (артикул), <code className="font-mono">{"<barcode>"}</code> (штрихкод),{" "}
+            <code className="font-mono">{"<quantity>"}</code> (остаток), атрибут <code className="font-mono">available</code> на{" "}
+            <code className="font-mono">{"<offer>"}</code> (<code className="font-mono">false</code> — нет в наличии; без атрибута вариант считается
+            доступным) и <code className="font-mono">{"<param name=\"…\">…</param>"}</code> — любое количество, ключ — атрибут{" "}
             <code className="font-mono">name</code>, попадает в <code className="font-mono">{"{{ product.params[\"…\"] }}"}</code>.{" "}
             <code className="font-mono">{"<vendor>"}</code>/<code className="font-mono">{"<manufacturer>"}</code>/
             <code className="font-mono">{"<country_of_origin>"}</code>/<code className="font-mono">{"<weight>"}</code> — тоже попадают в{" "}
             <code className="font-mono">params</code>, как обычные кастомные атрибуты.
-          </p>
-          <p className="m-0 mt-1.5">
-            Атрибут <code className="font-mono">group_id</code> прямо на <code className="font-mono">{"<offer>"}</code> — объединяет варианты
-            одной модели (размер/цвет) в один <code className="font-mono">{"{{ product.group_id }}"}</code>; необязательный, своя надстройка
-            над стандартом (в самом YML-спеке варианты группируются иначе — если фид генерирует то, что описано выше, просто добавьте этот
-            атрибут при экспорте, или оставьте пустым, если варианты объединять не нужно).
           </p>
         </section>
 
@@ -166,8 +183,23 @@ function FeedStructureDocsModal({ onClose }: { onClose: () => void }) {
             15 минут; полный перебор офферов пропускается, если атрибут <code className="font-mono">date</code> у{" "}
             <code className="font-mono">{"<yml_catalog>"}</code> не изменился с прошлой проверки — категории/коллекции при этом всё равно
             обновляются каждый раз, они лёгкие). Дальше товар/категория/коллекция доступны в Liquid по <code className="font-mono">id</code> —
-            из трекинга события или ручного контекста шаблона/рассылки.
+            из трекинга события или ручного контекста шаблона/рассылки. Все варианты видны в разделе «Товары».
           </p>
+          <ul className="m-0 mt-1.5 pl-5 flex flex-col gap-1">
+            <li>
+              Каталог общий для фида и заказов: если в заказе приходит вариант, которого в каталоге ещё нет, он заводится с id, названием,
+              артикулом и штрихкодом из заказа. Когда вариант появляется в фиде, фид перезаписывает запись целиком (название, артикул, цену,
+              категории, картинку), и она становится записью из фида.
+            </li>
+            <li>
+              Фид главнее заказа: название, артикул, категории и набор <code className="font-mono">param</code> каждого варианта при каждом
+              обновлении берутся из фида целиком. Добавили или убрали свойство у товара, это так же изменится в каталоге по id варианта.
+            </li>
+            <li>
+              Вариант, пропавший из фида, из каталога не удаляется (он может быть в заказах): остаток обнуляется, он помечается «нет в наличии» и
+              «пропал из фида». Вернётся в фид, станет доступным снова.
+            </li>
+          </ul>
         </section>
       </div>
     </Modal>

@@ -58,7 +58,9 @@ sendera.event('category_viewed', { category_ids: ['42', '43'] })`}
           <p className="m-0 mt-1.5">
             Только «посмотрели» — отдельного события «убрать из просмотренного» нет и не нужно (никто не «отменяет» просмотр).{" "}
             <code className="font-mono">product_id</code>/<code className="font-mono">product_ids</code> резолвятся в{" "}
-            <code className="font-mono">{"{{ product }}"}</code>/<code className="font-mono">{"{{ products }}"}</code>.{" "}
+            <code className="font-mono">{"{{ product }}"}</code>/<code className="font-mono">{"{{ products }}"}</code>. Передавайте{" "}
+            <b>id варианта</b> (в фиде это <code className="font-mono">id</code> оффера, в InSales <code className="font-mono">variant_id</code>), а
+            не id товара: по нему платформа находит вариант в каталоге.{" "}
             <code className="font-mono">category_id</code>/<code className="font-mono">category_ids</code> резолвятся сразу в ДВА
             неймспейса параллельно — <code className="font-mono">{"{{ category }}"}</code>/<code className="font-mono">{"{{ categories }}"}</code>{" "}
             (раздел фида <code className="font-mono">{"<categories>"}</code>) и <code className="font-mono">{"{{ collection }}"}</code>/
