@@ -347,7 +347,65 @@ export async function clearProductFeed(projectId: string): Promise<void> {
 // пустой объект, шаблон просто не подставит {{ product }}. Кастомные
 // атрибуты доступны через {{ product.params["Название"] }} (Liquid не умеет
 // {{ product.params.Название }} с пробелом в ключе — только через скобки).
-const PRODUCT_COLUMNS = "external_id, group_id, name, price, old_price, image_url, url, categories, collections, params";
+const PRODUCT_COLUMNS = "external_id, group_id, name, sku, price, old_price, image_url, url, categories, collections, params, available, stock, archived_at";
+
+// Поиск товара по id из события или ручного контекста. Сайт может прислать id ВАРИАНТА (external_id
+// каталога, в InSales variant_id) или id ТОВАРА (group_id, product_id): учитываем оба.
+//  · id совпал с вариантом: берём именно этот вариант, он и попадёт в письмо (matched_by: "variant");
+//  · id совпал с товаром (group_id): конкретный вариант неизвестен, берём первый доступный вариант
+//    (нет доступных: первый по названию) и отдаём все варианты товара в product.variants, чтобы шаблон
+//    мог показать их (matched_by: "product");
+//  · если id есть и как вариант, и как товар, побеждает вариант.
+export type CatalogRow = {
+  external_id: string;
+  group_id: string | null;
+  name: string;
+  available?: boolean | null;
+  archived_at?: string | null;
+  price?: number | null;
+  url?: string | null;
+  image_url?: string | null;
+  params?: Record<string, string> | null;
+};
+export type CatalogMatch<T extends CatalogRow> = T & { matched_by: "variant" | "product"; variants?: Pick<CatalogRow, "external_id" | "name" | "price" | "available" | "url" | "image_url" | "params">[] };
+
+export function pickCatalogMatches<T extends CatalogRow>(rows: T[], ids: string[]): Map<string, CatalogMatch<T>> {
+  const out = new Map<string, CatalogMatch<T>>();
+  const isFree = (r: CatalogRow) => r.available !== false && !r.archived_at;
+  for (const id of ids) {
+    const variant = rows.find((r) => r.external_id === id);
+    if (variant) {
+      out.set(id, { ...variant, matched_by: "variant" });
+      continue;
+    }
+    const siblings = rows.filter((r) => r.group_id === id).sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    if (!siblings.length) continue;
+    const chosen = siblings.find(isFree) ?? siblings[0];
+    out.set(id, {
+      ...chosen,
+      matched_by: "product",
+      variants: siblings.slice(0, 30).map((s) => ({ external_id: s.external_id, name: s.name, price: s.price ?? null, available: s.available ?? null, url: s.url ?? null, image_url: s.image_url ?? null, params: s.params ?? null })),
+    });
+  }
+  return out;
+}
+
+// id из события безопасны для фильтра PostgREST: только буквы, цифры, «_», «-», «.», до 64 символов
+const safeCatalogId = (id: string) => /^[\w.-]{1,64}$/.test(id);
+
+export async function resolveCatalogRefs(projectId: string, ids: string[]): Promise<Map<string, CatalogMatch<CatalogRow & Record<string, unknown>>>> {
+  const clean = [...new Set(ids.filter(safeCatalogId))];
+  if (!clean.length) return new Map();
+  const admin = createAdminClient();
+  const list = clean.map((i) => `"${i}"`).join(",");
+  const { data } = await admin
+    .from("product_feed_items")
+    .select(PRODUCT_COLUMNS)
+    .eq("project_id", projectId)
+    .or(`external_id.in.(${list}),group_id.in.(${list})`)
+    .limit(2000);
+  return pickCatalogMatches((data ?? []) as unknown as (CatalogRow & Record<string, unknown>)[], clean);
+}
 
 // Ссылка на товар ИЛИ категорию внутри ручного JSON-контекста
 // (template.*/context.*) — {"id": "123"} рядом с любыми другими полями.
@@ -377,9 +435,7 @@ export async function expandProductRefs(projectId: string, ctx: Record<string, u
   if (productObjId) ids.add(productObjId);
   if (!ids.size) return ctx;
 
-  const admin = createAdminClient();
-  const { data } = await admin.from("product_feed_items").select(PRODUCT_COLUMNS).eq("project_id", projectId).in("external_id", [...ids]);
-  const byId = new Map((data || []).map((p) => [p.external_id, p]));
+  const byId = await resolveCatalogRefs(projectId, [...ids]);
 
   const out = { ...ctx };
   if (productsArr) out.products = productsArr.map((p) => { const id = refId(p); return id && byId.has(id) ? byId.get(id) : p; });
@@ -388,20 +444,14 @@ export async function expandProductRefs(projectId: string, ctx: Record<string, u
 }
 
 export async function resolveProductContext(projectId: string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const admin = createAdminClient();
   const singleId = typeof payload.product_id === "string" || typeof payload.product_id === "number" ? String(payload.product_id) : null;
   const manyIds = Array.isArray(payload.product_ids) ? payload.product_ids.map(String).slice(0, 20) : [];
   const ids = [...new Set([...(singleId ? [singleId] : []), ...manyIds])];
   if (!ids.length) return {};
 
-  const { data } = await admin
-    .from("product_feed_items")
-    .select("external_id, group_id, name, price, old_price, image_url, url, categories, collections, params")
-    .eq("project_id", projectId)
-    .in("external_id", ids);
-  if (!data?.length) return {};
-
-  const byId = new Map(data.map((p) => [p.external_id, p]));
+  // id из события: вариант или товар, см. pickCatalogMatches
+  const byId = await resolveCatalogRefs(projectId, ids);
+  if (!byId.size) return {};
   const context: Record<string, unknown> = {};
   if (singleId && byId.has(singleId)) context.product = byId.get(singleId);
   if (manyIds.length) {

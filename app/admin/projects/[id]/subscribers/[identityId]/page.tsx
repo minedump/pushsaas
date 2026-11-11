@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureProjectAccessible } from "@/lib/guards";
 import { eventLabel } from "@/lib/siteEventLabels";
+import { resolveCatalogRefs } from "@/lib/productFeed";
 import SubscriberProfile from "./SubscriberProfile";
 
 const HISTORY_LIMIT = 50;
@@ -176,8 +177,9 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
     }
     let productNames: Record<string, string> = {};
     if (productIds.size) {
-      const { data } = await supabase.from("product_feed_items").select("external_id, name").eq("project_id", id).in("external_id", [...productIds]);
-      productNames = Object.fromEntries((data ?? []).map((p) => [p.external_id, p.name]));
+      // id в событии может быть id варианта или id товара: ищем и так, и так
+      const found = await resolveCatalogRefs(id, [...productIds]);
+      productNames = Object.fromEntries([...found].map(([ref, p]) => [ref, p.name]));
     }
     let categoryNames: Record<string, string> = {};
     if (categoryIds.size) {
