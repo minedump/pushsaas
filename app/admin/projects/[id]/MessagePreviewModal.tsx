@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { IconX, IconBellRinging } from "@tabler/icons-react";
 import { Badge, Modal } from "@/app/ui";
 import { applyTemplate } from "@/lib/template";
+import { previewShortLinks } from "@/lib/linkPreview";
 
 export type PreviewChannel = "push" | "sms" | "email";
 
@@ -129,7 +130,7 @@ function PushPreview({ content }: { content: PreviewContent }) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="text-[13px] font-semibold text-[#111] truncate">{content.title || "—"}</div>
-          <div className="text-[12.5px] text-[#444] mt-0.5 whitespace-pre-wrap">{content.body || "—"}</div>
+          <div className="text-[12.5px] text-[#444] mt-0.5 whitespace-pre-wrap">{content.body ? previewShortLinks(content.body).text : "—"}</div>
           {content.image_url && (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={content.image_url} alt="" className="w-full rounded-md mt-2 max-h-40 object-cover" />
@@ -152,11 +153,14 @@ function PushPreview({ content }: { content: PreviewContent }) {
 
 // Мокап SMS — входящий пузырь сообщения, как в мессенджере.
 function SmsPreview({ content }: { content: PreviewContent }) {
+  // ссылки показываем так, как они уйдут получателю: сокращёнными (код условный, настоящий выдаст clck.ru при отправке)
+  const shown = previewShortLinks(content.body || "");
   return (
     <div className="bg-[#e5e5ea] rounded-xl p-4 min-h-[110px] flex flex-col justify-end">
-      <div className="self-start max-w-[85%] bg-white rounded-2xl rounded-bl-sm px-3.5 py-2.5 text-[13.5px] text-[#111] shadow-sm whitespace-pre-wrap">
-        {content.body || "—"}
+      <div className="self-start max-w-[85%] bg-white rounded-2xl rounded-bl-sm px-3.5 py-2.5 text-[13.5px] text-[#111] shadow-sm whitespace-pre-wrap break-words">
+        {content.body ? shown.text : "—"}
       </div>
+      {shown.replaced && <div className="text-[11px] text-[#6b6f78] mt-2">Ссылка условная: при отправке платформа сократит её через clck.ru, код будет другой.</div>}
     </div>
   );
 }
