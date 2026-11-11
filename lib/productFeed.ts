@@ -20,7 +20,11 @@ export type ProductFeedItem = {
   url: string | null;
   categories: string[]; // YML допускает несколько <categoryId> на оффер
   collections: string[]; // несколько <collectionId> на оффер — имена, как и categories
-  params: Record<string, string>; // <param name="…">…</param> + vendor/manufacturer/country_of_origin/weight
+  params: Record<string, string>; // <param name="…">…</param> + vendor/manufacturer/country_of_origin/weight. Набор берётся из фида целиком при каждом обновлении: добавили или убрали свойство у товара, оно так же поменяется в каталоге
+  sku: string | null; // <vendorCode>
+  barcode: string | null; // <barcode>
+  available: boolean; // атрибут available оффера (нет атрибута: в наличии)
+  stock: number | null; // <quantity>/<stock_quantity>, если фид их отдаёт; нет в наличии без остатка: 0
 };
 
 function decodeXmlEntities(s: string): string {
@@ -180,6 +184,11 @@ export function parseYmlFeed(xml: string): ProductFeedItem[] {
     const oldPrice = oldPriceRaw ? Number(oldPriceRaw.replace(",", ".")) : null;
     const categoryIds = extractTagAll(body, "categoryId");
     const collectionIds = extractTagAll(body, "collectionId");
+    const availableAttr = extractAttr(m[1], "available");
+    const available = availableAttr === null ? true : !/^(false|0|no)$/i.test(availableAttr);
+    const stockRaw = extractTag(body, "quantity") ?? extractTag(body, "stock_quantity") ?? extractTag(body, "count");
+    const stockNum = stockRaw !== null ? Math.round(Number(stockRaw.replace(",", "."))) : NaN;
+    const stock = Number.isFinite(stockNum) ? Math.max(0, stockNum) : available ? null : 0;
 
     items.push({
       external_id: id,
@@ -192,6 +201,10 @@ export function parseYmlFeed(xml: string): ProductFeedItem[] {
       categories: categoryIds.map((id) => categoryNames.get(id) || id),
       collections: collectionIds.map((id) => collectionNames.get(id) || id),
       params: extractParams(body),
+      sku: extractTag(body, "vendorCode"),
+      barcode: extractTag(body, "barcode"),
+      available,
+      stock: available ? stock : 0,
     });
   }
   return items;
@@ -272,16 +285,28 @@ export async function refreshProductFeed(projectId: string): Promise<{ ok: boole
 
   const refreshStartedAt = new Date().toISOString();
   for (let i = 0; i < items.length; i += 500) {
-    const chunk = items.slice(i, i + 500).map((it) => ({ project_id: projectId, ...it, updated_at: refreshStartedAt }));
+    // Запись из фида целиком перезаписывает прежнюю: название, артикул, цену, категории, картинку и набор
+    // свойств (params) по id варианта. Так же перезаписывается запись, заведённая по заказу, и она становится
+    // записью из фида. Если товар вернулся в фид после пропажи, он снова доступен.
+    const chunk = items
+      .slice(i, i + 500)
+      .map((it) => ({ project_id: projectId, ...it, source: "feed", archived_at: null, feed_seen_at: refreshStartedAt, updated_at: refreshStartedAt }));
     const { error } = await admin.from("product_feed_items").upsert(chunk, { onConflict: "project_id,external_id" });
     if (error) {
       await admin.from("projects").update({ product_feed_error: error.message }).eq("id", projectId);
       return { ok: false, count: 0, error: error.message };
     }
   }
-  // то, что не тронуло это обновление, — пропало из фида (категории уже
-  // обновлены выше, до skip-проверки — не привязаны к refreshStartedAt).
-  await admin.from("product_feed_items").delete().eq("project_id", projectId).lt("updated_at", refreshStartedAt);
+  // То, что не тронуло это обновление, пропало из фида. Такой товар не удаляется (он может быть в заказах
+  // клиентов): остаток обнуляется, available = false, ставится время пропажи. Записи по заказам (source = 'order')
+  // не затрагиваем: их в фиде и не было.
+  await admin
+    .from("product_feed_items")
+    .update({ available: false, stock: 0, archived_at: refreshStartedAt })
+    .eq("project_id", projectId)
+    .eq("source", "feed")
+    .is("archived_at", null)
+    .lt("feed_seen_at", refreshStartedAt);
 
   await admin
     .from("projects")
@@ -301,7 +326,8 @@ export async function refreshProductFeed(projectId: string): Promise<{ ok: boole
 // у разных магазинов — не гарантированно один и тот же товар).
 export async function clearProductFeed(projectId: string): Promise<void> {
   const admin = createAdminClient();
-  await admin.from("product_feed_items").delete().eq("project_id", projectId);
+  // записи по заказам остаются: они нужны для показа заказов, а фид удаляют, чтобы подключить другой
+  await admin.from("product_feed_items").delete().eq("project_id", projectId).eq("source", "feed");
   await admin
     .from("projects")
     .update({

@@ -11,6 +11,7 @@ import {
   IconPlugConnected,
   IconSettings,
   IconUsers,
+  IconPackage,
   IconSend,
   IconChartBar,
   IconBolt,
@@ -231,6 +232,7 @@ export default function AdminShell({
                       <SidebarButton href={p("/analytics")} label="Аналитика" active={pathname.endsWith("/analytics")} icon={IconChartBar} />
                       <SidebarButton href={p("/campaigns")} label="Рассылки" active={pathname.includes("/campaigns")} icon={IconSend} />
                       <SidebarButton href={p("/subscribers")} label="Подписчики" active={pathname.endsWith("/subscribers")} icon={IconUsers} />
+                      <SidebarButton href={p("/products")} label="Товары" active={pathname.endsWith("/products")} icon={IconPackage} />
                       <SidebarButton href={p("/templates")} label="Шаблоны" active={pathname.endsWith("/templates")} icon={IconTemplate} />
                       <SidebarButton href={p("/media")} label="Файлы" active={pathname.endsWith("/media")} icon={IconPhoto} />
                       <SidebarButton href={p("/automations")} label="Автоматизации" active={pathname.endsWith("/automations")} icon={IconBolt} />

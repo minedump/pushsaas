@@ -9,6 +9,7 @@ import { auditAs } from "@/lib/auditContext";
 import { logWebhookReject } from "@/lib/webhookReject";
 import { parseExternalTime } from "@/lib/datetime";
 import { parseOrderLines, diffOrderLines, type OrderLine } from "@/lib/orderLines";
+import { cacheOrderProducts } from "@/lib/orderCatalog";
 
 // POST /api/v1/attribute — order intake (last-click attribution, when a
 // cookie matches a live campaign, PLUS the merchant's full order stream —
@@ -233,6 +234,8 @@ export async function POST(req: Request) {
   const lines = parseOrderLines(body);
   if (lines) {
     row.items = lines;
+    // товары заказа пополняют общий каталог (неполные записи, пока их не перезапишет фид); сбой не должен ронять приём заказа
+    await cacheOrderProducts(admin, projectId, lines, orderedAt).catch(() => {});
     const prev = ((existing as { items?: OrderLine[] } | null)?.items ?? []) as OrderLine[];
     const prevHistory = ((existing as { item_history?: unknown[] } | null)?.item_history ?? []) as unknown[];
     const changes = existing ? diffOrderLines(prev, lines) : [];
