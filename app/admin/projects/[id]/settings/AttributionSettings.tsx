@@ -235,8 +235,8 @@ export default function AttributionSettings({
 // показываются первые подсказки, остальные находятся вводом, а своё значение можно просто вписать.
 // Системные поля контакта (timezone, ym_client_id) подсказываются вместе с уже существующими доп. полями.
 const SYSTEM_KEY_HINTS = [
-  { value: "timezone", label: "Часовой пояс контакта (системное поле)" },
-  { value: "ym_client_id", label: "ClientID Метрики (системное поле)" },
+  { value: "timezone", label: "Часовой пояс" },
+  { value: "ym_client_id", label: "ClientID Метрики" },
 ];
 
 function FieldMapEditor({
