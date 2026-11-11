@@ -16,7 +16,9 @@ export async function shortenUrl(url: string): Promise<string> {
     const res = await outboundFetch(`https://clck.ru/--?url=${encodeURIComponent(url)}`, { signal: AbortSignal.timeout(6000) });
     if (!res.ok) return url;
     const short = (await res.text()).trim();
-    return short.startsWith("http") ? short : url;
+    // Сокращённая ссылка всегда без «https://»: clck.ru/XXXXXX (14–15 символов вместо 22). Телефон всё равно
+    // делает её кликабельной, а текст короче на 8 символов. Если сервис вернул что-то другое, отдаём исходную ссылку.
+    return /^https?:\/\/clck\.ru\//.test(short) ? short.replace(/^https?:\/\//, "") : url;
   } catch {
     return url;
   }

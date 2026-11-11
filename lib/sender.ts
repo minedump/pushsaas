@@ -216,8 +216,7 @@ async function injectClickTrackingSms(text: string, campaignId: string, token: s
       continue;
     }
     const short = await shortenUrl(tracked);
-    // в SMS ссылку clck.ru отправляем без «https://»: на 8 символов короче, телефон всё равно делает её кликабельной
-    result = result.split(url).join(short.replace(/^https:\/\/clck\.ru\//, "clck.ru/"));
+    result = result.split(url).join(short); // shortenUrl отдаёт ссылку без протокола
   }
   return result;
 }
