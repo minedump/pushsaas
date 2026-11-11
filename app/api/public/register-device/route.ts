@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sha256 } from "@/lib/oidc";
 import { checkRateLimit } from "@/lib/ratelimit";
+import { parseYmClientId } from "@/lib/shopFields";
 
 // Заводит "анонимную" (без push) строку subscribers для устройства, которое
 // ещё не подписалось на push, но уже может быть трекнуто/обогащено —
@@ -32,12 +33,16 @@ function detectPlatform(ua: string): "ios" | "android" | "desktop" | "unknown" {
 }
 
 export async function POST(req: Request) {
-  const { projectId, deviceToken, userAgent, timezone } = (await req.json().catch(() => ({}))) as {
+  const { projectId, deviceToken, userAgent, timezone, ymClientId } = (await req.json().catch(() => ({}))) as {
     projectId?: string;
     deviceToken?: string;
     userAgent?: string;
     timezone?: string;
+    ymClientId?: string;
   };
+  // ClientID Метрики этого браузера (виджет читает его через ym(счётчик, 'getClientID')) —
+  // чтобы устройство без push тоже можно было сопоставить с данными Метрики.
+  const ym = parseYmClientId(ymClientId);
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400, headers: CORS });
 
   const admin = createAdminClient();
@@ -55,11 +60,19 @@ export async function POST(req: Request) {
   if (deviceToken) {
     const { data: existing } = await admin
       .from("subscribers")
-      .select("id")
+      .select("id, attributes")
       .eq("project_id", projectId)
       .eq("device_token_hash", sha256(deviceToken))
       .maybeSingle();
-    if (existing) return NextResponse.json({ ok: true }, { headers: CORS });
+    if (existing) {
+      // Уже известное устройство: только дописываем ClientID Метрики, если его ещё нет или он
+      // изменился. Новых строк не заводим и токен не перевыпускаем.
+      const attrs = (existing.attributes as Record<string, unknown> | null) || {};
+      if (ym && attrs.ym_client_id !== ym) {
+        await admin.from("subscribers").update({ attributes: { ...attrs, ym_client_id: ym } }).eq("id", existing.id);
+      }
+      return NextResponse.json({ ok: true }, { headers: CORS });
+    }
   }
 
   const issuedToken = "pdt_" + crypto.randomBytes(24).toString("hex");
@@ -69,6 +82,7 @@ export async function POST(req: Request) {
     is_active: true,
     device_token_hash: sha256(issuedToken),
   };
+  if (ym) row.attributes = { ym_client_id: ym };
   if (typeof timezone === "string" && timezone.length < 100) {
     try {
       Intl.DateTimeFormat(undefined, { timeZone: timezone });

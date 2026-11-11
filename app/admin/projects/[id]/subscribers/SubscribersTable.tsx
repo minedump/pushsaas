@@ -8,6 +8,7 @@ import {
   IconSearch,
   IconPlayerPlayFilled,
   IconPlayerPauseFilled,
+  IconPlayerStopFilled,
   IconChevronRight,
   IconPencil,
   IconTrash,
@@ -30,7 +31,9 @@ const DEVICE_FILTER_OPTIONS: ComboOption[] = [
 
 // Одно push-устройство контакта — один подписчик может иметь несколько
 // (телефон + десктоп), каждое со своим статусом активности/паузы.
-export type Device = { id: string; platform: string; is_active: boolean; paused: boolean };
+// no_push — у устройства нет push-подписки (нет адреса доставки): его только отслеживают (события
+// виджета, часовой пояс), запустить на него рассылку нельзя, пока человек сам не подпишется.
+export type Device = { id: string; platform: string; is_active: boolean; paused: boolean; no_push?: boolean };
 
 export type Row = {
   // Синтетический ключ ("identity-<uuid>" для контактов, id устройства для
@@ -108,6 +111,10 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
   // "возобновлять", подписка отвалилась на стороне браузера.
   async function toggleDevice(row: Row, device: Device) {
     if (!device.is_active) return;
+    if (device.no_push) {
+      toast("Запустить не получится: устройство не подписано на push. Рассылка заработает сама, когда человек подпишется.", "warn");
+      return;
+    }
     if (!device.paused) {
       const ok = await confirm({
         title: "Приостановить подписку?",
@@ -249,8 +256,9 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     let list = rows;
-    if (deviceFilter === "none") list = list.filter((r) => r.devices.length === 0);
-    else if (deviceFilter === "has") list = list.filter((r) => r.devices.length > 0);
+    // «С устройствами» — только с настоящей push-подпиской; устройства без неё (жёлтая метка) не считаем
+    if (deviceFilter === "none") list = list.filter((r) => !r.devices.some((d) => !d.no_push));
+    else if (deviceFilter === "has") list = list.filter((r) => r.devices.some((d) => !d.no_push));
     if (q) {
       list = list.filter(
         (r) =>
@@ -375,7 +383,14 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
                         <IconChevronRight size={13} stroke={2} className="shrink-0" />
                       </Link>
                     ) : (
-                      r.name || <span className="text-ink-faint">—</span>
+                      // анонимное устройство без контакта: у строки свой id устройства, открывается карточка устройства
+                      <Link
+                        href={`/admin/projects/${projectId}/subscribers/device/${r.id}`}
+                        className="inline-flex items-center gap-1 max-w-full text-ink-muted hover:text-ink hover:underline"
+                      >
+                        <span className="min-w-0 truncate">Без контакта</span>
+                        <IconChevronRight size={13} stroke={2} className="shrink-0" />
+                      </Link>
                     )}
                   </Td>
                   <Td className="font-mono whitespace-nowrap">{r.phone ? `+${r.phone}` : <span className="text-ink-faint">—</span>}</Td>
@@ -421,6 +436,17 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
                   </Td>
                   <Td className="whitespace-nowrap">{formatDateTime(r.created_at, tz)}</Td>
                   <Td className="text-right">
+                    {!r.identityId && (
+                      <div className="flex justify-end gap-1">
+                        <Link
+                          href={`/admin/projects/${projectId}/subscribers/device/${r.id}`}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink transition-colors hover:bg-surface-2"
+                          title="Открыть и изменить"
+                        >
+                          <IconPencil size={15} stroke={1.8} />
+                        </Link>
+                      </div>
+                    )}
                     {r.identityId && (
                       <div className="flex justify-end gap-1">
                         <Link
@@ -466,6 +492,22 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
 function DeviceBadge({ device, onClick }: { device: Device; onClick: () => void }) {
   const label = platformLabel[device.platform] || device.platform;
   const disabled = !device.is_active;
+  // Устройство без push-подписки: жёлтая метка со стопом, клик объясняет, что запуск невозможен
+  if (device.no_push && !disabled) {
+    return (
+      <span className="inline-flex items-center gap-1 font-mono text-[11px] pl-1.5 pr-2.5 py-0.5 rounded-full whitespace-nowrap bg-warn-tint text-warn">
+        <button
+          type="button"
+          onClick={onClick}
+          title={`${label}: нет push-подписки, запустить не получится`}
+          className="flex items-center p-0.5 rounded-full opacity-80 hover:opacity-100 hover:bg-black/10 transition-colors cursor-pointer"
+        >
+          <IconPlayerStopFilled size={10} />
+        </button>
+        {label}
+      </span>
+    );
+  }
   return (
     <span
       title={disabled ? "Устройство отвалилось — нечем возобновлять" : undefined}

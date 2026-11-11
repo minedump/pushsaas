@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { extractWebhookKey } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolvePath } from "@/lib/jsonpath";
-import { upsertContact, applyShopConsent, isTruthyFlag } from "@/lib/identity";
+import { upsertContact, applyShopConsent, isTruthyFlag, addYmClientIds, setIdentityTimezone } from "@/lib/identity";
+import { mapShopFields, type FieldMapRow } from "@/lib/shopFields";
 import { logApiCall } from "@/lib/apiLog";
 import { auditAs } from "@/lib/auditContext";
 import { logWebhookReject } from "@/lib/webhookReject";
@@ -70,7 +71,7 @@ export async function POST(req: Request) {
 
   const { data: project } = await admin
     .from("projects")
-    .select("attribution_cookie_name, attribution_window_days, timezone, client_sms_field")
+    .select("attribution_cookie_name, attribution_window_days, timezone, client_sms_field, order_field_map")
     .eq("id", projectId)
     .maybeSingle();
   if (!project) return NextResponse.json({ error: "invalid key" }, { status: 401 });
@@ -131,6 +132,20 @@ export async function POST(req: Request) {
       .filter(Boolean)
       .join(" ") || undefined;
 
+  // Доп. поля заказа по соответствию из Настроек (поле магазина → поле заказа). Ищем и среди полей заказа,
+  // и среди полей клиента в заказе. Системные ключи (timezone, ym_client_id) уходят в контакт.
+  const orderFieldMap = (Array.isArray((project as { order_field_map?: unknown }).order_field_map) ? (project as { order_field_map: FieldMapRow[] }).order_field_map : []) as FieldMapRow[];
+  const orderFieldLists = [resolvePath(body, "fields_values"), resolvePath(body, "client.fields_values")];
+  const findOrderField = (want: string): Record<string, unknown> | undefined => {
+    for (const list of orderFieldLists) {
+      if (!Array.isArray(list)) continue;
+      const f = (list as Record<string, unknown>[]).find((x) => [x?.handle, x?.name, x?.field_id].some((k) => k != null && String(k).trim().toLowerCase() === want.trim().toLowerCase()));
+      if (f) return f;
+    }
+    return undefined;
+  };
+  const mapped = mapShopFields(orderFieldMap, findOrderField);
+
   let identityId: string | null = null;
   let subscriberId: string | null = null;
   if (rawPhone || rawEmail) {
@@ -177,6 +192,8 @@ export async function POST(req: Request) {
         { sms: rawPhone ? smsFlag : undefined, email: typeof subscribe === "boolean" && rawEmail ? subscribe : undefined },
         { source: "webhook_order", grantOnly: differentAccount }
       );
+      if (mapped.timezone) await setIdentityTimezone(admin, projectId, identityId, mapped.timezone, differentAccount);
+      if (mapped.ymIds.length) await addYmClientIds(admin, projectId, identityId, mapped.ymIds);
       const { data: link } = await admin.from("identity_devices").select("subscriber_id").eq("identity_id", identityId).limit(1).maybeSingle();
       subscriberId = link?.subscriber_id || null;
     }
@@ -196,7 +213,7 @@ export async function POST(req: Request) {
   // вебхуке нет (кука, контакт), не затираем: при повторе без куки заказ не
   // теряет уже найденную рассылку.
   const { data: existing } = orderNumber
-    ? await admin.from("order_attributions").select("id, items, item_history, custom_status, fulfillment_status, status_history").eq("project_id", projectId).eq("order_number", orderNumber).maybeSingle()
+    ? await admin.from("order_attributions").select("id, items, item_history, custom_status, fulfillment_status, status_history, attributes").eq("project_id", projectId).eq("order_number", orderNumber).maybeSingle()
     : { data: null };
   const row: Record<string, unknown> = {
     project_id: projectId,
@@ -239,13 +256,33 @@ export async function POST(req: Request) {
       row.status_history = [...(ex.status_history ?? []), { at: at.toISOString(), from: was, to: now }].slice(-50);
     }
   }
+  // Доп. поля заказа: значения из вебхука поверх уже сохранённых, пустое значение убирает поле,
+  // поля, которых в этом вебхуке нет, не трогаем.
+  if (Object.keys(mapped.custom).length) {
+    const merged = { ...(((existing as { attributes?: Record<string, unknown> } | null)?.attributes) ?? {}) } as Record<string, unknown>;
+    for (const [k, v] of Object.entries(mapped.custom)) {
+      if (v === null) delete merged[k];
+      else merged[k] = v;
+    }
+    row.attributes = merged;
+  }
   if (campaignId) row.campaign_id = campaignId;
   if (cookieVal) row.raw_cookie = cookieVal;
   if (subscriberId) row.subscriber_id = subscriberId;
   if (identityId) row.identity_id = identityId;
   await admin.from("order_attributions").upsert(row, { onConflict: "project_id,order_number" });
 
-  const responseBody = { ok: true, recorded: true, updated: !!existing, campaignId, revenue, isPaid, isCancelled, items: lines ? lines.length : undefined };
+  const responseBody = {
+    ok: true,
+    recorded: true,
+    updated: !!existing,
+    campaignId,
+    revenue,
+    isPaid,
+    isCancelled,
+    items: lines ? lines.length : undefined,
+    ...(mapped.notes.length ? { notes: mapped.notes } : {}),
+  };
   await logApiCall(admin, projectId, "attribute", 200, body, responseBody);
   return NextResponse.json(responseBody);
 }

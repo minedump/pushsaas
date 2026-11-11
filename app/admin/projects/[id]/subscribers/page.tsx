@@ -16,7 +16,7 @@ export default async function SubscribersPage({ params }: { params: Promise<{ id
 
   const { data: subs } = await supabase
     .from("subscribers")
-    .select("id, platform, is_active, created_at")
+    .select("id, platform, is_active, created_at, endpoint")
     .eq("project_id", id)
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -91,7 +91,8 @@ export default async function SubscribersPage({ params }: { params: Promise<{ id
   const anonymousRows: Row[] = [];
   for (const r of base) {
     const identityId = identityIdBySub.get(r.id) ?? null;
-    const device = { id: r.id, platform: r.platform, is_active: r.is_active, paused: pausedIds.has(r.id) };
+    // Нет адреса доставки (endpoint) — устройство только отслеживается, push ему отправить нельзя
+    const device = { id: r.id, platform: r.platform, is_active: r.is_active, paused: pausedIds.has(r.id), no_push: !r.endpoint };
     if (!identityId) {
       anonymousRows.push({
         id: r.id,

@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { syncDeviceToIdentity } from "@/lib/identity";
 import { getOidcContext, issuerFor, signParam, verifyParam, oidcLog, type OidcContext } from "@/lib/oidc";
 import { issueCodeAndRedirect } from "@/lib/oidc-flow";
 import { normalizePhone, maskPhone } from "@/lib/phone";
@@ -828,6 +829,8 @@ export async function POST(req: Request, routeCtx: { params: Promise<{ projectId
         { identity_id: identity.id, subscriber_id: session.device_subscriber_id, last_used_at: new Date().toISOString() },
         { onConflict: "identity_id,subscriber_id" }
       );
+      // что известно об устройстве (ClientID Метрики, часовой пояс), переносим на контакт
+      await syncDeviceToIdentity(admin, projectId, identity.id, session.device_subscriber_id).catch(() => {});
     }
 
     await admin.from("oidc_auth_sessions").update({ identity_id: identity.id, status: "verified" }).eq("id", session.id);

@@ -71,7 +71,7 @@ export default function ExportImport({ projectId }: { projectId: string }) {
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [keyColumn, setKeyColumn] = useState("");
-  const [matchAgainst, setMatchAgainst] = useState<"phone" | "email" | "insales_client_id">("phone");
+  const [matchAgainst, setMatchAgainst] = useState<"phone" | "email" | "insales_client_id" | "ym_client_id">("phone");
   const [createNew, setCreateNew] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -104,6 +104,7 @@ export default function ExportImport({ projectId }: { projectId: string }) {
     if (createNew) parts.push(`создано ${json.created ?? 0}`);
     parts.push(`не найдено ${json.unmatched}`);
     if (json.skipped) parts.push(`пропущено без телефона и email ${json.skipped}`);
+    if (json.deviceOnly) parts.push(`из них только устройств без контакта ${json.deviceOnly}`);
     toast(parts.join(", ").replace(/^./, (c: string) => c.toUpperCase()), "good");
     setOpen(false);
     setCreateNew(false);
@@ -144,11 +145,19 @@ export default function ExportImport({ projectId }: { projectId: string }) {
                   { value: "phone", label: "Телефон подписчика" },
                   { value: "email", label: "Email подписчика" },
                   { value: "insales_client_id", label: "Внешний ID" },
+                  { value: "ym_client_id", label: "UUID метрики" },
                 ]}
                 className="w-full"
               />
             </div>
           </div>
+          {matchAgainst === "ym_client_id" && (
+            <p className="text-[12.5px] text-ink-faint mt-2 mb-0">
+              Ищем контакт, у которого этот ClientID сохранён, или устройство с таким ClientID. В файле можно передать столбцы
+              timezone (часовой пояс, например Europe/Moscow) и ym_client_id (ещё один идентификатор контакта). Если у найденного
+              устройства нет контакта, обновится только его часовой пояс.
+            </p>
+          )}
 
           <div className="mt-4">
             <Checkbox checked={createNew} onChange={setCreateNew} label="Создавать новых" />

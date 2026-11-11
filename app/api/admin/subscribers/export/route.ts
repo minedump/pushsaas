@@ -53,13 +53,13 @@ export async function GET(req: Request) {
 
   const { data: identities } = await admin
     .from("identities")
-    .select("id, phone, email, name, insales_client_id, tags, sms_marketing_active_at, email_marketing_active_at, attributes, created_at")
+    .select("id, phone, email, name, insales_client_id, tags, sms_marketing_active_at, email_marketing_active_at, attributes, timezone, ym_client_ids, created_at")
     .eq("project_id", projectId)
     .order("created_at", { ascending: false });
 
   const { data: allSubs } = await admin
     .from("subscribers")
-    .select("id, platform, is_active, paused, created_at")
+    .select("id, platform, is_active, paused, created_at, timezone, attributes")
     .eq("project_id", projectId);
   const subsById = new Map((allSubs ?? []).map((s) => [s.id, s]));
 
@@ -76,7 +76,7 @@ export async function GET(req: Request) {
 
   const attrKeys = [...new Set((identities ?? []).flatMap((i) => Object.keys((i.attributes as object) || {})))];
   const platformCols = PLATFORMS.flatMap((p) => [`${p}_active`, `${p}_paused`]);
-  const header = ["id", "name", "phone", "email", "insales_client_id", "tags", ...platformCols, "sms_active", "email_active", "created_at", ...attrKeys];
+  const header = ["id", "name", "phone", "email", "insales_client_id", "tags", ...platformCols, "sms_active", "email_active", "created_at", "timezone", "ym_client_ids", ...attrKeys];
 
   const lines = [header.join(";")];
   for (const i of identities ?? []) {
@@ -102,6 +102,8 @@ export async function GET(req: Request) {
       !!i.sms_marketing_active_at,
       !!i.email_marketing_active_at,
       i.created_at,
+      i.timezone || "",
+      ((i.ym_client_ids as string[] | null) ?? []).join("|"),
       ...attrKeys.map((k) => attrs[k]),
     ]
       .map(csvEscape)
@@ -124,6 +126,8 @@ export async function GET(req: Request) {
       false,
       false,
       s.created_at,
+      s.timezone || "",
+      ((s.attributes as Record<string, unknown> | null)?.ym_client_id as string | undefined) || "",
       ...attrKeys.map(() => ""),
     ]
       .map(csvEscape)

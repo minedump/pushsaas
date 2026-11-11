@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { extractWebhookKey } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { upsertContact, logFieldChanges, applyShopConsent, isTruthyFlag } from "@/lib/identity";
+import { upsertContact, logFieldChanges, applyShopConsent, isTruthyFlag, addYmClientIds, setIdentityTimezone } from "@/lib/identity";
+import { mapShopFields, type FieldMapRow } from "@/lib/shopFields";
 import { normalizePhone } from "@/lib/phone";
 import { logApiCall } from "@/lib/apiLog";
 import { auditAs } from "@/lib/auditContext";
@@ -94,14 +95,9 @@ export async function POST(req: Request) {
   if (client.bonus_points != null) attrs.bonus_points = String(client.bonus_points);
   // Доп. поля клиента сохраняем только по соответствию из Настроек (поле магазина → поле контакта).
   // Пустое значение убирает поле у контакта, поля нет в теле вебхука — не трогаем.
-  for (const m of fieldMap) {
-    const handle = String(m?.handle ?? "").trim();
-    const key = String(m?.key ?? "").trim();
-    if (!handle || !key) continue;
-    const f = findField(handle);
-    if (!f) continue;
-    attrs[key] = f.value == null || String(f.value).trim() === "" ? null : String(f.value).trim();
-  }
+  // Системные поля контакта (часовой пояс, ClientID Метрики) разбираются отдельно, остальные уходят в доп. поля.
+  const mapped = mapShopFields(fieldMap as FieldMapRow[], findField);
+  Object.assign(attrs, mapped.custom);
   if (typeof client.registered === "boolean") attrs.shop_registered = client.registered ? "1" : "0";
 
   // Ключи контакта: внешний id клиента магазина (первым) и телефон. Email для поиска не используем:
@@ -199,6 +195,13 @@ export async function POST(req: Request) {
     if (f) wantSms = isTruthyFlag(f.value);
   }
   const consentChanged = await applyShopConsent(admin, projectId, identityId, { sms: wantSms, email: wantEmail }, { source: "webhook", grantOnly: differentAccount });
+
+  // Системные поля из соответствия полей: часовой пояс и ClientID Метрики (у контакта их может быть
+  // несколько, новые дописываются). У другой учётной записи магазина (гость с тем же телефоном)
+  // часовой пояс не перезаписываем.
+  if (mapped.timezone) await setIdentityTimezone(admin, projectId, identityId, mapped.timezone, differentAccount);
+  if (mapped.ymIds.length) await addYmClientIds(admin, projectId, identityId, mapped.ymIds);
+  notes.push(...mapped.notes);
 
   return respond(200, { ok: true, created, updated: !created, consent: consentChanged, ...(notes.length ? { notes } : {}) });
 }

@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { authenticateApiKey, hasScope } from "@/lib/apikey";
 import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { upsertContact } from "@/lib/identity";
+import { upsertContact, setIdentityTimezone, setYmClientIds } from "@/lib/identity";
 import { normalizePhone } from "@/lib/phone";
 import { logApiCall } from "@/lib/apiLog";
+import { parseSystemFields } from "@/lib/shopFields";
 
 function toSubscriber(row: {
   id: string;
@@ -16,6 +17,8 @@ function toSubscriber(row: {
   attributes: Record<string, unknown> | null;
   sms_marketing_active_at: string | null;
   email_marketing_active_at: string | null;
+  timezone?: string | null;
+  ym_client_ids?: string[] | null;
   created_at?: string;
 }) {
   return {
@@ -28,6 +31,8 @@ function toSubscriber(row: {
     attributes: row.attributes || {},
     smsActive: !!row.sms_marketing_active_at,
     emailActive: !!row.email_marketing_active_at,
+    timezone: row.timezone ?? null,
+    ymClientIds: row.ym_client_ids ?? [],
     createdAt: row.created_at,
   };
 }
@@ -52,7 +57,7 @@ export async function GET(req: Request) {
   const admin = createAdminClient();
   const { data, count, error } = await admin
     .from("identities")
-    .select("id, phone, email, name, insales_client_id, tags, attributes, sms_marketing_active_at, email_marketing_active_at, created_at", { count: "exact" })
+    .select("id, phone, email, name, insales_client_id, tags, attributes, sms_marketing_active_at, email_marketing_active_at, timezone, ym_client_ids, created_at", { count: "exact" })
     .eq("project_id", projectId)
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
@@ -62,7 +67,10 @@ export async function GET(req: Request) {
 
 // POST /api/v1/subscribers   (Authorization: Bearer wpk_... | X-Api-Key: wpk_...)
 //
-// { phone?, email?, name?, insalesClientId?, tags?, attributes?, smsActive?, emailActive? }
+// { phone?, email?, name?, insalesClientId?, tags?, attributes?, smsActive?, emailActive?, timezone?, ymClientIds? }
+//
+// timezone — часовой пояс подписчика (IANA, например Europe/Moscow), ymClientIds — ClientID
+// Яндекс.Метрики (массив строк, у человека их может быть несколько).
 //
 // Создаёт НОВОГО подписчика — хотя бы одно из phone/email обязательно.
 // Подписчик с таким же phone (или, если phone не передан, email) уже
@@ -94,6 +102,9 @@ export async function POST(req: Request) {
     emailActive?: boolean;
   };
 
+  const sys = parseSystemFields(body as { timezone?: unknown; ymClientIds?: unknown });
+  if ("error" in sys) return NextResponse.json({ error: sys.error }, { status: 400 });
+
   const normPhone = phone ? normalizePhone(phone) : null;
   const normEmail = email ? email.trim().toLowerCase() : null;
   if (phone && !normPhone) return NextResponse.json({ error: "invalid phone" }, { status: 400 });
@@ -123,6 +134,10 @@ export async function POST(req: Request) {
     smsActive: typeof smsActive === "boolean" ? smsActive : undefined,
     emailActive: typeof emailActive === "boolean" ? emailActive : undefined,
   });
+  if (result.ok) {
+    if (sys.timezone !== undefined) await setIdentityTimezone(admin, projectId, result.id, sys.timezone);
+    if (sys.ymClientIds !== undefined) await setYmClientIds(admin, projectId, result.id, sys.ymClientIds);
+  }
   const httpStatus = result.ok ? 201 : 400;
   const responseBody = result.ok ? { ok: true, id: result.id } : { error: result.error };
   await logApiCall(admin, projectId, "subscribers", httpStatus, body, responseBody);

@@ -193,6 +193,8 @@ export default async function AnalyticsPage({
   const paidSum = orderStats.paid.total;
 
   const widgetStats = computeWidgetStats(widgetEvents ?? []);
+  // Инструкция по установке (iPhone/Android): считаем только показы, то есть сколько раз её открыли
+  const installOpened = (widgetEvents ?? []).filter((r) => r.name === "widget_install_opened").length;
 
   return (
     <main className="max-w-4xl mx-auto">
@@ -343,6 +345,16 @@ export default async function AnalyticsPage({
             </table>
           </div>
         )}
+      </Card>
+
+      {/* install guide */}
+      <Card className="mt-4 sm:mt-8">
+        <div className="text-[13px] text-ink-muted mb-3">Инструкция по установке</div>
+        <div className="flex items-baseline gap-2">
+          <span className="text-2xl font-semibold tabular-nums">{installOpened}</span>
+          <span className="text-sm text-ink-muted">показов за период</span>
+        </div>
+        <p className="text-[12.5px] text-ink-faint mt-2 mb-0">Сколько раз посетители открыли окно с инструкцией «Как установить на экран».</p>
       </Card>
     </main>
   );

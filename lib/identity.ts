@@ -661,3 +661,76 @@ export async function applyShopConsent(
   if (JSON.stringify(next) !== JSON.stringify(prev)) await admin.from("identities").update({ insales_flags: next }).eq("id", identityId);
   return changed;
 }
+
+// ClientID Метрики у контакта: список, у человека их может быть несколько (по одному на браузер или
+// устройство). Новые id дописываем к имеющимся, старые не теряем. В историю карточки идёт строка
+// ym_client_ids (было → стало).
+export async function addYmClientIds(
+  admin: ReturnType<typeof createAdminClient>,
+  projectId: string,
+  identityId: string,
+  ids: string[]
+): Promise<boolean> {
+  const clean = [...new Set(ids.map((s) => s.trim()).filter(Boolean))];
+  if (!clean.length) return false;
+  const { data } = await admin.from("identities").select("ym_client_ids").eq("id", identityId).eq("project_id", projectId).maybeSingle();
+  if (!data) return false;
+  const current = ((data as { ym_client_ids?: string[] | null }).ym_client_ids ?? []) as string[];
+  const next = [...current, ...clean.filter((id) => !current.includes(id))];
+  if (next.length === current.length) return false;
+  await admin.from("identities").update({ ym_client_ids: next, updated_at: new Date().toISOString() }).eq("id", identityId);
+  logFieldChanges(admin, projectId, identityId, { ym_client_ids: current }, { ym_client_ids: next });
+  return true;
+}
+
+// Часовой пояс контакта. onlyIfEmpty — не перезаписывать уже известный (данные с устройства
+// не должны затирать пояс, который пришёл из магазина или файла).
+export async function setIdentityTimezone(
+  admin: ReturnType<typeof createAdminClient>,
+  projectId: string,
+  identityId: string,
+  timezone: string | null,
+  onlyIfEmpty = false
+): Promise<boolean> {
+  const { data } = await admin.from("identities").select("timezone").eq("id", identityId).eq("project_id", projectId).maybeSingle();
+  if (!data) return false;
+  const current = (data as { timezone?: string | null }).timezone ?? null;
+  if (current === timezone || (onlyIfEmpty && current)) return false;
+  await admin.from("identities").update({ timezone, updated_at: new Date().toISOString() }).eq("id", identityId);
+  logFieldChanges(admin, projectId, identityId, { timezone: current }, { timezone });
+  return true;
+}
+
+// Устройство привязали к контакту (вход по коду, identify): переносим на контакт то, что известно
+// об устройстве, — ClientID Метрики и часовой пояс (последний только если у контакта пояса ещё нет).
+export async function syncDeviceToIdentity(
+  admin: ReturnType<typeof createAdminClient>,
+  projectId: string,
+  identityId: string,
+  subscriberId: string
+): Promise<void> {
+  const { data } = await admin.from("subscribers").select("attributes, timezone").eq("id", subscriberId).maybeSingle();
+  if (!data) return;
+  const row = data as { attributes: Record<string, unknown> | null; timezone: string | null };
+  const ym = row.attributes?.ym_client_id;
+  if (typeof ym === "string" && ym) await addYmClientIds(admin, projectId, identityId, [ym]);
+  if (row.timezone) await setIdentityTimezone(admin, projectId, identityId, row.timezone, true);
+}
+
+// Список ClientID Метрики целиком (API и ручная правка): заменяет прежний список, поэтому лишний id
+// можно убрать. Вебхуки и импорт только дописывают (addYmClientIds).
+export async function setYmClientIds(
+  admin: ReturnType<typeof createAdminClient>,
+  projectId: string,
+  identityId: string,
+  ids: string[]
+): Promise<boolean> {
+  const next = [...new Set(ids.map((s) => s.trim()).filter(Boolean))];
+  const { data } = await admin.from("identities").select("ym_client_ids").eq("id", identityId).eq("project_id", projectId).maybeSingle();
+  if (!data) return false;
+  const current = ((data as { ym_client_ids?: string[] | null }).ym_client_ids ?? []) as string[];
+  if (current.length === next.length && current.every((id) => next.includes(id))) return false;
+  await admin.from("identities").update({ ym_client_ids: next, updated_at: new Date().toISOString() }).eq("id", identityId);
+  logFieldChanges(admin, projectId, identityId, { ym_client_ids: current }, { ym_client_ids: next });
+  return true;
+}

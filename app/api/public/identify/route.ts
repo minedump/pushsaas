@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizePhone } from "@/lib/phone";
 import { checkRateLimit } from "@/lib/ratelimit";
 import { sha256 } from "@/lib/oidc";
+import { syncDeviceToIdentity } from "@/lib/identity";
 
 // Public "enrich my own subscription" endpoint — called by the merchant's OWN
 // theme JS (window.sendera.identify({phone,email,name,insales_client_id})),
@@ -159,6 +160,8 @@ export async function POST(req: Request) {
     }
     await admin.from("identity_devices").update({ last_used_at: new Date().toISOString() }).eq("identity_id", identity.id).eq("subscriber_id", subscriberId);
     identityRefreshed = true;
+    // ClientID Метрики этого устройства — тоже свойство человека (у него их может быть несколько)
+    await syncDeviceToIdentity(admin, projectId, identity.id, subscriberId).catch(() => {});
 
     // name — как и insales_client_id, свойство ЧЕЛОВЕКА, а не устройства, но
     // подстановка {name} в тексте кампаний читает subscribers.attributes (на

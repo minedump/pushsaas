@@ -20,6 +20,7 @@ export default function AttributionSettings({
   clientWebhookUrl,
   initialSmsField,
   initialFieldMap,
+  initialOrderFieldMap,
   knownKeys,
   initial,
 }: {
@@ -29,6 +30,7 @@ export default function AttributionSettings({
   clientWebhookUrl: string;
   initialSmsField: string;
   initialFieldMap: { handle: string; key: string }[];
+  initialOrderFieldMap: { handle: string; key: string }[];
   knownKeys: string[];
   initial: { cookieName: string; windowDays: number };
 }) {
@@ -39,6 +41,7 @@ export default function AttributionSettings({
   const [smsField, setSmsField] = useState(initialSmsField);
   const [smsBusy, setSmsBusy] = useState(false);
   const [fieldMap, setFieldMap] = useState<{ handle: string; key: string }[]>(initialFieldMap);
+  const [orderFieldMap, setOrderFieldMap] = useState<{ handle: string; key: string }[]>(initialOrderFieldMap);
 
   async function saveSmsField() {
     if (smsBusy) return;
@@ -64,7 +67,7 @@ export default function AttributionSettings({
     const res = await fetch("/api/admin/attribution/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, cookieName: s.cookieName, windowDays: s.windowDays }),
+      body: JSON.stringify({ projectId, cookieName: s.cookieName, windowDays: s.windowDays, orderFieldMap }),
     });
     setBusy(false);
     if (!res.ok) {
@@ -134,6 +137,24 @@ export default function AttributionSettings({
               → «Список cookies, которые требуется сохранить при оформлении заказа».
             </p>
           </div>
+
+          <div>
+            <div className={labelCls}>Доп. поля заказа → поля заказа</div>
+            <FieldMapEditor
+              rows={orderFieldMap}
+              setRows={setOrderFieldMap}
+              listId="order-known-keys"
+              keyOptions={[]}
+              handlePlaceholder="Поле в магазине (handle), например delivery_type"
+              keyPlaceholder="Поле заказа: впишите название, например delivery_type"
+            />
+            <p className={hintCls}>
+              Значения этих полей сохраняются в заказе и видны в окне «Подробнее» заказа. Поле можно взять из полей заказа или из
+              полей клиента в заказе. Если впишете справа <b>ym_client_id</b> или <b>timezone</b>, значение сохранится не в заказе, а
+              у контакта: ClientID Метрики (у контакта их может быть несколько, новые добавляются) или часовой пояс, например
+              Europe/Moscow.
+            </p>
+          </div>
         </div>
 
         <div className="flex gap-2 mt-4">
@@ -167,49 +188,19 @@ export default function AttributionSettings({
 
           <div>
             <div className={labelCls}>Доп. поля клиента → поля контакта</div>
-            <datalist id="client-known-keys">
-              {knownKeys.map((k) => (
-                <option key={k} value={k} />
-              ))}
-            </datalist>
-            <div className="grid gap-2">
-              {fieldMap.map((row, i) => (
-                <div key={i} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] items-center">
-                  <Input
-                    aria-label="Поле в магазине"
-                    value={row.handle}
-                    onChange={(e) => setFieldMap(fieldMap.map((r, j) => (j === i ? { ...r, handle: e.target.value } : r)))}
-                    placeholder="Поле в магазине (handle), например birthday"
-                  />
-                  <Input
-                    aria-label="Поле контакта"
-                    list="client-known-keys"
-                    value={row.key}
-                    onChange={(e) => setFieldMap(fieldMap.map((r, j) => (j === i ? { ...r, key: e.target.value } : r)))}
-                    placeholder="Поле контакта: выберите или впишите новое"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setFieldMap(fieldMap.filter((_, j) => j !== i))}
-                    className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-ink-muted hover:text-ink transition-colors hover:bg-surface-2 cursor-pointer"
-                    aria-label="Убрать поле"
-                    title="Убрать поле"
-                  >
-                    <IconTrash size={16} stroke={1.8} />
-                  </button>
-                </div>
-              ))}
-            </div>
-            <div className={fieldMap.length ? "mt-2" : ""}>
-              <Button variant="secondary" size="sm" onClick={() => setFieldMap([...fieldMap, { handle: "", key: "" }])}>
-                <IconPlus size={14} stroke={2} />
-                Добавить доп. поле
-              </Button>
-            </div>
+            <FieldMapEditor
+              rows={fieldMap}
+              setRows={setFieldMap}
+              listId="client-known-keys"
+              keyOptions={knownKeys}
+              handlePlaceholder="Поле в магазине (handle), например birthday"
+              keyPlaceholder="Поле контакта: выберите или впишите новое"
+            />
             <p className={hintCls}>
               Укажите имя поля в магазине и поле контакта у нас, куда сохранять его значение. Поле у нас можно выбрать из уже
               существующих или вписать новое: оно появится у контактов при первой записи значения. Поля, которых здесь нет, не
-              сохраняются.
+              сохраняются. Системные поля контакта: <b>timezone</b> (часовой пояс, например Europe/Moscow) и <b>ym_client_id</b>{" "}
+              (ClientID Метрики, у контакта их может быть несколько, новые добавляются).
             </p>
           </div>
         </div>
@@ -219,5 +210,77 @@ export default function AttributionSettings({
         </div>
       </Card>
     </section>
+  );
+}
+
+// Строки соответствия «поле в магазине → поле у нас». Системные поля контакта (timezone, ym_client_id)
+// подсказываются в списке вместе с уже существующими доп. полями.
+const SYSTEM_KEY_HINTS = [
+  { value: "timezone", label: "Часовой пояс контакта (системное поле)" },
+  { value: "ym_client_id", label: "ClientID Метрики (системное поле)" },
+];
+
+function FieldMapEditor({
+  rows,
+  setRows,
+  listId,
+  keyOptions,
+  handlePlaceholder,
+  keyPlaceholder,
+}: {
+  rows: { handle: string; key: string }[];
+  setRows: (rows: { handle: string; key: string }[]) => void;
+  listId: string;
+  keyOptions: string[];
+  handlePlaceholder: string;
+  keyPlaceholder: string;
+}) {
+  return (
+    <>
+      <datalist id={listId}>
+        {SYSTEM_KEY_HINTS.map((o) => (
+          <option key={o.value} value={o.value} label={o.label} />
+        ))}
+        {keyOptions
+          .filter((k) => !SYSTEM_KEY_HINTS.some((o) => o.value === k))
+          .map((k) => (
+            <option key={k} value={k} />
+          ))}
+      </datalist>
+      <div className="grid gap-2">
+        {rows.map((row, i) => (
+          <div key={i} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] items-center">
+            <Input
+              aria-label="Поле в магазине"
+              value={row.handle}
+              onChange={(e) => setRows(rows.map((r, j) => (j === i ? { ...r, handle: e.target.value } : r)))}
+              placeholder={handlePlaceholder}
+            />
+            <Input
+              aria-label="Поле у нас"
+              list={listId}
+              value={row.key}
+              onChange={(e) => setRows(rows.map((r, j) => (j === i ? { ...r, key: e.target.value } : r)))}
+              placeholder={keyPlaceholder}
+            />
+            <button
+              type="button"
+              onClick={() => setRows(rows.filter((_, j) => j !== i))}
+              className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-ink-muted hover:text-ink transition-colors hover:bg-surface-2 cursor-pointer"
+              aria-label="Убрать поле"
+              title="Убрать поле"
+            >
+              <IconTrash size={16} stroke={1.8} />
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className={rows.length ? "mt-2" : ""}>
+        <Button variant="secondary" size="sm" onClick={() => setRows([...rows, { handle: "", key: "" }])}>
+          <IconPlus size={14} stroke={2} />
+          Добавить доп. поле
+        </Button>
+      </div>
+    </>
   );
 }

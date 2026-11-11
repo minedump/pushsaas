@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { signParam, sha256 } from "@/lib/oidc";
+import { syncDeviceToIdentity } from "@/lib/identity";
 
 // Привязка «телефон ↔ устройство» после отскока со страницы входа.
 // Виджет на домене магазина видит ?pss_link=<ticket> и вызывает этот роут,
@@ -78,6 +79,8 @@ export async function POST(req: Request) {
         { identity_id: t.identity_id, subscriber_id: subscriberId, last_used_at: new Date().toISOString() },
         { onConflict: "identity_id,subscriber_id" }
       );
+      const { data: sess } = await admin.from("identities").select("project_id").eq("id", t.identity_id).maybeSingle();
+      if (sess?.project_id) await syncDeviceToIdentity(admin, sess.project_id, t.identity_id, subscriberId).catch(() => {});
     }
     if (t.session_id) {
       continueUrl = `${base}/oidc/${projectId}/continue?sid=${t.session_id}&sig=${signParam(t.session_id)}`;

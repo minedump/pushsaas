@@ -223,6 +223,8 @@ const SUBSCRIBER_FULL_FIELDS: ApiField[] = [
   { name: "attributes", type: "object", description: "Произвольные доп. поля." },
   { name: "smsActive", type: "boolean", description: "Согласие на SMS-рассылки." },
   { name: "emailActive", type: "boolean", description: "Согласие на email-рассылки." },
+  { name: "timezone", type: "string | null", description: "Часовой пояс подписчика (IANA, например Europe/Moscow) или null, если не задан." },
+  { name: "ymClientIds", type: "string[]", description: "ClientID Яндекс.Метрики подписчика (их может быть несколько: по одному на браузер или устройство)." },
   { name: "createdAt", type: "string", description: "ISO-дата создания." },
 ];
 const SUBSCRIBER_LIST_ITEM_FIELDS: ApiField[] = [
@@ -715,7 +717,7 @@ export const API_GROUPS: ApiGroup[] = [
           },
         ],
         responseExample:
-          '{\n  "subscribers": [\n    {\n      "id": "d4e2...", "phone": "79991234567", "email": null, "name": "Иван",\n      "insalesClientId": null, "tags": ["vip"], "attributes": {},\n      "smsActive": true, "emailActive": false, "createdAt": "2026-08-25T09:00:00Z"\n    }\n  ],\n  "total": 1\n}',
+          '{\n  "subscribers": [\n    {\n      "id": "d4e2...", "phone": "79991234567", "email": null, "name": "Иван",\n      "insalesClientId": null, "tags": ["vip"], "attributes": {},\n      "smsActive": true, "emailActive": false,\n      "timezone": "Europe/Moscow", "ymClientIds": ["1736912345678901234"], "createdAt": "2026-08-25T09:00:00Z"\n    }\n  ],\n  "total": 1\n}',
         responseFields: SUBSCRIBER_LIST_ITEM_FIELDS,
         errors: [AUTH_ERROR],
       },
@@ -733,8 +735,10 @@ export const API_GROUPS: ApiGroup[] = [
           { name: "attributes", type: "object", description: "Произвольные доп. поля {ключ: значение} — доступны в Liquid как атрибуты подписчика." },
           { name: "smsActive", type: "boolean", description: "Включить (true) / явно выключить (false) SMS-рассылку." },
           { name: "emailActive", type: "boolean", description: "То же для email." },
+          { name: "timezone", type: "string", description: 'Часовой пояс подписчика, название IANA, например "Europe/Moscow". Используется окном отправки «по часовому поясу получателя». Неверное название — ошибка 400.' },
+          { name: "ymClientIds", type: "string[]", description: "ClientID Яндекс.Метрики подписчика (строки из букв, цифр, «_» и «-», 5–64 символа). Позволяют сопоставить подписчика с данными Метрики и обновлять его по импорту «UUID метрики»." },
         ],
-        bodyExample: '{ "phone": "+79991234567", "name": "Иван", "smsActive": true, "emailActive": true }',
+        bodyExample: '{ "phone": "+79991234567", "name": "Иван", "smsActive": true, "emailActive": true, "timezone": "Europe/Moscow", "ymClientIds": ["1736912345678901234"] }',
         responseExample: '{ "ok": true, "id": "d4e2..." }',
         responseFields: [
           { name: "ok", type: "boolean", description: "true — подписчик создан." },
@@ -744,7 +748,7 @@ export const API_GROUPS: ApiGroup[] = [
           "smsActive/emailActive — единственный способ дать согласие на канал для сегментных маркетинговых рассылок; отдельно от подтверждения телефона/почты входом по коду.",
         errors: [
           AUTH_ERROR,
-          { code: 400, description: "Ни phone, ни email не переданы, или один из них некорректного формата." },
+          { code: 400, description: "Ни phone, ни email не переданы, или один из них некорректного формата, или некорректные timezone / ymClientIds." },
           { code: 409, description: "Подписчик с таким phone (или email) уже существует — тело содержит id найденного, редактируйте его через PUT." },
         ],
       },
@@ -754,7 +758,7 @@ export const API_GROUPS: ApiGroup[] = [
         summary:
           "Полная карточка одного подписчика по его id — телефон, email, имя, теги, произвольные атрибуты и согласие на SMS/Email-рассылки. Используйте, чтобы проверить текущее состояние согласия или атрибутов конкретного человека перед адресной отправкой.",
         responseExample:
-          '{\n  "id": "d4e2...", "phone": "79991234567", "email": null, "name": "Иван",\n  "insalesClientId": null, "tags": ["vip"], "attributes": {},\n  "smsActive": true, "emailActive": false, "createdAt": "2026-08-25T09:00:00Z"\n}',
+          '{\n  "id": "d4e2...", "phone": "79991234567", "email": null, "name": "Иван",\n  "insalesClientId": null, "tags": ["vip"], "attributes": {},\n  "smsActive": true, "emailActive": false,\n  "timezone": "Europe/Moscow", "ymClientIds": ["1736912345678901234"], "createdAt": "2026-08-25T09:00:00Z"\n}',
         responseFields: SUBSCRIBER_FULL_FIELDS,
         errors: [AUTH_ERROR, { code: 404, description: "Подписчик не найден." }],
       },
@@ -771,15 +775,17 @@ export const API_GROUPS: ApiGroup[] = [
           { name: "attributes", type: "object", description: "Доп. поля {ключ: значение} — мёрж по ключу, значение null удаляет ключ." },
           { name: "smsActive", type: "boolean", description: "Включить (true) / явно выключить (false) SMS-рассылку." },
           { name: "emailActive", type: "boolean", description: "То же для email." },
+          { name: "timezone", type: "string | null", description: 'Часовой пояс (название IANA, например "Europe/Moscow"); null или пустая строка очищает.' },
+          { name: "ymClientIds", type: "string[]", description: "ClientID Яндекс.Метрики — переданный список заменяет прежний целиком (чтобы лишний id можно было убрать); не передан — не меняется." },
         ],
-        bodyExample: '{ "emailActive": false }',
+        bodyExample: '{ "emailActive": false, "timezone": "Asia/Yekaterinburg" }',
         responseExample: '{ "ok": true, "id": "d4e2..." }',
         responseFields: [
           { name: "ok", type: "boolean", description: "true — подписчик обновлён." },
           { name: "id", type: "string", description: "id отредактированного подписчика (тот же, что в пути запроса)." },
         ],
         responseNote: "phone/email — оба сразу пустыми передать нельзя (нужен хотя бы один), ни один не передан — оба остаются прежними.",
-        errors: [AUTH_ERROR, { code: 404, description: "Подписчик не найден." }, { code: 400, description: "И phone, и email переданы пустыми одновременно." }],
+        errors: [AUTH_ERROR, { code: 404, description: "Подписчик не найден." }, { code: 400, description: "И phone, и email переданы пустыми одновременно, или некорректные timezone / ymClientIds." }],
       },
     ],
   },

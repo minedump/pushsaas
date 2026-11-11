@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
 import { auditAs } from "@/lib/auditContext";
-import { updateContact } from "@/lib/identity";
+import { updateContact, setIdentityTimezone, setYmClientIds } from "@/lib/identity";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { parseSystemFields } from "@/lib/shopFields";
 import { writeAudit } from "@/lib/audit";
 
 export async function POST(req: Request, { params }: { params: Promise<{ identityId: string }> }) {
@@ -24,6 +26,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ identit
   if (access.user) auditAs(access.user.id);
   if (!access.ok) return NextResponse.json({ error: "Нет доступа" }, { status: access.status });
 
+  // часовой пояс (IANA) и ClientID Метрики (список заменяется целиком): не переданы — не трогаем
+  const sys = parseSystemFields(body as { timezone?: unknown; ymClientIds?: unknown });
+  if ("error" in sys) {
+    const msg = sys.error.startsWith("invalid timezone")
+      ? "Часовой пояс: укажите название IANA, например Europe/Moscow"
+      : "UUID метрики: 5–64 символа, буквы, цифры, «_» и «-», несколько через запятую";
+    return NextResponse.json({ error: msg }, { status: 400 });
+  }
+
   const result = await updateContact(projectId, identityId, {
     phone: phone?.trim() || null,
     email: email?.trim() || null,
@@ -35,6 +46,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ identit
     attributes: attributes && typeof attributes === "object" ? attributes : undefined,
   });
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+  const admin = createAdminClient();
+  if (sys.timezone !== undefined) await setIdentityTimezone(admin, projectId, identityId, sys.timezone);
+  if (sys.ymClientIds !== undefined) await setYmClientIds(admin, projectId, identityId, sys.ymClientIds);
   await writeAudit({
     projectId,
     entity: "subscriber",

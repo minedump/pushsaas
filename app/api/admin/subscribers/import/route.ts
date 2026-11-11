@@ -3,7 +3,8 @@ import { assertProjectAccess } from "@/lib/auth";
 import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizePhone } from "@/lib/phone";
-import { logFieldChanges, upsertContact } from "@/lib/identity";
+import { logFieldChanges, upsertContact, addYmClientIds, setIdentityTimezone } from "@/lib/identity";
+import { parseTimezone, parseYmClientId, parseYmClientIds } from "@/lib/shopFields";
 import { writeAudit } from "@/lib/audit";
 
 const PLATFORMS = ["ios", "android", "desktop", "unknown"] as const;
@@ -57,8 +58,8 @@ export async function POST(req: Request) {
   if (!projectId || !keyColumn || !matchAgainst || !Array.isArray(rows) || !rows.length) {
     return NextResponse.json({ error: "projectId, keyColumn, matchAgainst, rows required" }, { status: 400 });
   }
-  if (matchAgainst !== "phone" && matchAgainst !== "email" && matchAgainst !== "insales_client_id") {
-    return NextResponse.json({ error: "Сопоставление возможно только по телефону, email или внешнему ID" }, { status: 400 });
+  if (matchAgainst !== "phone" && matchAgainst !== "email" && matchAgainst !== "insales_client_id" && matchAgainst !== "ym_client_id") {
+    return NextResponse.json({ error: "Сопоставление возможно только по телефону, email, внешнему ID или UUID метрики" }, { status: 400 });
   }
 
   const access = await assertProjectAccess(projectId);
@@ -70,6 +71,7 @@ export async function POST(req: Request) {
   let unmatched = 0;
   let created = 0;
   let skipped = 0;
+  let deviceOnly = 0; // найдено только устройство без контакта (по UUID метрики): обновлён часовой пояс устройства
 
   for (const row of rows.slice(0, 5000)) {
     const rawKey = (row[keyColumn] || "").trim();
@@ -80,6 +82,8 @@ export async function POST(req: Request) {
 
     const identityPatch: Record<string, unknown> = {};
     const extra: Record<string, string> = {};
+    let rowTimezone: string | null = null; // часовой пояс из файла (IANA), пишется контакту и найденным по UUID метрики устройствам
+    const rowYmIds: string[] = []; // ClientID Метрики из файла: добавляются к контакту
     const pausePatch: Partial<Record<(typeof PLATFORMS)[number], boolean>> = {};
     for (const [k, v] of Object.entries(row)) {
       if (k === keyColumn || v === "" || READONLY_COLUMNS.has(k)) continue;
@@ -99,6 +103,11 @@ export async function POST(req: Request) {
           .split("|")
           .map((t) => t.trim().toLowerCase())
           .filter(Boolean);
+      } else if (k === "timezone") {
+        rowTimezone = parseTimezone(v);
+        if (rowTimezone) identityPatch.timezone = rowTimezone;
+      } else if (k === "ym_client_id" || k === "ym_client_ids") {
+        rowYmIds.push(...parseYmClientIds(v));
       } else if (k === "sms_active") {
         identityPatch.sms_marketing_active_at = isTruthy(v) ? new Date().toISOString() : null;
       } else if (k === "email_active") {
@@ -116,10 +125,31 @@ export async function POST(req: Request) {
       insales_client_id: string | null;
       tags: string[] | null;
       attributes: Record<string, unknown> | null;
+      timezone: string | null;
     };
-    const SNAPSHOT_COLS = "id, name, phone, email, insales_client_id, tags, attributes";
+    const SNAPSHOT_COLS = "id, name, phone, email, insales_client_id, tags, attributes, timezone";
     let identity: IdentitySnapshot | null = null;
-    if (matchAgainst === "phone") {
+    let ymKey: string | null = null; // ClientID из ключевого столбца (сопоставление по UUID метрики)
+    let ymDeviceIds: string[] = []; // устройства с этим ClientID
+    if (matchAgainst === "ym_client_id") {
+      ymKey = parseYmClientId(rawKey);
+      if (ymKey) {
+        // 1) контакт, у которого этот id сохранён; 2) контакт, к которому привязано устройство с этим id;
+        // 3) устройство без контакта (обновим только его)
+        const { data: byList } = await admin.from("identities").select(SNAPSHOT_COLS).eq("project_id", projectId).contains("ym_client_ids", [ymKey]).limit(1);
+        identity = ((byList as IdentitySnapshot[] | null) ?? [])[0] ?? null;
+        const { data: devs } = await admin.from("subscribers").select("id").eq("project_id", projectId).eq("attributes->>ym_client_id", ymKey);
+        ymDeviceIds = (devs ?? []).map((d) => d.id as string);
+        if (!identity && ymDeviceIds.length) {
+          const { data: link } = await admin.from("identity_devices").select("identity_id").in("subscriber_id", ymDeviceIds).limit(1);
+          const linkedId = (link ?? [])[0]?.identity_id as string | undefined;
+          if (linkedId) {
+            const { data } = await admin.from("identities").select(SNAPSHOT_COLS).eq("id", linkedId).maybeSingle();
+            identity = (data as IdentitySnapshot | null) ?? null;
+          }
+        }
+      }
+    } else if (matchAgainst === "phone") {
       const phone = normalizePhone(rawKey);
       if (phone) {
         const { data } = await admin.from("identities").select(SNAPSHOT_COLS).eq("project_id", projectId).eq("phone", phone).maybeSingle();
@@ -139,6 +169,14 @@ export async function POST(req: Request) {
     }
 
     if (!identity) {
+      // Нашлось только устройство с этим UUID метрики, контакта у него нет: обновляем его часовой пояс.
+      // Остальные столбцы относятся к контакту, а контакта нет.
+      if (matchAgainst === "ym_client_id" && ymDeviceIds.length) {
+        if (rowTimezone) await admin.from("subscribers").update({ timezone: rowTimezone }).in("id", ymDeviceIds);
+        matched++;
+        deviceOnly++;
+        continue;
+      }
       // «Создавать новых»: контакт не найден по ключу — заводим его из строки файла.
       // Нужен телефон или email: из ключа или из столбцов phone/email. Согласия только из
       // sms_active/email_active; приветственные автоматизации не запускаем (согласие уже
@@ -157,7 +195,7 @@ export async function POST(req: Request) {
         const attrs: Record<string, string | null> = {};
         for (const [k, v] of Object.entries(row)) {
           if (v === "" || READONLY_COLUMNS.has(k) || PAUSE_COLUMNS.has(k)) continue;
-          if (["name", "phone", "email", "insales_client_id", "insalesClientId", "tags", "sms_active", "email_active"].includes(k) || k === keyColumn) continue;
+          if (["name", "phone", "email", "insales_client_id", "insalesClientId", "tags", "sms_active", "email_active", "timezone", "ym_client_id", "ym_client_ids"].includes(k) || k === keyColumn) continue;
           attrs[k] = v;
         }
         const newTags = String(row["tags"] || "")
@@ -175,6 +213,11 @@ export async function POST(req: Request) {
           emailActive: row["email_active"] !== undefined && row["email_active"] !== "" ? isTruthy(row["email_active"]) : undefined,
           skipWelcome: true,
         });
+        if (res.ok) {
+          // системные поля из файла: ClientID Метрики (в том числе из ключевого столбца) и часовой пояс
+          await addYmClientIds(admin, projectId, res.id, [...(ymKey ? [ymKey] : []), ...rowYmIds]);
+          if (rowTimezone) await setIdentityTimezone(admin, projectId, res.id, rowTimezone);
+        }
         if (res.ok && res.created) created++;
         else if (res.ok) matched++; // нашёлся по другому полю (например, по телефону) — обновлён
         else {
@@ -211,7 +254,7 @@ export async function POST(req: Request) {
       // затронутые этой строкой файла (пустые ячейки уже отфильтрованы выше).
       const before: Record<string, unknown> = {};
       const after: Record<string, unknown> = {};
-      for (const key of ["name", "phone", "email", "insales_client_id", "tags"] as const) {
+      for (const key of ["name", "phone", "email", "insales_client_id", "tags", "timezone"] as const) {
         if (key in identityPatch) {
           before[key] = identity[key];
           after[key] = identityPatch[key];
@@ -225,6 +268,11 @@ export async function POST(req: Request) {
       }
       logFieldChanges(admin, projectId, identity.id, before, after);
     }
+
+    // ClientID Метрики из файла (и ключевого столбца) добавляются к контакту, прежние не теряются
+    await addYmClientIds(admin, projectId, identity.id, [...(ymKey ? [ymKey] : []), ...rowYmIds]);
+    // Часовой пояс из файла при сопоставлении по UUID метрики получают и устройства с этим id
+    if (rowTimezone && ymDeviceIds.length) await admin.from("subscribers").update({ timezone: rowTimezone }).in("id", ymDeviceIds);
 
     if (Object.keys(pausePatch).length) {
       const { data: linkedSubs } = await admin
@@ -240,6 +288,6 @@ export async function POST(req: Request) {
     }
   }
 
-  await writeAudit({ projectId, entity: "subscribers", action: "import", changes: { matched, unmatched, created, skipped, matchAgainst, createNew: !!createNew } });
-  return NextResponse.json({ ok: true, matched, unmatched, created, skipped });
+  await writeAudit({ projectId, entity: "subscribers", action: "import", changes: { matched, unmatched, created, skipped, deviceOnly, matchAgainst, createNew: !!createNew } });
+  return NextResponse.json({ ok: true, matched, unmatched, created, skipped, deviceOnly });
 }

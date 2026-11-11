@@ -2,31 +2,11 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureProjectAccessible } from "@/lib/guards";
+import { eventLabel } from "@/lib/siteEventLabels";
 import SubscriberProfile from "./SubscriberProfile";
 
 const HISTORY_LIMIT = 50;
 
-// Человеко-читаемые подписи для сырых имён трекинг-событий (window.sendera.event) —
-// см. EventTrackingDocs.tsx, тот же список принципов.
-const EVENT_LABEL: Record<string, string> = {
-  cart_updated: "Обновил корзину",
-  favorite_updated: "Обновил избранное",
-  product_viewed: "Посмотрел товар",
-  category_viewed: "Посмотрел категорию",
-  checkout_started: "Начал оформление",
-  widget_button_shown: "Показ кнопки подписки",
-  widget_button_clicked: "Клик по кнопке подписки",
-  widget_button_dismissed: "Закрыл кнопку подписки",
-  widget_prompt_shown: "Показ плашки подписки",
-  widget_prompt_clicked: "Клик «Разрешить» на плашке",
-  widget_prompt_dismissed: "Закрыл плашку подписки",
-};
-function eventLabel(name: string): string {
-  if (EVENT_LABEL[name]) return EVENT_LABEL[name];
-  if (name.endsWith("_added")) return `Добавил в «${name.slice(0, -6)}»`;
-  if (name.endsWith("_removed")) return `Убрал из «${name.slice(0, -8)}»`;
-  return `Событие «${name}»`;
-}
 // Подставляем название товара/категории вместо сырого id из фида, где
 // получится — иначе показываем id как есть (например если фид не подключён).
 function eventDetail(payload: Record<string, unknown>, productNames: Record<string, string>, categoryNames: Record<string, string>): string {
@@ -52,7 +32,7 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
   const { data: identity } = await supabase
     .from("identities")
     .select(
-      "id, phone, email, name, insales_client_id, tags, attributes, sms_marketing_active_at, email_marketing_active_at, phone_verified_at, email_verified_at, timezone, created_at"
+      "id, phone, email, name, insales_client_id, tags, attributes, sms_marketing_active_at, email_marketing_active_at, phone_verified_at, email_verified_at, timezone, ym_client_ids, created_at"
     )
     .eq("id", identityId)
     .eq("project_id", id)
@@ -66,7 +46,7 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
   const deviceIds = (links ?? []).map((l) => l.subscriber_id);
   let devices: { id: string; platform: string; is_active: boolean; paused: boolean; created_at: string; attributes: Record<string, unknown> | null }[] = [];
   if (deviceIds.length) {
-    const { data } = await supabase.from("subscribers").select("id, platform, is_active, paused, created_at, attributes").in("id", deviceIds);
+    const { data } = await supabase.from("subscribers").select("id, platform, is_active, paused, created_at, attributes, endpoint, timezone").in("id", deviceIds);
     devices = data ?? [];
   }
 
@@ -147,7 +127,7 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
   // подписку), поэтому запрос больше не завязан на deviceIds.
   const { data: orderRows } = await supabase
     .from("order_attributions")
-    .select("id, order_number, revenue, is_paid, paid_amount, created_at, ordered_at, is_cancelled, fulfillment_status, custom_status, status_history, campaign_id, items, item_history, campaigns(title, internal_title)")
+    .select("id, order_number, revenue, is_paid, paid_amount, created_at, ordered_at, is_cancelled, fulfillment_status, custom_status, status_history, campaign_id, items, item_history, attributes, campaigns(title, internal_title)")
     .eq("project_id", id)
     .eq("identity_id", identityId)
     .order("ordered_at", { ascending: false, nullsFirst: false })

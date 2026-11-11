@@ -253,15 +253,38 @@ function widget(
     if(deviceTokenPromise) return deviceTokenPromise;
     var timezone = null;
     try { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch(e){}
-    deviceTokenPromise = fetch(API + "/api/public/register-device", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ projectId: PROJECT_ID, userAgent: navigator.userAgent, timezone: timezone })
+    // ClientID Метрики сохраняем сразу при заведении устройства: так устройство без push можно
+    // сопоставить с данными Метрики (getYmClientId не ждёт дольше 1.5 с и не бросает).
+    deviceTokenPromise = getYmClientId().then(function(ym){
+      if(ym){ try { localStorage.setItem("pss_ym_" + PROJECT_ID, ym); } catch(e){} }
+      return fetch(API + "/api/public/register-device", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ projectId: PROJECT_ID, userAgent: navigator.userAgent, timezone: timezone, ymClientId: ym })
+      });
     }).then(function(r){ return r.json(); }).then(function(d){
       if(d && d.deviceToken){ try { localStorage.setItem(DT_KEY, d.deviceToken); } catch(e){} return d.deviceToken; }
       return null;
     }).catch(function(){ return null; });
     return deviceTokenPromise;
   }
+
+  // Устройство уже известно (токен есть), а ClientID Метрики на нём ещё не сохранён или изменился:
+  // дописываем его один раз на значение. Новых записей это не создаёт: сервер только обновляет
+  // уже существующую строку по токену.
+  (function syncYmClientId(){
+    var dt = deviceToken();
+    if(!dt || !YM_COUNTER_ID || BLOCKED) return;
+    getYmClientId().then(function(ym){
+      if(!ym) return;
+      var k = "pss_ym_" + PROJECT_ID, last = null;
+      try { last = localStorage.getItem(k); } catch(e){}
+      if(last === ym) return;
+      fetch(API + "/api/public/register-device", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ projectId: PROJECT_ID, deviceToken: dt, ymClientId: ym })
+      }).then(function(r){ if(r.ok){ try { localStorage.setItem(k, ym); } catch(e){} } }).catch(function(){});
+    });
+  })();
   // Токен заводится только по требованию (первое событие, identify или возврат
   // со страницы входа) — просто загрузка страницы анонимных записей не создаёт.
 

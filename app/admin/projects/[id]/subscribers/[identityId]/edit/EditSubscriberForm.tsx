@@ -15,6 +15,8 @@ type Identity = {
   sms_marketing_active_at: string | null;
   email_marketing_active_at: string | null;
   attributes: Record<string, unknown> | null;
+  timezone: string | null;
+  ym_client_ids: string[] | null;
 };
 
 export default function EditSubscriberForm({
@@ -34,6 +36,9 @@ export default function EditSubscriberForm({
   const [email, setEmail] = useState(identity.email || "");
   const [insalesClientId, setInsalesClientId] = useState(identity.insales_client_id || "");
   const [tags, setTags] = useState<string[]>(identity.tags || []);
+  const [timezone, setTimezone] = useState(identity.timezone || "");
+  // ClientID Метрики: у человека их может быть несколько, вводятся через запятую
+  const [ymIds, setYmIds] = useState((identity.ym_client_ids ?? []).join(", "));
   const [smsActive, setSmsActive] = useState(!!identity.sms_marketing_active_at);
   const [emailActive, setEmailActive] = useState(!!identity.email_marketing_active_at);
   // Доп. поля — набор ключей, встречавшихся хотя бы у одного контакта
@@ -76,6 +81,8 @@ export default function EditSubscriberForm({
         emailActive,
         tags,
         attributes,
+        timezone: timezone.trim(),
+        ymClientIds: ymIds.split(/[\s,;|]+/).filter(Boolean),
       }),
     });
     const json = await res.json();
@@ -140,6 +147,16 @@ export default function EditSubscriberForm({
         <div>
           <Label>Теги</Label>
           <TagEditor tags={tags} onChange={setTags} />
+        </div>
+        <div>
+          <Label>Часовой пояс</Label>
+          <Input value={timezone} onChange={(e) => setTimezone(e.target.value)} placeholder="Europe/Moscow" />
+          <p className="text-[12.5px] text-ink-faint mt-1.5 mb-0">Название IANA. Нужен для окна отправки «по часовому поясу получателя». Пустое значение очищает.</p>
+        </div>
+        <div>
+          <Label>UUID метрики</Label>
+          <Input value={ymIds} onChange={(e) => setYmIds(e.target.value)} placeholder="ClientID Яндекс.Метрики, несколько через запятую" className="font-mono" />
+          <p className="text-[12.5px] text-ink-faint mt-1.5 mb-0">У человека их может быть несколько (по одному на браузер или устройство). Список заменяется целиком.</p>
         </div>
 
         <div>

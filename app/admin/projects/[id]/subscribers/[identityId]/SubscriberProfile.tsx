@@ -24,9 +24,10 @@ type Identity = {
   phone_verified_at: string | null;
   email_verified_at: string | null;
   timezone: string | null;
+  ym_client_ids: string[] | null;
   created_at: string;
 };
-type DeviceRow = { id: string; platform: string; is_active: boolean; paused: boolean; created_at: string; attributes: Record<string, unknown> | null };
+type DeviceRow = { id: string; platform: string; is_active: boolean; paused: boolean; created_at: string; attributes: Record<string, unknown> | null; endpoint?: string | null; timezone?: string | null };
 type ChannelEventRow = { id: number; channel: string; active: boolean; contact: string | null; created_at: string; source?: string | null };
 type FieldChangeRow = { id: number; field: string; old_value: string | null; new_value: string | null; created_at: string; actor: string | null };
 type RecipientRow = {
@@ -46,7 +47,7 @@ type SiteEventRow = { id: string; label: string; detail: string; created_at: str
 const platformLabel: Record<string, string> = { ios: "iPhone", android: "Android", desktop: "Desktop", unknown: "—" };
 const channelLabel: Record<string, string> = { push: "Push", sms: "SMS", email: "Email" };
 const statusLabel: Record<string, string> = { delivered: "доставлено", failed: "ошибка" };
-const fieldLabel: Record<string, string> = { name: "Имя", phone: "Телефон", email: "Email", insales_client_id: "Внешний ID", tags: "Теги" };
+const fieldLabel: Record<string, string> = { name: "Имя", phone: "Телефон", email: "Email", insales_client_id: "Внешний ID", tags: "Теги", timezone: "Часовой пояс", ym_client_ids: "UUID метрики" };
 
 function displayField(field: string): string {
   if (field.startsWith("attr:")) return `Доп. поле «${field.slice(5)}»`;
@@ -60,7 +61,7 @@ function fmt(d: string, tz: string) {
 type HistoryEntry =
   | { kind: "channel"; key: string; created_at: string; channel: string; active: boolean; contact: string | null; source: string | null }
   | { kind: "field"; key: string; created_at: string; field: string; old_value: string | null; new_value: string | null; actor: string | null }
-  | { kind: "device"; key: string; created_at: string; platform: string; is_active: boolean; paused: boolean; ymClientId: string | undefined };
+  | { kind: "device"; key: string; created_at: string; platform: string; is_active: boolean; paused: boolean; noPush: boolean; ymClientId: string | undefined };
 
 export default function SubscriberProfile({
   projectId,
@@ -155,7 +156,12 @@ export default function SubscriberProfile({
   // ClientID Яндекс.Метрики — пишется на устройство при подписке (см.
   // «Номер счётчика Метрики» в Настройках), поэтому берём с первого
   // устройства, у которого он есть, а не с самого контакта.
-  const ymClientId = devices.find((d) => d.attributes?.ym_client_id)?.attributes?.ym_client_id as string | undefined;
+  // У человека их может быть несколько: сохранённые на контакте (из вебхуков, файла, входа) и на каждом устройстве.
+  const ymClientIds = [
+    ...new Set([...(identity.ym_client_ids ?? []), ...devices.map((d) => d.attributes?.ym_client_id).filter((v): v is string => typeof v === "string" && !!v)]),
+  ];
+  // Часовой пояс контакта; если у контакта его нет, показываем пояс устройства (определяется браузером).
+  const deviceTimezone = devices.find((d) => d.timezone)?.timezone ?? null;
 
   const history: HistoryEntry[] = [
     ...channelEvents.map((e) => ({ kind: "channel" as const, key: `c${e.id}`, created_at: e.created_at, channel: e.channel, active: e.active, contact: e.contact, source: e.source ?? null })),
@@ -167,6 +173,7 @@ export default function SubscriberProfile({
       platform: d.platform,
       is_active: d.is_active,
       paused: d.paused,
+      noPush: !d.endpoint,
       ymClientId: d.attributes?.ym_client_id as string | undefined,
     })),
   ]
@@ -227,14 +234,15 @@ export default function SubscriberProfile({
                 Внешний ID: <span className="font-mono text-ink">{identity.insales_client_id}</span>
               </div>
             )}
-            {identity.timezone && (
+            {(identity.timezone || deviceTimezone) && (
               <div>
-                Часовой пояс: <span className="font-mono text-ink">{identity.timezone}</span>
+                Часовой пояс: <span className="font-mono text-ink">{identity.timezone || deviceTimezone}</span>
+                {!identity.timezone && <span className="text-ink-faint"> (по устройству)</span>}
               </div>
             )}
-            {ymClientId && (
-              <div title="ClientID Яндекс.Метрики">
-                UUID метрики: <span className="font-mono text-ink">{ymClientId}</span>
+            {ymClientIds.length > 0 && (
+              <div title="ClientID Яндекс.Метрики: у человека их может быть несколько">
+                UUID метрики: <span className="font-mono text-ink break-all">{ymClientIds.join(", ")}</span>
               </div>
             )}
             {attrKeys.map((k) => (
@@ -511,8 +519,8 @@ export default function SubscriberProfile({
                             <Badge tone="accent">Устройство: {platformLabel[h.platform] || h.platform}</Badge>
                           </Td>
                           <Td className="text-ink-muted truncate max-w-[280px]">
-                            <Badge tone={!h.is_active ? "bad" : h.paused ? "warn" : "good"} dot>
-                              {!h.is_active ? "отвалилось" : h.paused ? "на паузе" : "активно"}
+                            <Badge tone={!h.is_active ? "bad" : h.noPush || h.paused ? "warn" : "good"} dot>
+                              {!h.is_active ? "отвалилось" : h.noPush ? "нет push-подписки" : h.paused ? "на паузе" : "активно"}
                             </Badge>
                             {h.ymClientId && (
                               <span className="ml-1.5 font-mono text-[11.5px]" title="ClientID Яндекс.Метрики">

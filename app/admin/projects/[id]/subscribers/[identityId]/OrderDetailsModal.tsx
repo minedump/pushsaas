@@ -21,6 +21,8 @@ export type OrderRow = {
   campaign_id: string | null;
   items: unknown;
   item_history: unknown;
+  // доп. поля заказа из вебхука магазина (по соответствию в Настройках)
+  attributes?: Record<string, unknown> | null;
   campaigns: { title: string; internal_title?: string | null } | null;
 };
 
@@ -116,6 +118,20 @@ export function OrderDetailsModal({ order: o, tz, onClose }: { order: OrderRow; 
             <div>{formatDateTime(o.ordered_at || o.created_at, tz)}</div>
           </div>
         </div>
+
+        {o.attributes && Object.keys(o.attributes).length > 0 && (
+          <div>
+            <div className="text-[12px] font-medium text-ink-muted mb-1.5">Доп. поля заказа</div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 text-[13px]">
+              {Object.entries(o.attributes).map(([k, v]) => (
+                <div key={k} className="min-w-0">
+                  <div className="text-[11px] text-ink-muted mb-0.5 truncate">{k}</div>
+                  <div className="break-words">{String(v)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div>
           <div className="text-[12px] font-medium text-ink-muted mb-1.5">Состав заказа</div>
