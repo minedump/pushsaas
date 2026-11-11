@@ -55,7 +55,7 @@ function FeedStructureDocsModal({ onClose }: { onClose: () => void }) {
     </categories>
     <offers>
       <offer id="2335267761" group_id="1920349057" available="true">
-        <name>Брюки классические (S / Чёрный)</name>
+        <name>Брюки классические</name>
         <vendorCode>1B7PT01002786BLC0</vendorCode>
         <barcode>2000000530970</barcode>
         <quantity>3</quantity>
@@ -64,8 +64,8 @@ function FeedStructureDocsModal({ onClose }: { onClose: () => void }) {
         <picture>https://site.ru/img/123.jpg</picture>
         <url>https://site.ru/product/123</url>
         <categoryId>2</categoryId>
+        <param name="Цвет">Чёрный</param>
         <param name="Размер">S</param>
-        <param name="Цвет товара">Чёрный</param>
         <vendor>Бренд</vendor>
       </offer>
     </offers>
@@ -87,9 +87,14 @@ function FeedStructureDocsModal({ onClose }: { onClose: () => void }) {
               <code className="font-mono">product_id</code> передавайте id варианта (см. «Как работать с контекстом» у шаблона);
             </li>
             <li>
-              <code className="font-mono">{"<name>"}</code> — название варианта целиком, вместе с опциями, как его видит покупатель, например
-              «Брюки классические (S / Чёрный)» (если имени нет, берётся <code className="font-mono">{"<vendor>"}</code> +{" "}
-              <code className="font-mono">{"<model>"}</code>).
+              <code className="font-mono">{"<name>"}</code> — название <b>товара</b> без свойств варианта, одно и то же у всех его вариантов,
+              например «Брюки классические» (если имени нет, берётся <code className="font-mono">{"<vendor>"}</code> +{" "}
+              <code className="font-mono">{"<model>"}</code>). Свойства варианта (цвет, размер, рост) отдавайте тегами{" "}
+              <code className="font-mono">{"<param>"}</code>: полное название платформа собирает сама, это название товара и в скобках значения
+              всех <code className="font-mono">{"<param>"}</code> через «/» в порядке фида, например «Брюки классические (Чёрный/S)». Появился
+              новый <code className="font-mono">{"<param>"}</code> (скажем, рост), он добавится в скобки при ближайшем обновлении фида. Полное
+              название показывается в заказах, в разделе «Товары» и в рассылках для конкретного варианта; для товара целиком (по id товара)
+              берётся название без скобок.
             </li>
           </ul>
           <p className="m-0 mt-1.5">

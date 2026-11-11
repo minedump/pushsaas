@@ -7,7 +7,6 @@ export type OrderLine = {
   product_id: string | null;
   variant_id: string | null;
   sku: string | null;
-  barcode?: string | null;
   title: string;
   quantity: number;
   price: number; // цена за единицу после скидки
@@ -46,7 +45,6 @@ export function parseOrderLines(body: unknown): OrderLine[] | null {
       product_id: str(x.product_id),
       variant_id: str(x.variant_id),
       sku: str(x.sku),
-      barcode: str(x.barcode),
       title: String(x.title ?? "Товар").slice(0, 300),
       quantity,
       price,

@@ -7,11 +7,13 @@ import { IconSearch, IconX, IconPackage } from "@tabler/icons-react";
 import { Badge, Card, Input, Pagination } from "@/app/ui";
 import { CustomSelect, type ComboOption } from "@/app/ui/CustomSelect";
 import { formatDateTime } from "@/lib/datetime";
+import { catalogFullName } from "@/lib/catalogName";
 
 export type ProductRow = {
   external_id: string;
   group_id: string | null;
   name: string;
+  variant_label: string | null;
   sku: string | null;
   barcode: string | null;
   price: number | null;
@@ -171,12 +173,13 @@ export default function ProductsView({
                         )}
                       </div>
                       <div className="min-w-0 max-w-[340px]">
+                        {/* название товара из фида и в скобках свойства варианта через «/» */}
                         {r.url ? (
                           <a href={r.url} target="_blank" rel="noreferrer" className="font-medium text-ink hover:underline">
-                            {r.name}
+                            {catalogFullName(r.name, r.variant_label)}
                           </a>
                         ) : (
-                          <span className="font-medium">{r.name}</span>
+                          <span className="font-medium">{catalogFullName(r.name, r.variant_label)}</span>
                         )}
                         {params.length > 0 && (
                           <div className="text-[12px] text-ink-muted mt-0.5">{params.slice(0, 4).map(([k, v]) => `${k}: ${v}`).join(" · ")}</div>

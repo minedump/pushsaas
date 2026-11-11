@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureProjectAccessible } from "@/lib/guards";
 import { eventLabel } from "@/lib/siteEventLabels";
 import { resolveCatalogRefs } from "@/lib/productFeed";
+import { catalogFullName } from "@/lib/catalogName";
 import SubscriberProfile from "./SubscriberProfile";
 
 const HISTORY_LIMIT = 50;
@@ -151,6 +152,20 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
     campaigns: { title: string; internal_title: string | null } | null;
   }[];
 
+  // Названия позиций заказов берём из каталога (фида) по id варианта: он главнее названия, записанного в заказе при оформлении.
+  // Нет варианта в каталоге: остаётся название из заказа.
+  const orderVariantIds = new Set<string>();
+  for (const o of orders) {
+    if (!Array.isArray(o.items)) continue;
+    for (const it of o.items as { variant_id?: string | null }[]) if (it?.variant_id) orderVariantIds.add(String(it.variant_id));
+  }
+  let catalogNames: Record<string, string> = {};
+  if (orderVariantIds.size) {
+    const { data: cat } = await createAdminClient().from("product_feed_items").select("external_id, name, variant_label").eq("project_id", id).in("external_id", [...orderVariantIds]);
+    // полное название: название товара из фида и в скобках свойства варианта через «/»
+    catalogNames = Object.fromEntries((cat ?? []).map((c) => [c.external_id as string, catalogFullName(c.name as string, c.variant_label as string | null)]));
+  }
+
   // Сырые трекинг-события (window.sendera.event) с сайта — то, что реально
   // накапливает списки избранного/корзины/просмотров (см. ingest_event,
   // migration 0070). subscriber_id тут — не обязательно активная push-
@@ -204,6 +219,7 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
       fieldChanges={fieldChangesWithActor}
       recipients={recipientRows.slice(0, HISTORY_LIMIT)}
       orders={orders}
+      catalogNames={catalogNames}
       siteEvents={siteEvents}
       historyLimit={HISTORY_LIMIT}
     />

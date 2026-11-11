@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchPublicUrl } from "@/lib/ssrfGuard";
+import { catalogFullName } from "@/lib/catalogName";
 
 // Товарный фид в формате YML (Яндекс.Маркет) — тот же формат, что отдаёт
 // штатный экспорт InSales по умолчанию. Разбор — ручной, регулярками: формат
@@ -21,6 +22,7 @@ export type ProductFeedItem = {
   categories: string[]; // YML допускает несколько <categoryId> на оффер
   collections: string[]; // несколько <collectionId> на оффер — имена, как и categories
   params: Record<string, string>; // <param name="…">…</param> + vendor/manufacturer/country_of_origin/weight. Набор берётся из фида целиком при каждом обновлении: добавили или убрали свойство у товара, оно так же поменяется в каталоге
+  variant_label: string | null; // значения <param> в порядке фида через «/»: «Черный/S». Полное название варианта: name + «(подпись)»
   sku: string | null; // <vendorCode>
   barcode: string | null; // <barcode>
   available: boolean; // атрибут available оффера (нет атрибута: в наличии)
@@ -80,6 +82,20 @@ function extractParams(block: string): Record<string, string> {
     if (v && !(tag in params)) params[tag] = v;
   }
   return params;
+}
+
+// Значения <param> оффера в порядке, в котором они идут в фиде, через «/» («Черный/S»). Свойства вариантов
+// (цвет, размер, рост) в фиде отдаются именно как <param>; порядок важен, поэтому берётся из xml, а не из params
+// (jsonb не хранит порядок ключей).
+function extractVariantLabel(block: string): string | null {
+  const values: string[] = [];
+  const re = /<param\s+[^>]*>([\s\S]*?)<\/param>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(block))) {
+    const v = decodeXmlEntities(m[1]).trim();
+    if (v) values.push(v);
+  }
+  return values.length ? values.join("/") : null;
 }
 
 // Быстрая проверка "это вообще похоже на YML" — до полного разбора тысяч
@@ -201,6 +217,7 @@ export function parseYmlFeed(xml: string): ProductFeedItem[] {
       categories: categoryIds.map((id) => categoryNames.get(id) || id),
       collections: collectionIds.map((id) => collectionNames.get(id) || id),
       params: extractParams(body),
+      variant_label: extractVariantLabel(body),
       sku: extractTag(body, "vendorCode"),
       barcode: extractTag(body, "barcode"),
       available,
@@ -270,7 +287,16 @@ export async function refreshProductFeed(projectId: string): Promise<{ ok: boole
   }
 
   const sourceDate = extractFeedDate(xml);
+  // Дата фида не изменилась: товары не разбираем заново, но только если каталог при этом заполнен и у всех
+  // записей из фида есть порядковый номер (иначе после очистки каталога или обновления платформы он бы так и
+  // оставался пустым или неполным, пока фид не поменяется).
+  let catalogComplete = false;
   if (sourceDate && sourceDate === project?.product_feed_source_date) {
+    const { count: have } = await admin.from("product_feed_items").select("external_id", { count: "exact", head: true }).eq("project_id", projectId).eq("source", "feed");
+    const { count: noPos } = await admin.from("product_feed_items").select("external_id", { count: "exact", head: true }).eq("project_id", projectId).eq("source", "feed").is("feed_position", null);
+    catalogComplete = (have ?? 0) > 0 && (noPos ?? 0) === 0;
+  }
+  if (sourceDate && sourceDate === project?.product_feed_source_date && catalogComplete) {
     // фид не обновлялся с прошлого раза — только отмечаем момент проверки.
     await admin.from("projects").update({ product_feed_updated_at: new Date().toISOString(), product_feed_error: null }).eq("id", projectId);
     return { ok: true, count: project?.product_feed_item_count || 0, skipped: true };
@@ -288,13 +314,25 @@ export async function refreshProductFeed(projectId: string): Promise<{ ok: boole
     // Запись из фида целиком перезаписывает прежнюю: название, артикул, цену, категории, картинку и набор
     // свойств (params) по id варианта. Так же перезаписывается запись, заведённая по заказу, и она становится
     // записью из фида. Если товар вернулся в фид после пропажи, он снова доступен.
-    const chunk = items
-      .slice(i, i + 500)
-      .map((it) => ({ project_id: projectId, ...it, source: "feed", archived_at: null, feed_seen_at: refreshStartedAt, updated_at: refreshStartedAt }));
-    const { error } = await admin.from("product_feed_items").upsert(chunk, { onConflict: "project_id,external_id" });
-    if (error) {
-      await admin.from("projects").update({ product_feed_error: error.message }).eq("id", projectId);
-      return { ok: false, count: 0, error: error.message };
+    // Артикул и штрихкод, которых фид не отдаёт, не затираем: запись по заказу могла получить их из заказа.
+    // Поэтому строки без этих полей уходят отдельными запросами без этих колонок.
+    const groups = new Map<string, Record<string, unknown>[]>();
+    for (const [k, it] of items.slice(i, i + 500).entries()) {
+      const { sku, barcode, ...rest } = it;
+      // feed_position: порядок оффера в фиде, по нему выбирается «первый вариант» товара
+      const row: Record<string, unknown> = { project_id: projectId, ...rest, source: "feed", archived_at: null, feed_seen_at: refreshStartedAt, updated_at: refreshStartedAt, feed_position: i + k };
+      if (sku) row.sku = sku;
+      if (barcode) row.barcode = barcode;
+      const signature = `${sku ? "s" : "-"}${barcode ? "b" : "-"}`;
+      if (!groups.has(signature)) groups.set(signature, []);
+      groups.get(signature)!.push(row);
+    }
+    for (const chunk of groups.values()) {
+      const { error } = await admin.from("product_feed_items").upsert(chunk, { onConflict: "project_id,external_id" });
+      if (error) {
+        await admin.from("projects").update({ product_feed_error: error.message }).eq("id", projectId);
+        return { ok: false, count: 0, error: error.message };
+      }
     }
   }
   // То, что не тронуло это обновление, пропало из фида. Такой товар не удаляется (он может быть в заказах
@@ -347,7 +385,7 @@ export async function clearProductFeed(projectId: string): Promise<void> {
 // пустой объект, шаблон просто не подставит {{ product }}. Кастомные
 // атрибуты доступны через {{ product.params["Название"] }} (Liquid не умеет
 // {{ product.params.Название }} с пробелом в ключе — только через скобки).
-const PRODUCT_COLUMNS = "external_id, group_id, name, sku, price, old_price, image_url, url, categories, collections, params, available, stock, archived_at";
+const PRODUCT_COLUMNS = "external_id, group_id, name, variant_label, sku, price, old_price, image_url, url, categories, collections, params, available, stock, archived_at, feed_position";
 
 // Поиск товара по id из события или ручного контекста. Сайт может прислать id ВАРИАНТА (external_id
 // каталога, в InSales variant_id) или id ТОВАРА (group_id, product_id): учитываем оба.
@@ -356,10 +394,14 @@ const PRODUCT_COLUMNS = "external_id, group_id, name, sku, price, old_price, ima
 //    (нет доступных: первый по названию) и отдаём все варианты товара в product.variants, чтобы шаблон
 //    мог показать их (matched_by: "product");
 //  · если id есть и как вариант, и как товар, побеждает вариант.
+export { catalogFullName };
+
 export type CatalogRow = {
   external_id: string;
   group_id: string | null;
   name: string;
+  variant_label?: string | null;
+  feed_position?: number | null;
   available?: boolean | null;
   archived_at?: string | null;
   price?: number | null;
@@ -367,7 +409,25 @@ export type CatalogRow = {
   image_url?: string | null;
   params?: Record<string, string> | null;
 };
-export type CatalogMatch<T extends CatalogRow> = T & { matched_by: "variant" | "product"; variants?: Pick<CatalogRow, "external_id" | "name" | "price" | "available" | "url" | "image_url" | "params">[] };
+export type CatalogMatch<T extends CatalogRow> = T & { title: string; matched_by: "variant" | "product"; variants?: Pick<CatalogRow, "external_id" | "name" | "price" | "available" | "url" | "image_url" | "params">[] };
+
+// Ссылка на товар без параметра, который выбирает конкретный вариант (InSales: ?variant_id=…). Остальные
+// параметры (например utm) остаются. Нужна, когда в письмо идёт товар целиком, а не его вариант.
+export function stripVariantQuery(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const isVariantKey = (k: string) => /^(variant_id|variantid|variant)$/i.test(k);
+  try {
+    const u = new URL(url);
+    for (const k of [...u.searchParams.keys()]) if (isVariantKey(k)) u.searchParams.delete(k);
+    return u.toString();
+  } catch {
+    // не абсолютная ссылка: убираем параметр вручную
+    const [path, rest = ""] = url.split("?");
+    const [query, hash] = rest.split("#");
+    const kept = query.split("&").filter((p) => p && !isVariantKey(p.split("=")[0]));
+    return path + (kept.length ? `?${kept.join("&")}` : "") + (hash ? `#${hash}` : "");
+  }
+}
 
 export function pickCatalogMatches<T extends CatalogRow>(rows: T[], ids: string[]): Map<string, CatalogMatch<T>> {
   const out = new Map<string, CatalogMatch<T>>();
@@ -375,16 +435,26 @@ export function pickCatalogMatches<T extends CatalogRow>(rows: T[], ids: string[
   for (const id of ids) {
     const variant = rows.find((r) => r.external_id === id);
     if (variant) {
-      out.set(id, { ...variant, matched_by: "variant" });
+      // конкретный вариант: название полное, с его свойствами в скобках; title это название товара без свойств
+      out.set(id, { ...variant, title: variant.name, name: catalogFullName(variant.name, variant.variant_label), matched_by: "variant" });
       continue;
     }
-    const siblings = rows.filter((r) => r.group_id === id).sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    // варианты товара в порядке фида (нет позиции: по названию)
+    const siblings = rows
+      .filter((r) => r.group_id === id)
+      .sort((a, b) => (a.feed_position ?? 1e9) - (b.feed_position ?? 1e9) || a.name.localeCompare(b.name, "ru"));
     if (!siblings.length) continue;
+    // данные берём из первого варианта (первого доступного; доступных нет: просто первого), а ссылка ведёт на товар
+    // без выбранного варианта
     const chosen = siblings.find(isFree) ?? siblings[0];
+    // название: просто название товара, без свойств варианта (какой именно вариант, неизвестно)
     out.set(id, {
       ...chosen,
+      title: chosen.name,
+      variant_label: null,
+      url: stripVariantQuery(chosen.url),
       matched_by: "product",
-      variants: siblings.slice(0, 30).map((s) => ({ external_id: s.external_id, name: s.name, price: s.price ?? null, available: s.available ?? null, url: s.url ?? null, image_url: s.image_url ?? null, params: s.params ?? null })),
+      variants: siblings.slice(0, 30).map((s) => ({ external_id: s.external_id, name: catalogFullName(s.name, s.variant_label), price: s.price ?? null, available: s.available ?? null, url: s.url ?? null, image_url: s.image_url ?? null, params: s.params ?? null })),
     });
   }
   return out;

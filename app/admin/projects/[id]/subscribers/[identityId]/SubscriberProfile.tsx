@@ -71,6 +71,7 @@ export default function SubscriberProfile({
   fieldChanges,
   recipients,
   orders,
+  catalogNames,
   siteEvents,
   historyLimit,
 }: {
@@ -81,6 +82,8 @@ export default function SubscriberProfile({
   fieldChanges: FieldChangeRow[];
   recipients: RecipientRow[];
   orders: OrderRow[];
+  // название варианта из каталога (фида) по id варианта: показывается в составе заказа вместо названия из заказа
+  catalogNames: Record<string, string>;
   siteEvents: SiteEventRow[];
   historyLimit: number;
 }) {
@@ -545,7 +548,7 @@ export default function SubscriberProfile({
       {previewRow?.rendered_content && (
         <MessagePreviewModal label={previewRow.campaigns?.internal_title || previewRow.campaigns?.title || "Превью"} content={recipientPreviewContent(previewRow)} onClose={() => setPreviewRow(null)} />
       )}
-      {orderModal && <OrderDetailsModal order={orderModal} tz={tz} onClose={() => setOrderModal(null)} />}
+      {orderModal && <OrderDetailsModal order={orderModal} tz={tz} catalogNames={catalogNames} onClose={() => setOrderModal(null)} />}
       {contextRow?.raw_context && (
         <RawContextModal label={contextRow.campaigns?.internal_title || contextRow.campaigns?.title || "Контекст отправки"} snapshot={contextRow.raw_context} onClose={() => setContextRow(null)} />
       )}

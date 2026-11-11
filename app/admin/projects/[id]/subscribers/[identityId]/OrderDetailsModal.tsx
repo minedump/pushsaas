@@ -68,7 +68,7 @@ const HeadCell = ({ children, right }: { children?: React.ReactNode; right?: boo
   <th className={`px-3 py-2 text-[11px] text-ink-muted font-normal whitespace-nowrap ${right ? "text-right" : "text-left"}`}>{children}</th>
 );
 
-export function OrderDetailsModal({ order: o, tz, onClose }: { order: OrderRow; tz: string; onClose: () => void }) {
+export function OrderDetailsModal({ order: o, tz, catalogNames = {}, onClose }: { order: OrderRow; tz: string; catalogNames?: Record<string, string>; onClose: () => void }) {
   const items = (Array.isArray(o.items) ? o.items : []) as OrderItem[];
   const history = (Array.isArray(o.item_history) ? o.item_history : []) as { at: string; changes: OrderChange[] }[];
   const statuses = (Array.isArray(o.status_history) ? o.status_history : []) as { at: string; from: string | null; to: string | null }[];
@@ -156,7 +156,12 @@ export function OrderDetailsModal({ order: o, tz, onClose }: { order: OrderRow; 
                   {items.map((it, i) => (
                     <tr key={i} className="border-t border-border">
                       <Cell className="text-ink-faint tabular-nums">{i + 1}</Cell>
-                      <Cell className="min-w-[220px]">{it.title}</Cell>
+                      {/* название из каталога (фид): название товара и в скобках варианты через слеш; нет в каталоге: из заказа */}
+                      <Cell className="min-w-[220px]">
+                        <span title={it.variant_id && catalogNames[it.variant_id] && catalogNames[it.variant_id] !== it.title ? `В заказе записано: ${it.title}` : undefined}>
+                          {(it.variant_id && catalogNames[it.variant_id]) || it.title}
+                        </span>
+                      </Cell>
                       <Cell className="font-mono text-[11.5px] whitespace-nowrap">{it.sku || "—"}</Cell>
                       <Cell className="font-mono text-[11.5px] whitespace-nowrap">{it.product_id || "—"}</Cell>
                       <Cell className="font-mono text-[11.5px] whitespace-nowrap">{it.variant_id || "—"}</Cell>

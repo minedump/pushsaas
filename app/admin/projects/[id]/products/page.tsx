@@ -35,11 +35,11 @@ export default async function ProductsPage({
   let query = admin
     .from("product_feed_items")
     .select(
-      "external_id, group_id, name, sku, barcode, price, old_price, image_url, url, categories, params, available, stock, source, archived_at, last_order_at, updated_at",
+      "external_id, group_id, name, variant_label, sku, barcode, price, old_price, image_url, url, categories, params, available, stock, source, archived_at, last_order_at, updated_at",
       { count: "exact" }
     )
     .eq("project_id", id);
-  if (q) query = query.or(`name.ilike.%${q}%,sku.ilike.%${q}%,barcode.eq."${q}",external_id.eq."${q}",group_id.eq."${q}"`);
+  if (q) query = query.or(`name.ilike.%${q}%,variant_label.ilike.%${q}%,sku.ilike.%${q}%,barcode.eq."${q}",external_id.eq."${q}",group_id.eq."${q}"`);
   if (source !== "all") query = query.eq("source", source);
   if (avail === "in") query = query.eq("available", true).is("archived_at", null);
   else if (avail === "out") query = query.eq("available", false).is("archived_at", null);

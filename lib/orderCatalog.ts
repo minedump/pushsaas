@@ -3,13 +3,13 @@ import type { OrderLine } from "@/lib/orderLines";
 
 // Заказы пополняют общий каталог товаров (product_feed_items): по каждой позиции заказа заводится
 // вариант, если его там ещё нет. Запись неполная, но достаточная, чтобы показывать заказ и искать
-// товар: id варианта (external_id), id товара (group_id), название, артикул, штрихкод. Цену, категории,
+// товар: id варианта (external_id), id товара (group_id), название, артикул (штрихкод из заказа не берём, он необязательный и приходит только из фида). Цену, категории,
 // картинку и остаток из заказа не берём: цена в позиции уже после скидки заказа, остальное в заказе
 // не приходит. Всё это пришлёт фид и перезапишет запись целиком.
 //
 // Правила:
 //  · варианта нет в каталоге: заводим запись source = 'order';
-//  · запись заведена по заказу (source = 'order'): обновляем название, артикул и штрихкод по самому
+//  · запись заведена по заказу (source = 'order'): обновляем название и артикул по самому
 //    свежему заказу, остальное не трогаем;
 //  · запись из фида (source = 'feed'): название и прочее остаются из фида, отмечаем только время
 //    последнего заказа. Фид главнее заказа.
@@ -39,7 +39,6 @@ export async function cacheOrderProducts(
         group_id: l.product_id,
         name: l.title,
         sku: l.sku,
-        barcode: l.barcode ?? null,
         source: "order",
         last_order_at: orderedAt,
       });
@@ -52,7 +51,6 @@ export async function cacheOrderProducts(
     if (row.source === "order" && newer) {
       patch.name = l.title;
       patch.sku = l.sku;
-      patch.barcode = l.barcode ?? null;
       if (l.product_id) patch.group_id = l.product_id;
     }
     if (Object.keys(patch).length) {
