@@ -85,7 +85,9 @@ function ContextDocsModal({ variant, onClose }: { variant: "template" | "campaig
           <div className="font-semibold text-ink mb-1">2. Контекст клиента — передаётся всегда</div>
           <p className="m-0">
             Настраивать не нужно, доступно в любом реальном сообщении (без префикса, отдельно от трёх источников выше):{" "}
-            <code className="font-mono">{"{{ name }}"}</code>, <code className="font-mono">{"{{ phone }}"}</code>,{" "}
+            <code className="font-mono">{"{{ name }}"}</code> (имя и фамилия), <code className="font-mono">{"{{ first_name }}"}</code> (имя),{" "}
+            <code className="font-mono">{"{{ last_name }}"}</code> (фамилия), <code className="font-mono">{"{{ middle_name }}"}</code> (отчество),{" "}
+            <code className="font-mono">{"{{ phone }}"}</code>,{" "}
             <code className="font-mono">{"{{ email }}"}</code>, <code className="font-mono">{"{{ tags }}"}</code> (список тегов —{" "}
             <code className="font-mono">{'{{ tags | join: ", " }}'}</code>), плюс любой кастомный атрибут контакта — сразу по имени:{" "}
             <code className="font-mono">{"{{ ваш_атрибут }}"}</code>.

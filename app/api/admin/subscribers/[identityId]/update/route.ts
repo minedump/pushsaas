@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
 import { auditAs } from "@/lib/auditContext";
-import { updateContact, setIdentityTimezone, setYmClientIds } from "@/lib/identity";
+import { updateContact, composeName, setIdentityTimezone, setYmClientIds } from "@/lib/identity";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { parseSystemFields } from "@/lib/shopFields";
 import { writeAudit } from "@/lib/audit";
@@ -9,11 +9,14 @@ import { writeAudit } from "@/lib/audit";
 export async function POST(req: Request, { params }: { params: Promise<{ identityId: string }> }) {
   const { identityId } = await params;
   const body = await req.json().catch(() => ({}));
-  const { projectId, phone, email, name, insalesClientId, smsActive, emailActive, tags, attributes } = body as {
+  const { projectId, phone, email, name, lastName, firstName, middleName, insalesClientId, smsActive, emailActive, tags, attributes } = body as {
     projectId?: string;
     phone?: string;
     email?: string;
     name?: string;
+    lastName?: string;
+    firstName?: string;
+    middleName?: string;
     insalesClientId?: string;
     smsActive?: boolean;
     emailActive?: boolean;
@@ -39,6 +42,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ identit
     phone: phone?.trim() || null,
     email: email?.trim() || null,
     name: name !== undefined ? name : undefined,
+    lastName: lastName !== undefined ? lastName : undefined,
+    firstName: firstName !== undefined ? firstName : undefined,
+    middleName: middleName !== undefined ? middleName : undefined,
     insalesClientId: insalesClientId !== undefined ? insalesClientId : undefined,
     smsActive: phone?.trim() ? !!smsActive : undefined,
     emailActive: email?.trim() ? !!emailActive : undefined,
@@ -53,7 +59,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ identit
     projectId,
     entity: "subscriber",
     entityId: identityId,
-    name: name?.trim() || phone?.trim() || email?.trim() || null,
+    name: name?.trim() || composeName(firstName, lastName) || phone?.trim() || email?.trim() || null,
     action: "update",
   });
   return NextResponse.json({ ok: true });

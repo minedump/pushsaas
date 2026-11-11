@@ -12,6 +12,9 @@ function toSubscriber(row: {
   phone: string | null;
   email: string | null;
   name: string | null;
+  last_name?: string | null;
+  first_name?: string | null;
+  middle_name?: string | null;
   insales_client_id: string | null;
   tags: string[] | null;
   attributes: Record<string, unknown> | null;
@@ -26,6 +29,9 @@ function toSubscriber(row: {
     phone: row.phone,
     email: row.email,
     name: row.name,
+    lastName: row.last_name ?? null,
+    firstName: row.first_name ?? null,
+    middleName: row.middle_name ?? null,
     insalesClientId: row.insales_client_id,
     tags: row.tags || [],
     attributes: row.attributes || {},
@@ -57,7 +63,7 @@ export async function GET(req: Request) {
   const admin = createAdminClient();
   const { data, count, error } = await admin
     .from("identities")
-    .select("id, phone, email, name, insales_client_id, tags, attributes, sms_marketing_active_at, email_marketing_active_at, timezone, ym_client_ids, created_at", { count: "exact" })
+    .select("id, phone, email, name, last_name, first_name, middle_name, insales_client_id, tags, attributes, sms_marketing_active_at, email_marketing_active_at, timezone, ym_client_ids, created_at", { count: "exact" })
     .eq("project_id", projectId)
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
@@ -67,10 +73,13 @@ export async function GET(req: Request) {
 
 // POST /api/v1/subscribers   (Authorization: Bearer wpk_... | X-Api-Key: wpk_...)
 //
-// { phone?, email?, name?, insalesClientId?, tags?, attributes?, smsActive?, emailActive?, timezone?, ymClientIds? }
+// { phone?, email?, lastName?, firstName?, middleName?, name?, insalesClientId?, tags?, attributes?, smsActive?, emailActive?, timezone?, ymClientIds? }
 //
 // timezone — часовой пояс подписчика (IANA, например Europe/Moscow), ymClientIds — ClientID
 // Яндекс.Метрики (массив строк, у человека их может быть несколько).
+//
+// ФИО: lastName, firstName, middleName. name собирается из них как «Имя Фамилия». Если передан
+// только name, одно слово станет именем, два слова «Имя Фамилия» разберутся на имя и фамилию.
 //
 // Создаёт НОВОГО подписчика — хотя бы одно из phone/email обязательно.
 // Подписчик с таким же phone (или, если phone не передан, email) уже
@@ -91,10 +100,13 @@ export async function POST(req: Request) {
   const { projectId } = key;
 
   const body = await req.json().catch(() => ({}));
-  const { phone, email, name, insalesClientId, tags, attributes, smsActive, emailActive } = body as {
+  const { phone, email, name, lastName, firstName, middleName, insalesClientId, tags, attributes, smsActive, emailActive } = body as {
     phone?: string;
     email?: string;
     name?: string;
+    lastName?: string;
+    firstName?: string;
+    middleName?: string;
     insalesClientId?: string;
     tags?: string[];
     attributes?: Record<string, string | null>;
@@ -128,6 +140,9 @@ export async function POST(req: Request) {
     phone,
     email,
     name,
+    lastName,
+    firstName,
+    middleName,
     insalesClientId,
     tags,
     attributes,

@@ -3,7 +3,7 @@ import { assertProjectAccess } from "@/lib/auth";
 import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizePhone } from "@/lib/phone";
-import { logFieldChanges, upsertContact, addYmClientIds, setIdentityTimezone } from "@/lib/identity";
+import { logFieldChanges, upsertContact, namePatch, addYmClientIds, setIdentityTimezone } from "@/lib/identity";
 import { parseTimezone, parseYmClientId, parseYmClientIds } from "@/lib/shopFields";
 import { writeAudit } from "@/lib/audit";
 
@@ -31,7 +31,8 @@ function isTruthy(v: string): boolean {
 //
 // Колонки файла делятся на четыре группы:
 //   1. READONLY_COLUMNS — игнорируются молча (см. выше).
-//   2. Распознанные поля контакта (name/phone/email/insales_client_id/tags/
+//   2. Распознанные поля контакта (last_name/first_name/middle_name или name,
+//      phone/email/insales_client_id/tags/
 //      sms_active/email_active) — пишутся в identities, ТЕ ЖЕ поля, что
 //      редактируются вручную на странице подписчика.
 //   3. "{platform}_paused" (ios_paused/android_paused/desktop_paused/
@@ -81,6 +82,7 @@ export async function POST(req: Request) {
     }
 
     const identityPatch: Record<string, unknown> = {};
+    const nameIn: { name?: string; lastName?: string; firstName?: string; middleName?: string } = {}; // ФИО из файла
     const extra: Record<string, string> = {};
     let rowTimezone: string | null = null; // часовой пояс из файла (IANA), пишется контакту и найденным по UUID метрики устройствам
     const rowYmIds: string[] = []; // ClientID Метрики из файла: добавляются к контакту
@@ -92,7 +94,13 @@ export async function POST(req: Request) {
       } else if (k === "insales_client_id" || k === "insalesClientId") {
         identityPatch.insales_client_id = v.trim();
       } else if (k === "name") {
-        identityPatch.name = v.trim();
+        nameIn.name = v.trim();
+      } else if (k === "last_name" || k === "lastName") {
+        nameIn.lastName = v.trim();
+      } else if (k === "first_name" || k === "firstName") {
+        nameIn.firstName = v.trim();
+      } else if (k === "middle_name" || k === "middleName") {
+        nameIn.middleName = v.trim();
       } else if (k === "phone") {
         const p = normalizePhone(v);
         if (p) identityPatch.phone = p;
@@ -120,6 +128,9 @@ export async function POST(req: Request) {
     type IdentitySnapshot = {
       id: string;
       name: string | null;
+      first_name: string | null;
+      last_name: string | null;
+      middle_name: string | null;
       phone: string | null;
       email: string | null;
       insales_client_id: string | null;
@@ -127,7 +138,7 @@ export async function POST(req: Request) {
       attributes: Record<string, unknown> | null;
       timezone: string | null;
     };
-    const SNAPSHOT_COLS = "id, name, phone, email, insales_client_id, tags, attributes, timezone";
+    const SNAPSHOT_COLS = "id, name, first_name, last_name, middle_name, phone, email, insales_client_id, tags, attributes, timezone";
     let identity: IdentitySnapshot | null = null;
     let ymKey: string | null = null; // ClientID из ключевого столбца (сопоставление по UUID метрики)
     let ymDeviceIds: string[] = []; // устройства с этим ClientID
@@ -195,7 +206,7 @@ export async function POST(req: Request) {
         const attrs: Record<string, string | null> = {};
         for (const [k, v] of Object.entries(row)) {
           if (v === "" || READONLY_COLUMNS.has(k) || PAUSE_COLUMNS.has(k)) continue;
-          if (["name", "phone", "email", "insales_client_id", "insalesClientId", "tags", "sms_active", "email_active", "timezone", "ym_client_id", "ym_client_ids"].includes(k) || k === keyColumn) continue;
+          if (["name", "last_name", "first_name", "middle_name", "lastName", "firstName", "middleName", "phone", "email", "insales_client_id", "insalesClientId", "tags", "sms_active", "email_active", "timezone", "ym_client_id", "ym_client_ids"].includes(k) || k === keyColumn) continue;
           attrs[k] = v;
         }
         const newTags = String(row["tags"] || "")
@@ -205,7 +216,7 @@ export async function POST(req: Request) {
         const res = await upsertContact(projectId, {
           phone: phoneOk || undefined,
           email: emailOk || undefined,
-          name: String(row["name"] || "").trim() || undefined,
+          ...nameIn,
           insalesClientId: insalesId || undefined,
           tags: newTags.length ? newTags : undefined,
           attributes: Object.keys(attrs).length ? attrs : undefined,
@@ -231,6 +242,7 @@ export async function POST(req: Request) {
     }
     matched++;
 
+    Object.assign(identityPatch, namePatch(nameIn, identity));
     if (Object.keys(extra).length) {
       identityPatch.attributes = { ...(identity.attributes || {}), ...extra };
     }
@@ -254,7 +266,7 @@ export async function POST(req: Request) {
       // затронутые этой строкой файла (пустые ячейки уже отфильтрованы выше).
       const before: Record<string, unknown> = {};
       const after: Record<string, unknown> = {};
-      for (const key of ["name", "phone", "email", "insales_client_id", "tags", "timezone"] as const) {
+      for (const key of ["name", "last_name", "first_name", "middle_name", "phone", "email", "insales_client_id", "tags", "timezone"] as const) {
         if (key in identityPatch) {
           before[key] = identity[key];
           after[key] = identityPatch[key];

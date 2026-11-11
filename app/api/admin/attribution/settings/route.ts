@@ -32,7 +32,7 @@ export async function POST(req: Request) {
   // и не даём занять поля самого контакта. Системные ключи timezone и ym_client_id разрешены: они
   // пишутся в сам контакт (часовой пояс, ClientID Метрики).
   function cleanMap(input: unknown, auto: string[] = []): { out: { handle: string; key: string }[] } | { error: string } {
-    const RESERVED = new Set(["name", "phone", "email", "tags", "insales_client_id", "id", "created_at"]);
+    const RESERVED = new Set(["name", "first_name", "last_name", "middle_name", "phone", "email", "tags", "insales_client_id", "id", "created_at"]);
     const out: { handle: string; key: string }[] = [];
     const seen = new Set<string>();
     for (const row of Array.isArray(input) ? input.slice(0, 50) : []) {

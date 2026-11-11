@@ -56,7 +56,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ projectId: str
 
   const { data: identity } = await admin
     .from("identities")
-    .select("id, phone, name, email, email_verified_at")
+    .select("id, phone, name, first_name, last_name, middle_name, email, email_verified_at")
     .eq("id", session.identity_id!)
     .single();
   if (!identity) {

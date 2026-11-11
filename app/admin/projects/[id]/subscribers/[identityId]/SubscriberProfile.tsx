@@ -16,6 +16,9 @@ type Identity = {
   phone: string | null;
   email: string | null;
   name: string | null;
+  last_name: string | null;
+  first_name: string | null;
+  middle_name: string | null;
   insales_client_id: string | null;
   tags: string[] | null;
   attributes: Record<string, unknown> | null;
@@ -47,7 +50,7 @@ type SiteEventRow = { id: string; label: string; detail: string; created_at: str
 const platformLabel: Record<string, string> = { ios: "iPhone", android: "Android", desktop: "Desktop", unknown: "—" };
 const channelLabel: Record<string, string> = { push: "Push", sms: "SMS", email: "Email" };
 const statusLabel: Record<string, string> = { delivered: "доставлено", failed: "ошибка" };
-const fieldLabel: Record<string, string> = { name: "Имя", phone: "Телефон", email: "Email", insales_client_id: "Внешний ID", tags: "Теги", timezone: "Часовой пояс", ym_client_ids: "UUID метрики" };
+const fieldLabel: Record<string, string> = { name: "Имя (для текстов)", last_name: "Фамилия", first_name: "Имя", middle_name: "Отчество", phone: "Телефон", email: "Email", insales_client_id: "Внешний ID", tags: "Теги", timezone: "Часовой пояс", ym_client_ids: "UUID метрики" };
 
 function displayField(field: string): string {
   if (field.startsWith("attr:")) return `Доп. поле «${field.slice(5)}»`;
@@ -194,7 +197,7 @@ export default function SubscriberProfile({
             <IconChevronLeft size={14} stroke={2} />
             Вернуться ко всем подписчикам
           </Link>
-          <h1 className="text-2xl font-semibold m-0 mt-2">{identity.name || "Без имени"}</h1>
+          <h1 className="text-2xl font-semibold m-0 mt-2">{[identity.last_name, identity.first_name, identity.middle_name].filter(Boolean).join(" ") || identity.name || "Без имени"}</h1>
           <div className="flex flex-col gap-1 mt-2.5 text-[13.5px] text-ink-muted">
             {(identity.tags || []).length > 0 && (
               <div className="flex items-center gap-1.5 flex-wrap">

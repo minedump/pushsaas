@@ -15,7 +15,9 @@ export default function NewSubscriberForm({ projectId }: { projectId: string }) 
   const router = useRouter();
   const { toast } = useDialogs();
 
-  const [name, setName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [middleName, setMiddleName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [insalesClientId, setInsalesClientId] = useState("");
@@ -36,7 +38,9 @@ export default function NewSubscriberForm({ projectId }: { projectId: string }) 
         projectId,
         phone: phone.trim() || undefined,
         email: email.trim() || undefined,
-        name: name.trim() || undefined,
+        lastName: lastName.trim() || undefined,
+        firstName: firstName.trim() || undefined,
+        middleName: middleName.trim() || undefined,
         insalesClientId: insalesClientId.trim() || undefined,
         smsActive,
         emailActive,
@@ -56,9 +60,19 @@ export default function NewSubscriberForm({ projectId }: { projectId: string }) 
       <h1 className="text-2xl font-semibold">Новый подписчик</h1>
 
       <form onSubmit={save} className="mt-4 flex flex-col gap-3">
-        <div>
-          <Label>Имя</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Как обращаться" />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <Label>Фамилия</Label>
+            <Input value={lastName} onChange={(e) => setLastName(e.target.value)} />
+          </div>
+          <div>
+            <Label>Имя</Label>
+            <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+          </div>
+          <div>
+            <Label>Отчество</Label>
+            <Input value={middleName} onChange={(e) => setMiddleName(e.target.value)} />
+          </div>
         </div>
         <div>
           <Label>Телефон</Label>

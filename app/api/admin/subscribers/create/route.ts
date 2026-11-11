@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { assertProjectAccess } from "@/lib/auth";
 import { auditAs } from "@/lib/auditContext";
-import { upsertContact } from "@/lib/identity";
+import { upsertContact, composeName } from "@/lib/identity";
 import { writeAudit } from "@/lib/audit";
 
 // Ручное добавление контакта из раздела «Подписчики» — по аналогии с «Новый
@@ -14,11 +14,14 @@ import { writeAudit } from "@/lib/audit";
 // такого телефона/email в проекте ещё нет.
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const { projectId, phone, email, name, insalesClientId, smsActive, emailActive, tags } = body as {
+  const { projectId, phone, email, name, lastName, firstName, middleName, insalesClientId, smsActive, emailActive, tags } = body as {
     projectId?: string;
     phone?: string;
     email?: string;
     name?: string;
+    lastName?: string;
+    firstName?: string;
+    middleName?: string;
     insalesClientId?: string;
     smsActive?: boolean;
     emailActive?: boolean;
@@ -37,6 +40,9 @@ export async function POST(req: Request) {
     phone: phoneTrim || undefined,
     email: emailTrim || undefined,
     name: name?.trim() || undefined,
+    lastName: lastName?.trim() || undefined,
+    firstName: firstName?.trim() || undefined,
+    middleName: middleName?.trim() || undefined,
     insalesClientId: insalesClientId?.trim() || undefined,
     smsActive: phoneTrim ? !!smsActive : undefined,
     emailActive: emailTrim ? !!emailActive : undefined,
@@ -47,7 +53,7 @@ export async function POST(req: Request) {
     projectId,
     entity: "subscriber",
     entityId: result.id,
-    name: name?.trim() || phoneTrim || emailTrim,
+    name: name?.trim() || composeName(firstName, lastName) || phoneTrim || emailTrim,
     action: result.created ? "create" : "update",
   });
   return NextResponse.json({ ok: true, id: result.id, created: result.created });

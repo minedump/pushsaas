@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { extractWebhookKey } from "@/lib/apikey";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { upsertContact, logFieldChanges, applyShopConsent, isTruthyFlag, addYmClientIds, setIdentityTimezone } from "@/lib/identity";
+import { upsertContact, namePatch, logFieldChanges, applyShopConsent, isTruthyFlag, addYmClientIds, setIdentityTimezone } from "@/lib/identity";
 import { mapShopFields, type FieldMapRow } from "@/lib/shopFields";
 import { normalizePhone } from "@/lib/phone";
 import { logApiCall } from "@/lib/apiLog";
@@ -34,6 +34,9 @@ type Obj = Record<string, unknown>;
 type Ident = {
   id: string;
   name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  middle_name: string | null;
   phone: string | null;
   email: string | null;
   insales_client_id: string | null;
@@ -41,7 +44,7 @@ type Ident = {
   sms_marketing_active_at: string | null;
   email_marketing_active_at: string | null;
 };
-const COLS = "id, name, phone, email, insales_client_id, attributes, sms_marketing_active_at, email_marketing_active_at";
+const COLS = "id, name, first_name, last_name, middle_name, phone, email, insales_client_id, attributes, sms_marketing_active_at, email_marketing_active_at";
 
 export async function POST(req: Request) {
   const token = extractWebhookKey(req);
@@ -88,7 +91,12 @@ export async function POST(req: Request) {
     return respond(400, { error: "client id, phone or email required" });
   }
 
-  const name = [client.name, client.surname].map((v) => String(v ?? "").trim()).filter(Boolean).join(" ") || undefined;
+  // InSales: name это имя, surname фамилия, middlename отчество. Пустые значения пропускаем.
+  const nameIn = {
+    firstName: String(client.name ?? "").trim() || undefined,
+    lastName: String(client.surname ?? "").trim() || undefined,
+    middleName: String(client.middlename ?? client.middle_name ?? "").trim() || undefined,
+  };
 
   // доп. поля контакта: бонусы и регистрация (системные поля клиента)
   const attrs: Record<string, string | null> = {};
@@ -138,7 +146,7 @@ export async function POST(req: Request) {
         notes.push("email already belongs to another contact");
       }
     }
-    const res = await upsertContact(projectId, { phone, email: newEmail, name, insalesClientId: insalesId || undefined, attributes: attrs });
+    const res = await upsertContact(projectId, { phone, email: newEmail, ...nameIn, insalesClientId: insalesId || undefined, attributes: attrs });
     if (!res.ok) {
       await logWebhookReject("client", 400, res.error, req, { body });
       return respond(400, { error: res.error });
@@ -151,13 +159,20 @@ export async function POST(req: Request) {
     const patch: Obj = {};
     const before: Obj = {};
     const after: Obj = {};
-    const set = (key: "name" | "phone" | "email" | "insales_client_id", value: string | null | undefined) => {
+    const set = (key: "phone" | "email" | "insales_client_id", value: string | null | undefined) => {
       if (!value || value === current[key]) return;
       patch[key] = value;
       before[key] = current[key];
       after[key] = value;
     };
-    if (!differentAccount || !current.name) set("name", name);
+    // ФИО: у другой учётной записи магазина только дополняем пустое, иначе обновляем
+    const np = namePatch(nameIn, current, { fillOnly: differentAccount });
+    for (const [key, value] of Object.entries(np)) {
+      if (value === (current as unknown as Obj)[key]) continue;
+      patch[key] = value;
+      before[key] = (current as unknown as Obj)[key];
+      after[key] = value;
+    }
     if (!differentAccount) set("insales_client_id", insalesId);
     // телефон/email меняем, только если они не заняты другим контактом
     for (const [key, value] of [["phone", phone], ["email", email]] as const) {

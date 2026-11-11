@@ -258,10 +258,69 @@ export async function filterConsentedContacts(
   return [...result];
 }
 
+// ФИО контакта. name это «Имя Фамилия» (так он и собирался раньше, его подставляют как {{ name }}), а
+// фамилия, имя и отчество лежат отдельными полями last_name, first_name, middle_name.
+export function composeName(first?: string | null, last?: string | null): string | null {
+  const s = [first, last].map((v) => (v ?? "").trim()).filter(Boolean).join(" ");
+  return s || null;
+}
+
+// Разбор готового имени: одно слово это имя, два слова это «Имя Фамилия». Больше слов не разбираем:
+// порядок слов неизвестен, пусть остаётся только в name.
+export function splitName(name: string): { first: string | null; last: string | null } {
+  const w = name.trim().split(/\s+/).filter(Boolean);
+  if (w.length === 1) return { first: w[0], last: null };
+  if (w.length === 2) return { first: w[0], last: w[1] };
+  return { first: null, last: null };
+}
+
+type NameFields = { name?: string | null; firstName?: string | null; lastName?: string | null; middleName?: string | null };
+type NameRow = { name?: string | null; first_name?: string | null; last_name?: string | null; middle_name?: string | null };
+
+// Что записать в name, first_name, last_name, middle_name. Значение undefined «не передано, не трогаем»,
+// пустая строка или null «очистить» (clear = false: пустое значение просто пропускается, так делают вебхуки
+// магазина и заказов).
+//  · переданы фамилия, имя или отчество: пишем их, а name пересобираем как «Имя Фамилия»;
+//  · передан только name: пишем его и, если у контакта ещё нет разбивки, разбираем его на имя и фамилию;
+//  · fillOnly: то, что у контакта уже заполнено, не перезаписываем.
+export function namePatch(input: NameFields, existing: NameRow | null, opts: { fillOnly?: boolean; clear?: boolean } = {}): Record<string, unknown> {
+  const t = (v: string | null | undefined) => (v === undefined ? undefined : v?.trim() || null);
+  const f = t(input.firstName), l = t(input.lastName), m = t(input.middleName), n = t(input.name);
+  const patch: Record<string, unknown> = {};
+  const skipEmpty = !opts.clear;
+  if (f !== undefined || l !== undefined || m !== undefined) {
+    if (f !== undefined && !(skipEmpty && f === null)) patch.first_name = f;
+    if (l !== undefined && !(skipEmpty && l === null)) patch.last_name = l;
+    if (m !== undefined && !(skipEmpty && m === null)) patch.middle_name = m;
+    if ("first_name" in patch || "last_name" in patch) {
+      const first = "first_name" in patch ? (patch.first_name as string | null) : existing?.first_name ?? null;
+      const last = "last_name" in patch ? (patch.last_name as string | null) : existing?.last_name ?? null;
+      patch.name = composeName(first, last);
+    }
+  } else if (n !== undefined && !(skipEmpty && n === null)) {
+    patch.name = n;
+    if (n && !existing?.first_name && !existing?.last_name) {
+      const sp = splitName(n);
+      if (sp.first) patch.first_name = sp.first;
+      if (sp.last) patch.last_name = sp.last;
+    }
+  }
+  if (opts.fillOnly && existing) {
+    if (existing.name) delete patch.name;
+    if (existing.first_name) delete patch.first_name;
+    if (existing.last_name) delete patch.last_name;
+    if (existing.middle_name) delete patch.middle_name;
+  }
+  return patch;
+}
+
 export type UpsertContactInput = {
   phone?: string | null;
   email?: string | null;
   name?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  middleName?: string | null;
   insalesClientId?: string | null;
   smsActive?: boolean;
   emailActive?: boolean;
@@ -297,7 +356,7 @@ export async function upsertContact(projectId: string, input: UpsertContactInput
   const admin = createAdminClient();
   const { data: existing } = await admin
     .from("identities")
-    .select("id, name, phone, email, insales_client_id, tags, attributes, sms_marketing_active_at, email_marketing_active_at")
+    .select("id, name, first_name, last_name, middle_name, phone, email, insales_client_id, tags, attributes, sms_marketing_active_at, email_marketing_active_at")
     .eq("project_id", projectId)
     .eq(phone ? "phone" : "email", phone || email)
     .maybeSingle();
@@ -306,7 +365,7 @@ export async function upsertContact(projectId: string, input: UpsertContactInput
   const patch: Record<string, unknown> = { updated_at: now };
   if (phone) patch.phone = phone;
   if (email) patch.email = email;
-  if (input.name?.trim()) patch.name = input.name.trim();
+  Object.assign(patch, namePatch(input, existing, { fillOnly: input.fillOnly }));
   if (input.insalesClientId?.trim()) patch.insales_client_id = input.insalesClientId.trim();
   if (input.smsActive !== undefined) patch.sms_marketing_active_at = input.smsActive ? now : null;
   if (input.emailActive !== undefined) patch.email_marketing_active_at = input.emailActive ? now : null;
@@ -324,7 +383,6 @@ export async function upsertContact(projectId: string, input: UpsertContactInput
 
   if (existing) {
     if (input.fillOnly) {
-      if (existing.name) delete patch.name;
       if (existing.insales_client_id) delete patch.insales_client_id;
     }
     await admin.from("identities").update(patch).eq("id", existing.id);
@@ -335,7 +393,7 @@ export async function upsertContact(projectId: string, input: UpsertContactInput
     // Общая история изменений — только поля, реально пришедшие в patch.
     const before: Record<string, unknown> = {};
     const after: Record<string, unknown> = {};
-    for (const key of ["name", "phone", "email", "insales_client_id", "tags"] as const) {
+    for (const key of ["name", "last_name", "first_name", "middle_name", "phone", "email", "insales_client_id", "tags"] as const) {
       if (key in patch) {
         before[key] = existing[key as keyof typeof existing];
         after[key] = patch[key];
@@ -352,7 +410,16 @@ export async function upsertContact(projectId: string, input: UpsertContactInput
   if (error || !created) return { ok: false, error: error?.message || "insert failed" };
   // История карточки начинается с создания: что пришло при заведении контакта (через API,
   // импорт файла, вебхуки магазина). Источник правок подставляет триггер из контекста запроса.
-  const first: Record<string, unknown> = { name: input.name?.trim() || null, phone, email, insales_client_id: input.insalesClientId?.trim() || null, tags: input.tags };
+  const first: Record<string, unknown> = {
+    name: (patch.name as string | null | undefined) ?? null,
+    last_name: (patch.last_name as string | null | undefined) ?? null,
+    first_name: (patch.first_name as string | null | undefined) ?? null,
+    middle_name: (patch.middle_name as string | null | undefined) ?? null,
+    phone,
+    email,
+    insales_client_id: input.insalesClientId?.trim() || null,
+    tags: input.tags,
+  };
   for (const [k, v] of Object.entries(input.attributes ?? {})) if (v !== null) first[`attr:${k}`] = v;
   logFieldChanges(admin, projectId, created.id, {}, first);
   logChannelEvents(admin, projectId, created.id, input, phone, email, { sms: false, email: false });
@@ -449,7 +516,7 @@ export async function updateContact(projectId: string, identityId: string, input
   const admin = createAdminClient();
   const { data: existing } = await admin
     .from("identities")
-    .select("id, name, phone, email, insales_client_id, tags, attributes, sms_marketing_active_at, email_marketing_active_at")
+    .select("id, name, first_name, last_name, middle_name, phone, email, insales_client_id, tags, attributes, sms_marketing_active_at, email_marketing_active_at")
     .eq("id", identityId)
     .eq("project_id", projectId)
     .maybeSingle();
@@ -457,7 +524,7 @@ export async function updateContact(projectId: string, identityId: string, input
 
   const now = new Date().toISOString();
   const patch: Record<string, unknown> = { updated_at: now, phone, email };
-  if (input.name !== undefined) patch.name = input.name?.trim() || null;
+  Object.assign(patch, namePatch(input, existing, { clear: true }));
   if (input.insalesClientId !== undefined) patch.insales_client_id = input.insalesClientId?.trim() || null;
   if (input.smsActive !== undefined) patch.sms_marketing_active_at = input.smsActive ? now : null;
   if (input.emailActive !== undefined) patch.email_marketing_active_at = input.emailActive ? now : null;
@@ -489,9 +556,11 @@ export async function updateContact(projectId: string, identityId: string, input
   // чтобы не путаться с одноимённым обычным полем контакта).
   const before: Record<string, unknown> = { phone: existing.phone, email: existing.email };
   const after: Record<string, unknown> = { phone, email };
-  if (input.name !== undefined) {
-    before.name = existing.name;
-    after.name = patch.name;
+  for (const key of ["name", "last_name", "first_name", "middle_name"] as const) {
+    if (key in patch) {
+      before[key] = existing[key];
+      after[key] = patch[key];
+    }
   }
   if (input.insalesClientId !== undefined) {
     before.insales_client_id = existing.insales_client_id;

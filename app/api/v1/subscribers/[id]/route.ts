@@ -11,6 +11,9 @@ function toSubscriber(row: {
   phone: string | null;
   email: string | null;
   name: string | null;
+  last_name?: string | null;
+  first_name?: string | null;
+  middle_name?: string | null;
   insales_client_id: string | null;
   tags: string[] | null;
   attributes: Record<string, unknown> | null;
@@ -25,6 +28,9 @@ function toSubscriber(row: {
     phone: row.phone,
     email: row.email,
     name: row.name,
+    lastName: row.last_name ?? null,
+    firstName: row.first_name ?? null,
+    middleName: row.middle_name ?? null,
     insalesClientId: row.insales_client_id,
     tags: row.tags || [],
     attributes: row.attributes || {},
@@ -48,7 +54,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const admin = createAdminClient();
   const { data } = await admin
     .from("identities")
-    .select("id, phone, email, name, insales_client_id, tags, attributes, sms_marketing_active_at, email_marketing_active_at, timezone, ym_client_ids, created_at")
+    .select("id, phone, email, name, last_name, first_name, middle_name, insales_client_id, tags, attributes, sms_marketing_active_at, email_marketing_active_at, timezone, ym_client_ids, created_at")
     .eq("id", id)
     .eq("project_id", projectId)
     .maybeSingle();
@@ -63,6 +69,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 // трогаем; phone/email — исключение, если ни один не передан, остаются
 // прежними, но передать оба пустыми одновременно нельзя (подписчик должен
 // быть идентифицируем хотя бы одним из двух).
+//
+// ФИО: lastName, firstName, middleName (null или "" очищает поле). name собирается из имени и фамилии;
+// если переданы только name, он записывается как есть, а пустая разбивка заполняется из него.
 //
 // timezone — часовой пояс (IANA, например Europe/Moscow; null или "" очищает), ymClientIds — список
 // ClientID Метрики: переданный список ЗАМЕНЯЕТ прежний (чтобы лишний id можно было убрать).
@@ -81,10 +90,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const body = await req.json().catch(() => ({}));
   const sys = parseSystemFields(body as { timezone?: unknown; ymClientIds?: unknown });
   if ("error" in sys) return NextResponse.json({ error: sys.error }, { status: 400 });
-  const { phone, email, name, insalesClientId, tags, attributes, smsActive, emailActive } = body as {
+  const { phone, email, name, lastName, firstName, middleName, insalesClientId, tags, attributes, smsActive, emailActive } = body as {
     phone?: string | null;
     email?: string | null;
     name?: string | null;
+    lastName?: string | null;
+    firstName?: string | null;
+    middleName?: string | null;
     insalesClientId?: string | null;
     tags?: string[];
     attributes?: Record<string, string | null>;
@@ -96,6 +108,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     phone: phone !== undefined ? phone : existing.phone,
     email: email !== undefined ? email : existing.email,
     name,
+    lastName,
+    firstName,
+    middleName,
     insalesClientId,
     tags,
     attributes,

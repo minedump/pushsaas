@@ -155,6 +155,9 @@ export type IdentityClaims = {
   phone_number?: string;
   phone_number_verified?: boolean;
   name?: string;
+  given_name?: string;
+  family_name?: string;
+  middle_name?: string;
   email?: string;
   email_verified?: boolean;
 };
@@ -168,6 +171,9 @@ export function buildClaims(identity: {
   id: string;
   phone: string | null;
   name: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  middle_name?: string | null;
   email: string | null;
   emailVerified?: boolean;
 }): IdentityClaims {
@@ -175,6 +181,9 @@ export function buildClaims(identity: {
     sub: identity.id,
     ...(identity.phone ? { phone_number: "+" + identity.phone, phone_number_verified: true } : {}),
     ...(identity.name ? { name: identity.name } : {}),
+    ...(identity.first_name ? { given_name: identity.first_name } : {}),
+    ...(identity.last_name ? { family_name: identity.last_name } : {}),
+    ...(identity.middle_name ? { middle_name: identity.middle_name } : {}),
     ...(identity.email && identity.emailVerified ? { email: identity.email, email_verified: true } : {}),
   };
 }

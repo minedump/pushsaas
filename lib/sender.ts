@@ -759,7 +759,7 @@ export async function sendCampaignJobNow(
       const field = job.channel === "sms" ? "phone" : "email";
       const { data: identity } = await admin
         .from("identities")
-        .select("name, phone, email, tags, attributes, timezone")
+        .select("name, first_name, last_name, middle_name, phone, email, tags, attributes, timezone")
         .eq("project_id", job.project_id)
         .eq(field, job.contact)
         .maybeSingle();
@@ -784,7 +784,7 @@ export async function sendCampaignJobNow(
         .maybeSingle();
       const { data: oidc } = await admin.from("oidc_clients").select("config").eq("project_id", job.project_id).maybeSingle();
       const contactAttrs = identity
-        ? { name: identity.name, phone: identity.phone, email: identity.email, tags: identity.tags, ...((identity.attributes as Record<string, unknown>) || {}) }
+        ? { name: identity.name, first_name: identity.first_name, last_name: identity.last_name, middle_name: identity.middle_name, phone: identity.phone, email: identity.email, tags: identity.tags, ...((identity.attributes as Record<string, unknown>) || {}) }
         : {};
       const { template: templateCtx, context: sendCtx } = await resolveTemplateData(job.project_id, campaign.template_data as Record<string, unknown> | null);
       const { template: rawTemplate, context: rawContext } = splitTemplateData(campaign.template_data as Record<string, unknown> | null);
@@ -1713,11 +1713,11 @@ export async function sendWelcomeNow(
           if (link?.identity_id) {
             const { data: identity } = await admin
               .from("identities")
-              .select("name, phone, email, tags, attributes")
+              .select("name, first_name, last_name, middle_name, phone, email, tags, attributes")
               .eq("id", link.identity_id)
               .maybeSingle();
             if (identity) {
-              identityAttrs = { name: identity.name, phone: identity.phone, email: identity.email, tags: identity.tags, ...((identity.attributes as object) || {}) };
+              identityAttrs = { name: identity.name, first_name: identity.first_name, last_name: identity.last_name, middle_name: identity.middle_name, phone: identity.phone, email: identity.email, tags: identity.tags, ...((identity.attributes as object) || {}) };
             }
           }
           const templateCtx = await expandRefs(projectId, tpl.context || {});
@@ -1732,7 +1732,7 @@ export async function sendWelcomeNow(
   } else if ((channel === "sms" || channel === "email") && recipient.identityId) {
     const { data: identity } = await admin
       .from("identities")
-      .select("id, name, phone, email, tags, attributes, sms_marketing_active_at, email_marketing_active_at, timezone")
+      .select("id, name, first_name, last_name, middle_name, phone, email, tags, attributes, sms_marketing_active_at, email_marketing_active_at, timezone")
       .eq("id", recipient.identityId)
       .maybeSingle();
     const contact = channel === "sms" ? identity?.phone : identity?.email;
@@ -1805,7 +1805,7 @@ export async function sendWelcomeNow(
               .maybeSingle();
             const { data: oidc } = await admin.from("oidc_clients").select("config").eq("project_id", projectId).maybeSingle();
             if (secrets) {
-              const contactAttrs = { name: identity?.name, phone: identity?.phone, email: identity?.email, tags: identity?.tags, ...((identity?.attributes as object) || {}) };
+              const contactAttrs = { name: identity?.name, first_name: identity?.first_name, last_name: identity?.last_name, middle_name: identity?.middle_name, phone: identity?.phone, email: identity?.email, tags: identity?.tags, ...((identity?.attributes as object) || {}) };
               const token = genRecipientToken();
               const templateCtx = await expandRefs(projectId, tpl.context || {});
               const rawSnapshot: RawContextSnapshot = { template: tpl.context || {}, context: {}, automation: automationCtx };

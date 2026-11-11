@@ -127,11 +127,9 @@ export async function POST(req: Request) {
   // заказа (только включение, см. applyChannelConsent).
   const rawPhone = String(resolvePath(body, "client.phone") ?? resolvePath(body, "phone") ?? "");
   const rawEmail = String(resolvePath(body, "client.email") ?? resolvePath(body, "email") ?? "");
-  const clientName =
-    [resolvePath(body, "client.name"), resolvePath(body, "client.surname")]
-      .map((v) => String(v ?? "").trim())
-      .filter(Boolean)
-      .join(" ") || undefined;
+  const clientFirst = String(resolvePath(body, "client.name") ?? "").trim() || undefined;
+  const clientLast = String(resolvePath(body, "client.surname") ?? "").trim() || undefined;
+  const clientMiddle = String(resolvePath(body, "client.middlename") ?? resolvePath(body, "client.middle_name") ?? "").trim() || undefined;
 
   // Доп. поля заказа по соответствию из Настроек (поле магазина → поле заказа). Ищем и среди полей заказа,
   // и среди полей клиента в заказе. Системные ключи (timezone, ym_client_id) уходят в контакт.
@@ -154,7 +152,9 @@ export async function POST(req: Request) {
     const contact = await upsertContact(projectId, {
       phone: rawPhone || undefined,
       email: rawEmail || undefined,
-      name: clientName,
+      firstName: clientFirst,
+      lastName: clientLast,
+      middleName: clientMiddle,
       fillOnly: true,
       // внешний id клиента: по нему вебхук клиентов потом находит этот же контакт
       insalesClientId: clientId != null && clientId !== "" ? String(clientId) : undefined,

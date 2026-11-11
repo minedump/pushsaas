@@ -53,7 +53,7 @@ export async function GET(req: Request) {
 
   const { data: identities } = await admin
     .from("identities")
-    .select("id, phone, email, name, insales_client_id, tags, sms_marketing_active_at, email_marketing_active_at, attributes, timezone, ym_client_ids, created_at")
+    .select("id, phone, email, name, last_name, first_name, middle_name, insales_client_id, tags, sms_marketing_active_at, email_marketing_active_at, attributes, timezone, ym_client_ids, created_at")
     .eq("project_id", projectId)
     .order("created_at", { ascending: false });
 
@@ -76,7 +76,8 @@ export async function GET(req: Request) {
 
   const attrKeys = [...new Set((identities ?? []).flatMap((i) => Object.keys((i.attributes as object) || {})))];
   const platformCols = PLATFORMS.flatMap((p) => [`${p}_active`, `${p}_paused`]);
-  const header = ["id", "name", "phone", "email", "insales_client_id", "tags", ...platformCols, "sms_active", "email_active", "created_at", "timezone", "ym_client_ids", ...attrKeys];
+  // name в файл не выгружаем: он собирается из имени и фамилии. В старых файлах с name импорт его по-прежнему понимает.
+  const header = ["id", "last_name", "first_name", "middle_name", "phone", "email", "insales_client_id", "tags", ...platformCols, "sms_active", "email_active", "created_at", "timezone", "ym_client_ids", ...attrKeys];
 
   const lines = [header.join(";")];
   for (const i of identities ?? []) {
@@ -85,7 +86,9 @@ export async function GET(req: Request) {
     const attrs = (i.attributes as Record<string, unknown>) || {};
     const line = [
       i.id,
-      i.name || "",
+      i.last_name || "",
+      i.first_name || "",
+      i.middle_name || "",
       // "+" перед номером — иначе Excel/Таблицы автоматически распознают
       // длинную цифровую строку как ЧИСЛО и рисуют его в экспоненциальной
       // записи ("7,92E+10") с потерей точности; ведущий "+" отключает

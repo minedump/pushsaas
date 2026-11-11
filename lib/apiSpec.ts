@@ -217,7 +217,10 @@ const SUBSCRIBER_FULL_FIELDS: ApiField[] = [
   { name: "id", type: "string", description: "id подписчика." },
   { name: "phone", type: "string | null", description: "Телефон в нормализованном виде." },
   { name: "email", type: "string | null", description: "Email." },
-  { name: "name", type: "string | null", description: "Имя." },
+  { name: "name", type: "string | null", description: "Имя и фамилия одной строкой («Имя Фамилия»), собирается из полей ниже; её подставляют в тексты как {{ name }}." },
+  { name: "lastName", type: "string | null", description: "Фамилия." },
+  { name: "firstName", type: "string | null", description: "Имя." },
+  { name: "middleName", type: "string | null", description: "Отчество." },
   { name: "insalesClientId", type: "string | null", description: "id клиента в InSales, если связан с заказом." },
   { name: "tags", type: "string[]", description: "Теги для сегментации." },
   { name: "attributes", type: "object", description: "Произвольные доп. поля." },
@@ -717,7 +720,7 @@ export const API_GROUPS: ApiGroup[] = [
           },
         ],
         responseExample:
-          '{\n  "subscribers": [\n    {\n      "id": "d4e2...", "phone": "79991234567", "email": null, "name": "Иван",\n      "insalesClientId": null, "tags": ["vip"], "attributes": {},\n      "smsActive": true, "emailActive": false,\n      "timezone": "Europe/Moscow", "ymClientIds": ["1736912345678901234"], "createdAt": "2026-08-25T09:00:00Z"\n    }\n  ],\n  "total": 1\n}',
+          '{\n  "subscribers": [\n    {\n      "id": "d4e2...", "phone": "79991234567", "email": null, "name": "Иван Петров",\n      "lastName": "Петров", "firstName": "Иван", "middleName": "Сергеевич",\n      "insalesClientId": null, "tags": ["vip"], "attributes": {},\n      "smsActive": true, "emailActive": false,\n      "timezone": "Europe/Moscow", "ymClientIds": ["1736912345678901234"], "createdAt": "2026-08-25T09:00:00Z"\n    }\n  ],\n  "total": 1\n}',
         responseFields: SUBSCRIBER_LIST_ITEM_FIELDS,
         errors: [AUTH_ERROR],
       },
@@ -729,7 +732,10 @@ export const API_GROUPS: ApiGroup[] = [
         bodyFields: [
           { name: "phone", type: "string", description: "Любой формат — нормализуется. Хотя бы одно из phone/email обязательно." },
           { name: "email", type: "string", description: "Email." },
-          { name: "name", type: "string", description: "Имя подписчика." },
+          { name: "lastName", type: "string", description: "Фамилия." },
+          { name: "firstName", type: "string", description: "Имя." },
+          { name: "middleName", type: "string", description: "Отчество." },
+          { name: "name", type: "string", description: "Имя одной строкой, если фамилию и имя отдельно передать нельзя: одно слово станет именем, два слова «Имя Фамилия» разберутся на имя и фамилию. Если переданы lastName или firstName, name собирается из них сам." },
           { name: "insalesClientId", type: "string", description: "id клиента в InSales, если подписчик связан с заказом." },
           { name: "tags", type: "string[]", description: "Теги для сегментации." },
           { name: "attributes", type: "object", description: "Произвольные доп. поля {ключ: значение} — доступны в Liquid как атрибуты подписчика." },
@@ -738,7 +744,7 @@ export const API_GROUPS: ApiGroup[] = [
           { name: "timezone", type: "string", description: 'Часовой пояс подписчика, название IANA, например "Europe/Moscow". Используется окном отправки «по часовому поясу получателя». Неверное название — ошибка 400.' },
           { name: "ymClientIds", type: "string[]", description: "ClientID Яндекс.Метрики подписчика (строки из букв, цифр, «_» и «-», 5–64 символа). Позволяют сопоставить подписчика с данными Метрики и обновлять его по импорту «UUID метрики»." },
         ],
-        bodyExample: '{ "phone": "+79991234567", "name": "Иван", "smsActive": true, "emailActive": true, "timezone": "Europe/Moscow", "ymClientIds": ["1736912345678901234"] }',
+        bodyExample: '{ "phone": "+79991234567", "lastName": "Петров", "firstName": "Иван", "smsActive": true, "emailActive": true, "timezone": "Europe/Moscow", "ymClientIds": ["1736912345678901234"] }',
         responseExample: '{ "ok": true, "id": "d4e2..." }',
         responseFields: [
           { name: "ok", type: "boolean", description: "true — подписчик создан." },
@@ -758,7 +764,7 @@ export const API_GROUPS: ApiGroup[] = [
         summary:
           "Полная карточка одного подписчика по его id — телефон, email, имя, теги, произвольные атрибуты и согласие на SMS/Email-рассылки. Используйте, чтобы проверить текущее состояние согласия или атрибутов конкретного человека перед адресной отправкой.",
         responseExample:
-          '{\n  "id": "d4e2...", "phone": "79991234567", "email": null, "name": "Иван",\n  "insalesClientId": null, "tags": ["vip"], "attributes": {},\n  "smsActive": true, "emailActive": false,\n  "timezone": "Europe/Moscow", "ymClientIds": ["1736912345678901234"], "createdAt": "2026-08-25T09:00:00Z"\n}',
+          '{\n  "id": "d4e2...", "phone": "79991234567", "email": null, "name": "Иван Петров",\n  "lastName": "Петров", "firstName": "Иван", "middleName": "Сергеевич",\n  "insalesClientId": null, "tags": ["vip"], "attributes": {},\n  "smsActive": true, "emailActive": false,\n  "timezone": "Europe/Moscow", "ymClientIds": ["1736912345678901234"], "createdAt": "2026-08-25T09:00:00Z"\n}',
         responseFields: SUBSCRIBER_FULL_FIELDS,
         errors: [AUTH_ERROR, { code: 404, description: "Подписчик не найден." }],
       },
@@ -769,7 +775,10 @@ export const API_GROUPS: ApiGroup[] = [
         bodyFields: [
           { name: "phone", type: "string", description: "Любой формат — нормализуется." },
           { name: "email", type: "string", description: "Email." },
-          { name: "name", type: "string", description: "Имя подписчика." },
+          { name: "lastName", type: "string | null", description: "Фамилия; null или пустая строка очищает." },
+          { name: "firstName", type: "string | null", description: "Имя; null или пустая строка очищает." },
+          { name: "middleName", type: "string | null", description: "Отчество; null или пустая строка очищает." },
+          { name: "name", type: "string | null", description: "Имя одной строкой. Не передавайте вместе с lastName и firstName: при их наличии name собирается из них («Имя Фамилия»)." },
           { name: "insalesClientId", type: "string", description: "id клиента в InSales." },
           { name: "tags", type: "string[]", description: "Теги для сегментации — заменяются целиком." },
           { name: "attributes", type: "object", description: "Доп. поля {ключ: значение} — мёрж по ключу, значение null удаляет ключ." },

@@ -10,6 +10,9 @@ type Identity = {
   phone: string | null;
   email: string | null;
   name: string | null;
+  last_name: string | null;
+  first_name: string | null;
+  middle_name: string | null;
   insales_client_id: string | null;
   tags: string[] | null;
   sms_marketing_active_at: string | null;
@@ -31,7 +34,9 @@ export default function EditSubscriberForm({
   const router = useRouter();
   const { confirm, toast } = useDialogs();
 
-  const [name, setName] = useState(identity.name || "");
+  const [lastName, setLastName] = useState(identity.last_name || "");
+  const [firstName, setFirstName] = useState(identity.first_name || "");
+  const [middleName, setMiddleName] = useState(identity.middle_name || "");
   const [phone, setPhone] = useState(identity.phone ? `+${identity.phone}` : "");
   const [email, setEmail] = useState(identity.email || "");
   const [insalesClientId, setInsalesClientId] = useState(identity.insales_client_id || "");
@@ -67,6 +72,9 @@ export default function EditSubscriberForm({
       if (!(key in attributes)) attributes[key] = null;
     }
 
+    const nameChanged =
+      lastName.trim() !== (identity.last_name || "") || firstName.trim() !== (identity.first_name || "") || middleName.trim() !== (identity.middle_name || "");
+
     setBusy(true);
     const res = await fetch(`/api/admin/subscribers/${identity.id}/update`, {
       method: "POST",
@@ -75,7 +83,9 @@ export default function EditSubscriberForm({
         projectId,
         phone: phone.trim(),
         email: email.trim(),
-        name: name.trim(),
+        // ФИО отправляем, только если его меняли: у контакта с именем из нескольких слов (оно не разобрано
+        // на части) пустые поля формы иначе стёрли бы name
+        ...(nameChanged ? { lastName: lastName.trim(), firstName: firstName.trim(), middleName: middleName.trim() } : {}),
         insalesClientId: insalesClientId.trim(),
         smsActive,
         emailActive,
@@ -122,10 +132,25 @@ export default function EditSubscriberForm({
       <h1 className="text-2xl font-semibold">Изменить подписчика</h1>
 
       <form onSubmit={save} className="mt-4 flex flex-col gap-3">
-        <div>
-          <Label>Имя</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Как обращаться" />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <Label>Фамилия</Label>
+            <Input value={lastName} onChange={(e) => setLastName(e.target.value)} />
+          </div>
+          <div>
+            <Label>Имя</Label>
+            <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+          </div>
+          <div>
+            <Label>Отчество</Label>
+            <Input value={middleName} onChange={(e) => setMiddleName(e.target.value)} />
+          </div>
         </div>
+        {!identity.first_name && !identity.last_name && identity.name && (
+          <p className="text-[13px] text-ink-faint m-0 -mt-1">
+            Сейчас имя записано одной строкой: «{identity.name}». Заполните поля выше, чтобы разделить его.
+          </p>
+        )}
         <div>
           <Label>Телефон</Label>
           <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+79991234567" />
