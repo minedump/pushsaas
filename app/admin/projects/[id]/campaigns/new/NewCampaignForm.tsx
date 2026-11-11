@@ -406,7 +406,7 @@ export default function NewCampaignForm({
     toast("Тест отправлен", "good");
   }
 
-  const smsTextShortened = withShortenedLinks(smsText);
+  const smsTextShortened = withShortenedLinks(smsText, "sms");
   const segments = smsSegments(smsTextShortened);
 
   return (

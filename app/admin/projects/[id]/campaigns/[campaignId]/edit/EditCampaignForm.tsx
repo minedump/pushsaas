@@ -441,7 +441,7 @@ export default function EditCampaignForm({
     router.refresh();
   }
 
-  const smsTextShortened = withShortenedLinks(smsText);
+  const smsTextShortened = withShortenedLinks(smsText, "sms");
   const segments = smsSegments(smsTextShortened);
   const noProvider = (channel === "sms" && providerOptions.sms.length === 0) || (channel === "email" && providerOptions.email.length === 0);
 
