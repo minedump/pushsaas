@@ -52,16 +52,9 @@ export async function POST(req: Request) {
   // (см. lib/sender.injectClickTracking, миграция 0024). Первый клик
   // выигрывает (is("clicked_at", null)) — повторные клики того же человека
   // не должны переписывать время первого перехода.
-  if (token) {
-    await admin.from("campaign_recipients").update({ clicked_at: new Date().toISOString() }).eq("campaign_id", campaignId).eq("token", token).is("clicked_at", null);
-  } else if (subscriberId) {
-    await admin
-      .from("campaign_recipients")
-      .update({ clicked_at: new Date().toISOString() })
-      .eq("campaign_id", campaignId)
-      .eq("channel", "push")
-      .eq("contact", subscriberId)
-      .is("clicked_at", null);
+  // Заодно считаем все клики и время последнего (миграция 0124) — для анализа окон отправки.
+  if (token || subscriberId) {
+    await admin.rpc("record_recipient_click", { p_campaign: campaignId, p_token: token || null, p_subscriber: token ? null : subscriberId || null });
   }
 
   return NextResponse.json({ ok: true }, { headers: CORS });

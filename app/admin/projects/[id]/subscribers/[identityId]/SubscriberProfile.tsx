@@ -21,6 +21,7 @@ type Identity = {
   middle_name: string | null;
   insales_client_id: string | null;
   telegram_id: string | null;
+  exclude_from_analytics?: boolean | null;
   tags: string[] | null;
   attributes: Record<string, unknown> | null;
   sms_marketing_active_at: string | null;
@@ -200,6 +201,12 @@ export default function SubscriberProfile({
           </Link>
           <h1 className="text-2xl font-semibold m-0 mt-2">{[identity.last_name, identity.first_name, identity.middle_name].filter(Boolean).join(" ") || identity.name || "Без имени"}</h1>
           <div className="flex flex-col gap-1 mt-2.5 text-[13.5px] text-ink-muted">
+            {identity.exclude_from_analytics && (
+              <div className="flex items-center gap-1.5">
+                <Badge>Тестовый контакт</Badge>
+                <span className="text-[12.5px] text-ink-faint">не учитывается в аналитике</span>
+              </div>
+            )}
             {(identity.tags || []).length > 0 && (
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span>Теги:</span>

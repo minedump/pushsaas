@@ -21,6 +21,7 @@ type Identity = {
   timezone: string | null;
   ym_client_ids: string[] | null;
   telegram_id: string | null;
+  exclude_from_analytics: boolean | null;
 };
 
 export default function EditSubscriberForm({
@@ -48,6 +49,7 @@ export default function EditSubscriberForm({
   const [ymIds, setYmIds] = useState((identity.ym_client_ids ?? []).join(", "));
   const [smsActive, setSmsActive] = useState(!!identity.sms_marketing_active_at);
   const [emailActive, setEmailActive] = useState(!!identity.email_marketing_active_at);
+  const [excludeAnalytics, setExcludeAnalytics] = useState(!!identity.exclude_from_analytics);
   // Доп. поля — набор ключей, встречавшихся хотя бы у одного контакта
   // проекта (см. page.tsx), не только у текущего: поле, расширенное через
   // CSV-импорт одному подписчику, должно быть видно и заполняемо у всех
@@ -90,6 +92,7 @@ export default function EditSubscriberForm({
         ...(nameChanged ? { lastName: lastName.trim(), firstName: firstName.trim(), middleName: middleName.trim() } : {}),
         insalesClientId: insalesClientId.trim(),
         telegramId: telegramId.trim(),
+        excludeFromAnalytics: excludeAnalytics,
         smsActive,
         emailActive,
         tags,
@@ -179,6 +182,10 @@ export default function EditSubscriberForm({
         <div>
           <Label>Теги</Label>
           <TagEditor tags={tags} onChange={setTags} />
+        </div>
+        <div>
+          <Toggle checked={excludeAnalytics} onChange={setExcludeAnalytics} label="Тестовый контакт: не учитывать в аналитике" />
+          <p className="text-[12.5px] text-ink-faint mt-1.5 mb-0">Рассылки ему уходят как обычно, но его доставки и клики не попадают в аналитику (лучшее время отправки, CTR).</p>
         </div>
         <div>
           <Label>Часовой пояс</Label>

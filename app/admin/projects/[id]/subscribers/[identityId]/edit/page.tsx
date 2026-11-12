@@ -13,7 +13,7 @@ export default async function EditSubscriberPage({ params }: { params: Promise<{
 
   const { data: identity } = await supabase
     .from("identities")
-    .select("id, phone, email, name, last_name, first_name, middle_name, insales_client_id, tags, sms_marketing_active_at, email_marketing_active_at, attributes, timezone, ym_client_ids, telegram_id")
+    .select("id, phone, email, name, last_name, first_name, middle_name, insales_client_id, tags, sms_marketing_active_at, email_marketing_active_at, attributes, timezone, ym_client_ids, telegram_id, exclude_from_analytics")
     .eq("id", identityId)
     .eq("project_id", id)
     .maybeSingle();

@@ -51,10 +51,11 @@ export default async function SubscribersPage({ params }: { params: Promise<{ id
   const smsActiveBySub = new Set<string>();
   const emailActiveBySub = new Set<string>();
   const identityIdBySub = new Map<string, string>();
+  const excludedBySub = new Set<string>();
   if (base.length) {
     const { data: links } = await supabase
       .from("identity_devices")
-      .select("subscriber_id, identities!inner(id, phone, email, name, insales_client_id, tags, sms_marketing_active_at, email_marketing_active_at)")
+      .select("subscriber_id, identities!inner(id, phone, email, name, insales_client_id, tags, sms_marketing_active_at, email_marketing_active_at, exclude_from_analytics)")
       .in(
         "subscriber_id",
         base.map((r) => r.id)
@@ -69,6 +70,7 @@ export default async function SubscribersPage({ params }: { params: Promise<{ id
         tags: string[] | null;
         sms_marketing_active_at: string | null;
         email_marketing_active_at: string | null;
+        exclude_from_analytics: boolean | null;
       };
       if (ident?.id) identityIdBySub.set(l.subscriber_id, ident.id);
       if (ident?.phone) phoneBySub.set(l.subscriber_id, ident.phone);
@@ -78,6 +80,7 @@ export default async function SubscribersPage({ params }: { params: Promise<{ id
       if (ident?.tags) tagsBySub.set(l.subscriber_id, ident.tags);
       if (ident?.sms_marketing_active_at) smsActiveBySub.add(l.subscriber_id);
       if (ident?.email_marketing_active_at) emailActiveBySub.add(l.subscriber_id);
+      if (ident?.exclude_from_analytics) excludedBySub.add(l.subscriber_id);
     }
   }
 
@@ -105,6 +108,7 @@ export default async function SubscribersPage({ params }: { params: Promise<{ id
         insalesClientId: null,
         smsActive: false,
         emailActive: false,
+        excludeFromAnalytics: false,
         identityId: null,
       });
       continue;
@@ -125,6 +129,7 @@ export default async function SubscribersPage({ params }: { params: Promise<{ id
         insalesClientId: insalesClientIdBySub.get(r.id) ?? null,
         smsActive: smsActiveBySub.has(r.id),
         emailActive: emailActiveBySub.has(r.id),
+        excludeFromAnalytics: excludedBySub.has(r.id),
         identityId,
       });
     }
@@ -137,7 +142,7 @@ export default async function SubscribersPage({ params }: { params: Promise<{ id
   // проекта минус те, что уже встретились через identity_devices.
   const { data: allIdentities } = await supabase
     .from("identities")
-    .select("id, phone, email, name, insales_client_id, tags, sms_marketing_active_at, email_marketing_active_at, created_at")
+    .select("id, phone, email, name, insales_client_id, tags, sms_marketing_active_at, email_marketing_active_at, created_at, exclude_from_analytics")
     .eq("project_id", id)
     .order("created_at", { ascending: false })
     .limit(1000);
@@ -164,6 +169,7 @@ export default async function SubscribersPage({ params }: { params: Promise<{ id
         insalesClientId: i.insales_client_id,
         smsActive: !!i.sms_marketing_active_at,
         emailActive: !!i.email_marketing_active_at,
+        excludeFromAnalytics: !!i.exclude_from_analytics,
         identityId: i.id,
       });
     }

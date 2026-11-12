@@ -12,13 +12,14 @@ import { writeAudit } from "@/lib/audit";
 // пересекается с project_id — так выбор с одной страницы не может задеть
 // чужой проект, даже если id подделать в запросе.
 export async function POST(req: Request) {
-  const { projectId, identityIds, action, tag, channel, active } = (await req.json().catch(() => ({}))) as {
+  const { projectId, identityIds, action, tag, channel, active, exclude } = (await req.json().catch(() => ({}))) as {
     projectId?: string;
     identityIds?: string[];
-    action?: "delete" | "tag_add" | "tag_remove" | "channel";
+    action?: "delete" | "tag_add" | "tag_remove" | "channel" | "analytics_exclude";
     tag?: string;
     channel?: "sms" | "email";
     active?: boolean;
+    exclude?: boolean;
   };
   if (!projectId || !Array.isArray(identityIds) || !identityIds.length || !action) {
     return NextResponse.json({ error: "projectId, identityIds, action required" }, { status: 400 });
@@ -33,7 +34,7 @@ export async function POST(req: Request) {
       projectId,
       entity: "subscribers",
       action: "bulk",
-      changes: { action, affected, ...(tag ? { tag } : {}), ...(channel ? { channel, active: !!active } : {}) },
+      changes: { action, affected, ...(tag ? { tag } : {}), ...(channel ? { channel, active: !!active } : {}), ...(action === "analytics_exclude" ? { exclude: !!exclude } : {}) },
     });
     return NextResponse.json({ ok: true, affected });
   };
@@ -48,6 +49,13 @@ export async function POST(req: Request) {
     // только сама identity — привязанные push-устройства остаются, просто
     // без контактных данных.
     const { error } = await admin.from("identities").delete().in("id", ids);
+    if (error) return NextResponse.json({ error: friendlyError(error) }, { status: 500 });
+    return await done(ids.length);
+  }
+
+  // «Тестовые контакты»: исключить из аналитики или вернуть в неё
+  if (action === "analytics_exclude") {
+    const { error } = await admin.from("identities").update({ exclude_from_analytics: !!exclude }).in("id", ids);
     if (error) return NextResponse.json({ error: friendlyError(error) }, { status: 500 });
     return await done(ids.length);
   }

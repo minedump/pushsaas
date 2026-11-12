@@ -3,11 +3,11 @@ import { createClient } from "@/lib/supabase/server";
 import { ensureProjectAccessible } from "@/lib/guards";
 import { Badge, Card } from "@/app/ui";
 import AnalyticsPeriodSwitcher from "./AnalyticsPeriodSwitcher";
+import SendTimeControls from "./SendTimeControls";
+import { computeBestSendTimes, parseSettings, MIN_SAMPLE, type Channel, type ChannelResult, type RecipientRow } from "@/lib/sendTimeAnalytics";
 import { DEFAULT_TZ, todayInTz, wallTimeToUtc } from "@/lib/datetime";
 
 const channelLabel: Record<string, string> = { push: "Push", sms: "SMS", email: "Email" };
-const MIN_SAMPLE = 3;
-const DAY_LABEL: Record<number, string> = { 1: "Пн", 2: "Вт", 3: "Ср", 4: "Чт", 5: "Пт", 6: "Сб", 0: "Вс" };
 
 type Period = "day" | "week" | "month" | "custom";
 
@@ -49,7 +49,7 @@ export default async function AnalyticsPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ period?: string; from?: string; to?: string }>;
+  searchParams: Promise<{ period?: string; from?: string; to?: string; win?: string; day?: string; step?: string }>;
 }) {
   const { id } = await params;
   const sp = await searchParams;
@@ -115,21 +115,32 @@ export default async function AnalyticsPage({
       .limit(20000),
   ]);
 
-  // Лучшее время/день для отправки — по факту вовлечённости (клик, для
-  // email ещё и открытие) уже состоявшихся доставок, а не догадка. best-
-  // effort: только 'delivered' — неудачные попытки не в счёт; лимит на
-  // случай, если в выбранный диапазон попадёт очень много доставок.
-  const { data: recipientRows } = await supabase
-    .from("campaign_recipients")
-    .select("channel, created_at, clicked_at, opened_at")
-    .eq("project_id", id)
-    .eq("status", "delivered")
-    .gte("created_at", sinceIso)
-    .lte("created_at", untilIso)
-    .order("created_at", { ascending: false })
-    .limit(5000);
+  // Лучшее время для отправки — по факту вовлечённости (клик, для email ещё и открытие) уже
+  // состоявшихся доставок. Считаем за всё время, не за период страницы: окон отправки у нас
+  // мало, и данные нужно копить, а не отбрасывать. Тестовые контакты (флаг «не учитывать в
+  // аналитике» в Подписчиках) в расчёт не входят. Подробности расчёта — lib/sendTimeAnalytics.ts.
+  const { data: excludedRows } = await supabase.from("identities").select("id").eq("project_id", id).eq("exclude_from_analytics", true).limit(5000);
+  const excludedIds = new Set((excludedRows ?? []).map((r) => r.id as string));
+  const recipientRows: (RecipientRow & { identity_id: string | null })[] = [];
+  for (let from = 0; from < 100_000; from += 1000) {
+    const { data: page } = await supabase
+      .from("campaign_recipients")
+      .select("channel, created_at, clicked_at, opened_at, provider_status, identity_id")
+      .eq("project_id", id)
+      .eq("status", "delivered")
+      .order("created_at", { ascending: true })
+      .range(from, from + 999);
+    if (!page?.length) break;
+    recipientRows.push(...(page as (RecipientRow & { identity_id: string | null })[]));
+    if (page.length < 1000) break;
+  }
   const projectTimezone = project.timezone || "Europe/Moscow";
-  const bestTimes = computeBestSendTimes(recipientRows ?? [], projectTimezone);
+  const sendTimeSettings = parseSettings(sp);
+  const bestTimes = computeBestSendTimes(
+    recipientRows.filter((r) => !r.identity_id || !excludedIds.has(r.identity_id)),
+    projectTimezone,
+    sendTimeSettings
+  );
 
   const subRows = subs ?? [];
 
@@ -253,34 +264,15 @@ export default async function AnalyticsPage({
       <Card className="mt-4 sm:mt-8">
         <div className="text-[13px] text-ink-muted mb-1">Лучшее время для отправки</div>
         <p className="text-[12px] text-ink-faint mt-0 mb-3">
-          По факту вовлечённости уже доставленных рассылок (клики{bestTimes.hasEmail ? ", для email ещё и открытия" : ""}) — часовой пояс
-          проекта ({projectTimezone}). Показаны сочетания с {MIN_SAMPLE}+ отправками.
+          Доля получателей, перешедших по ссылке (для email ещё и открывших письмо) в течение окна после отправки. Данные за всё время,
+          часовой пояс проекта ({projectTimezone}). В рейтинг попадают окна с {MIN_SAMPLE}+ отправками. Тестовые контакты не учитываются.
         </p>
-        {(["push", "sms", "email"] as const).every((ch) => !bestTimes[ch].length) ? (
-          <div className="text-ink-faint text-sm">Пока недостаточно данных — нужно больше доставленных рассылок по каждому каналу.</div>
+        <SendTimeControls win={sp.win ?? "auto"} day={sp.day ?? "auto"} step={sp.step ?? "auto"} />
+        {(["push", "sms", "email"] as const).every((ch) => !bestTimes[ch].delivered) ? (
+          <div className="text-ink-faint text-sm">Пока нет доставленных рассылок.</div>
         ) : (
-          <div className="flex flex-col gap-4">
-            {(["push", "sms", "email"] as const).map((ch) =>
-              bestTimes[ch].length ? (
-                <div key={ch}>
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <Badge tone="accent">{channelLabel[ch]}</Badge>
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    {bestTimes[ch].map((b, i) => (
-                      <div key={i} className="flex items-center justify-between text-[13.5px]">
-                        <span className="text-ink">
-                          {DAY_LABEL[b.weekday]}, {String(b.hour).padStart(2, "0")}:00–{String((b.hour + 1) % 24).padStart(2, "0")}:00
-                        </span>
-                        <span className="tabular-nums text-ink-muted">
-                          {b.rate}% ({b.engaged} из {b.sent})
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null
-            )}
+          <div className="flex flex-col gap-5">
+            {(["push", "sms", "email"] as const).map((ch) => (bestTimes[ch].delivered ? <SendTimeBlock key={ch} r={bestTimes[ch]} /> : null))}
           </div>
         )}
       </Card>
@@ -468,61 +460,64 @@ function GrowthChart({ data, max }: { data: { date: string; push: number; sms: n
   );
 }
 
-// День недели (0=Вс..6=Сб, как Date.getDay) + час в заданном часовом поясе —
-// та же конверсия, что и lib/sendWindow.ts, но нужен только weekday/hour,
-// без полного zonedToUtc.
-function weekdayHour(iso: string, tz: string): { weekday: number; hour: number } {
-  const dtf = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour12: false, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit" });
-  const parts = dtf.formatToParts(new Date(iso)).reduce((acc, p) => {
-    acc[p.type] = p.value;
-    return acc;
-  }, {} as Record<string, string>);
-  const y = Number(parts.year);
-  const m = Number(parts.month);
-  const d = Number(parts.day);
-  const hour = parts.hour === "24" ? 0 : Number(parts.hour);
-  const weekday = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-  return { weekday, hour };
+const DAY_MODE_LABEL: Record<ChannelResult["day"], string> = { dow: "по дням недели", wd: "будни и выходные", all: "все дни вместе" };
+
+function stepLabel(min: number): string {
+  if (min < 60) return `${min} мин`;
+  return `${min / 60} ч`;
 }
 
-type SendTimeBucket = { weekday: number; hour: number; sent: number; engaged: number; rate: number };
+function pct(x: number): string {
+  return `${Math.round(x * 100)}%`;
+}
 
-// Группирует уже доставленные рассылки по (день недели, час отправки) в
-// часовом поясе проекта и считает вовлечённость (клик — для email ещё и
-// открытие) в каждой ячейке — топ-5 сочетаний на канал с достаточной
-// выборкой (MIN_SAMPLE), иначе одна случайная удачная отправка искажала бы
-// рейтинг.
-function computeBestSendTimes(
-  rows: { channel: string; created_at: string; clicked_at: string | null; opened_at: string | null }[],
-  timezone: string
-): Record<"push" | "sms" | "email", SendTimeBucket[]> & { hasEmail: boolean } {
-  const byChannel: Record<"push" | "sms" | "email", Map<string, { weekday: number; hour: number; sent: number; engaged: number }>> = {
-    push: new Map(),
-    sms: new Map(),
-    email: new Map(),
-  };
-  let hasEmail = false;
-  for (const r of rows) {
-    const ch = r.channel as "push" | "sms" | "email";
-    if (!byChannel[ch]) continue;
-    if (ch === "email") hasEmail = true;
-    const { weekday, hour } = weekdayHour(r.created_at, timezone);
-    const key = `${weekday}-${hour}`;
-    const bucket = byChannel[ch].get(key) || { weekday, hour, sent: 0, engaged: 0 };
-    bucket.sent++;
-    const engaged = ch === "email" ? !!r.clicked_at || !!r.opened_at : !!r.clicked_at;
-    if (engaged) bucket.engaged++;
-    byChannel[ch].set(key, bucket);
-  }
-
-  const rank = (ch: "push" | "sms" | "email"): SendTimeBucket[] =>
-    [...byChannel[ch].values()]
-      .filter((b) => b.sent >= MIN_SAMPLE)
-      .map((b) => ({ ...b, rate: Math.round((b.engaged / b.sent) * 100) }))
-      .sort((a, b) => b.rate - a.rate || b.sent - a.sent)
-      .slice(0, 5);
-
-  return { push: rank("push"), sms: rank("sms"), email: rank("email"), hasEmail };
+// Один канал: подпись «как считали» (окно, группировка, шаг, порог и объём данных) и рейтинг окон
+function SendTimeBlock({ r }: { r: ChannelResult }) {
+  const auto = (flag: boolean) => (flag ? " (авто)" : "");
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-1.5">
+        <Badge tone="accent">{channelLabel[r.channel as Channel]}</Badge>
+      </div>
+      <p className="text-[12.5px] text-ink-muted m-0 mb-2">
+        Клики за {r.windowHours} ч после отправки{auto(r.windowAuto)}
+        {r.windowNote ? ` — ${r.windowNote}` : ""} · дни: {DAY_MODE_LABEL[r.day]}
+        {auto(r.dayAuto)} · шаг: {stepLabel(r.step)}
+        {auto(r.stepAuto)} · учтено {r.counted} из {r.delivered} доставленных
+        {r.pending ? `, ещё набираются: ${r.pending}` : ""}
+      </p>
+      {r.reliable.length ? (
+        <div className="flex flex-col gap-1.5">
+          {r.reliable.map((b) => (
+            <div key={b.key} className="flex items-center justify-between text-[13.5px] gap-3">
+              <span className="text-ink">
+                {b.dayLabel}, {b.from}–{b.to}
+              </span>
+              <span className="tabular-nums text-ink-muted">
+                {pct(b.rate)} ± {Math.round(b.margin * 100)} ({b.engaged} из {b.sent})
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {r.weak.length ? (
+        <div className="flex flex-col gap-1.5 mt-2">
+          <div className="text-[12px] text-ink-faint">Мало данных (меньше {MIN_SAMPLE} отправок), в рейтинг не входят:</div>
+          {r.weak.map((b) => (
+            <div key={b.key} className="flex items-center justify-between text-[13px] gap-3 text-ink-faint">
+              <span>
+                {b.dayLabel}, {b.from}–{b.to}
+              </span>
+              <span className="tabular-nums">
+                {b.engaged} из {b.sent}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {r.note ? <p className="text-[12.5px] text-ink-faint mt-2 mb-0">{r.note}</p> : null}
+    </div>
+  );
 }
 
 function OrderLine({ label, s, strong, muted }: { label: string; s: { count: number; total: number }; strong?: boolean; muted?: boolean }) {

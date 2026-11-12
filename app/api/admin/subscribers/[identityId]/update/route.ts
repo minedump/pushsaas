@@ -9,7 +9,7 @@ import { writeAudit } from "@/lib/audit";
 export async function POST(req: Request, { params }: { params: Promise<{ identityId: string }> }) {
   const { identityId } = await params;
   const body = await req.json().catch(() => ({}));
-  const { projectId, phone, email, name, lastName, firstName, middleName, insalesClientId, smsActive, emailActive, tags, attributes } = body as {
+  const { projectId, phone, email, name, lastName, firstName, middleName, insalesClientId, smsActive, emailActive, tags, attributes, excludeFromAnalytics } = body as {
     projectId?: string;
     phone?: string;
     email?: string;
@@ -22,6 +22,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ identit
     emailActive?: boolean;
     tags?: string[];
     attributes?: Record<string, string | null>;
+    excludeFromAnalytics?: boolean;
   };
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
 
@@ -58,6 +59,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ identit
   if (sys.timezone !== undefined) await setIdentityTimezone(admin, projectId, identityId, sys.timezone);
   if (sys.ymClientIds !== undefined) await setYmClientIds(admin, projectId, identityId, sys.ymClientIds);
   if (sys.telegramId !== undefined) await setIdentityTelegramId(admin, projectId, identityId, sys.telegramId);
+  // «Тестовый контакт»: не учитывать в аналитике (не передан — не трогаем)
+  if (typeof excludeFromAnalytics === "boolean") await admin.from("identities").update({ exclude_from_analytics: excludeFromAnalytics }).eq("id", identityId).eq("project_id", projectId);
   await writeAudit({
     projectId,
     entity: "subscriber",

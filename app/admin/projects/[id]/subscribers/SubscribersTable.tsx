@@ -14,6 +14,8 @@ import {
   IconTrash,
   IconTagPlus,
   IconTagMinus,
+  IconFlask,
+  IconFlaskOff,
 } from "@tabler/icons-react";
 import { Badge, BulkActionsMenu, Button, Checkbox, Input, Pagination, SortableTh, useDialogs, type SortDir } from "@/app/ui";
 import { CustomSelect, type ComboOption } from "@/app/ui/CustomSelect";
@@ -48,6 +50,8 @@ export type Row = {
   insalesClientId: string | null;
   smsActive: boolean;
   emailActive: boolean;
+  // «Тестовый контакт»: не учитывается в аналитике
+  excludeFromAnalytics: boolean;
   // id контакта (identities.id) — null, если у устройства нет привязанной
   // identity (никто не подписывался через код). Именно по нему ведут
   // карандаш/корзина/теги — редактируется/удаляется контакт, не устройство.
@@ -236,6 +240,14 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
     }
   }
 
+  async function bulkAnalyticsExclude(exclude: boolean) {
+    if (await bulkAction({ action: "analytics_exclude", exclude })) {
+      toast(exclude ? "Контакты исключены из аналитики" : "Контакты возвращены в аналитику", "good");
+      setSelectedIds(new Set());
+      router.refresh();
+    }
+  }
+
   async function bulkChannel(channel: "sms" | "email", active: boolean) {
     if (await bulkAction({ action: "channel", channel, active })) {
       toast("Готово", "good");
@@ -337,6 +349,8 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
                 { label: "Отключить SMS", icon: <IconPlayerPauseFilled size={13} />, onClick: () => bulkChannel("sms", false) },
                 { label: "Включить Email", icon: <IconPlayerPlayFilled size={13} />, onClick: () => bulkChannel("email", true) },
                 { label: "Отключить Email", icon: <IconPlayerPauseFilled size={13} />, onClick: () => bulkChannel("email", false) },
+                { label: "Тестовые: не учитывать в аналитике", icon: <IconFlask size={15} stroke={1.8} />, onClick: () => bulkAnalyticsExclude(true) },
+                { label: "Вернуть в аналитику", icon: <IconFlaskOff size={15} stroke={1.8} />, onClick: () => bulkAnalyticsExclude(false) },
               ]}
             />
             <Button variant="danger" size="sm" disabled={bulkBusy} onClick={bulkDelete}>
@@ -375,13 +389,20 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
                   <Td>{r.identityId && <Checkbox checked={selectedIds.has(r.identityId)} onChange={() => toggleSelect(r.identityId!)} />}</Td>
                   <Td className="max-w-40">
                     {r.identityId ? (
-                      <Link
-                        href={`/admin/projects/${projectId}/subscribers/${r.identityId}`}
-                        className="inline-flex items-center gap-1 max-w-full font-semibold text-ink hover:underline"
-                      >
-                        <span className="min-w-0 truncate">{r.name || "Без имени"}</span>
-                        <IconChevronRight size={13} stroke={2} className="shrink-0" />
-                      </Link>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <Link
+                          href={`/admin/projects/${projectId}/subscribers/${r.identityId}`}
+                          className="inline-flex items-center gap-1 min-w-0 font-semibold text-ink hover:underline"
+                        >
+                          <span className="min-w-0 truncate">{r.name || "Без имени"}</span>
+                          <IconChevronRight size={13} stroke={2} className="shrink-0" />
+                        </Link>
+                        {r.excludeFromAnalytics && (
+                          <span className="shrink-0" title="Тестовый контакт: не учитывается в аналитике">
+                            <Badge>Тест</Badge>
+                          </span>
+                        )}
+                      </div>
                     ) : (
                       // анонимное устройство без контакта: у строки свой id устройства, открывается карточка устройства
                       <Link

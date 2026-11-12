@@ -34,7 +34,7 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
   const { data: identity } = await supabase
     .from("identities")
     .select(
-      "id, phone, email, name, last_name, first_name, middle_name, insales_client_id, tags, attributes, sms_marketing_active_at, email_marketing_active_at, phone_verified_at, email_verified_at, timezone, ym_client_ids, telegram_id, created_at"
+      "id, phone, email, name, last_name, first_name, middle_name, insales_client_id, tags, attributes, sms_marketing_active_at, email_marketing_active_at, phone_verified_at, email_verified_at, timezone, ym_client_ids, telegram_id, exclude_from_analytics, created_at"
     )
     .eq("id", identityId)
     .eq("project_id", id)

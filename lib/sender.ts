@@ -138,6 +138,7 @@ async function logRecipients(
   rows: { contact: string; status: "delivered" | "failed"; token?: string; rawContext?: RawContextSnapshot; rendered?: Record<string, unknown>; providerMessageId?: string }[]
 ) {
   if (!rows.length) return;
+  const meta = await recipientAudienceMeta(admin, projectId, channel, rows.map((r) => r.contact));
   await admin
     .from("campaign_recipients")
     .insert(
@@ -151,12 +152,64 @@ async function logRecipients(
         raw_context: r.rawContext ?? null,
         rendered_content: r.rendered ?? null,
         provider_message_id: r.providerMessageId ?? null,
+        identity_id: meta.get(r.contact)?.identityId ?? null,
+        audience_snapshot: meta.get(r.contact)?.snapshot ?? null,
       }))
     )
     .then(
       () => {},
       () => {}
     );
+}
+
+// Связь строки получателя с контактом и снимок того, что мы знали о нём в момент отправки
+// (теги, сумма покупок, город, часовой пояс): по снимку потом сравниваем окна отправки с
+// похожей аудиторией, а флаг «не учитывать в аналитике» применяется через identity_id.
+// sms — по телефону, email — по адресу, push — по устройству (identity_devices). Best-effort:
+// не нашли контакт или запрос упал — строка всё равно пишется, просто без этих данных.
+type RecipientMeta = { identityId: string; snapshot: Record<string, unknown> };
+async function recipientAudienceMeta(
+  admin: ReturnType<typeof createAdminClient>,
+  projectId: string,
+  channel: "push" | "sms" | "email",
+  contacts: string[]
+): Promise<Map<string, RecipientMeta>> {
+  const out = new Map<string, RecipientMeta>();
+  try {
+    const unique = [...new Set(contacts.filter(Boolean))];
+    const identityByContact = new Map<string, string>();
+    for (let i = 0; i < unique.length; i += 500) {
+      const chunk = unique.slice(i, i + 500);
+      if (channel === "push") {
+        const { data } = await admin.from("identity_devices").select("identity_id, subscriber_id").in("subscriber_id", chunk);
+        for (const d of data ?? []) if (!identityByContact.has(d.subscriber_id)) identityByContact.set(d.subscriber_id, d.identity_id);
+      } else {
+        const field = channel === "sms" ? "phone" : "email";
+        const { data } = await admin.from("identities").select(`id, ${field}`).eq("project_id", projectId).in(field, chunk);
+        for (const r of (data ?? []) as unknown as Record<string, string>[]) {
+          const key = r[field];
+          if (key) identityByContact.set(key, r.id);
+        }
+      }
+    }
+    const ids = [...new Set(identityByContact.values())];
+    const info = new Map<string, Record<string, unknown>>();
+    for (let i = 0; i < ids.length; i += 500) {
+      const { data } = await admin.from("identities").select("id, tags, attributes, timezone").in("id", ids.slice(i, i + 500));
+      for (const r of data ?? []) {
+        const attrs = (r.attributes as Record<string, unknown> | null) || {};
+        const snap: Record<string, unknown> = { tags: r.tags ?? [] };
+        if (attrs.purchases_sum != null && attrs.purchases_sum !== "") snap.purchases_sum = attrs.purchases_sum;
+        if (attrs.city) snap.city = attrs.city;
+        if (r.timezone) snap.timezone = r.timezone;
+        info.set(r.id, snap);
+      }
+    }
+    for (const [contact, identityId] of identityByContact) out.set(contact, { identityId, snapshot: info.get(identityId) ?? {} });
+  } catch {
+    // лог отправки важнее метаданных
+  }
+  return out;
 }
 
 // Подмена ссылок в тексте SMS / HTML письма на версию с ?pss_c=<campaignId>
