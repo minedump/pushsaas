@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ensureProjectAccessible } from "@/lib/guards";
 import DashboardOverview from "./DashboardOverview";
+import { loadCampaignStats, loadExcludedIdentityIds, topByCtr, type TopCampaign } from "@/lib/campaignStats";
 
 // Сводка отправок по всем каналам (push/sms/email), не только push.
 // Источники: campaigns (ручные/API рассылки любого канала, channel-колонка —
@@ -132,10 +133,16 @@ export default async function DashboardPage({ params }: { params: Promise<{ id: 
   const active = Object.fromEntries(periods.map((p) => [p, activeSince(sinceByPeriod[p])])) as Record<Period, ActiveCounts>;
   const platforms = Object.fromEntries(periods.map((p) => [p, platformsSince(sinceByPeriod[p])])) as Record<Period, PlatformCounts>;
 
+  // Лучшие рассылки по CTR за период — без тестовых контактов (флаг в «Подписчиках»)
+  const monthStats = await loadCampaignStats(supabase, id, startOfMonth.toISOString(), null, await loadExcludedIdentityIds(supabase, id));
+  const topCampaigns = Object.fromEntries(
+    periods.map((p) => [p, topByCtr(monthStats.filter((c) => c.sent_at && new Date(c.sent_at) >= sinceByPeriod[p]))])
+  ) as Record<Period, TopCampaign[]>;
+
   return (
     <main className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-semibold">Дашборд</h1>
-      <DashboardOverview sent={sent} active={active} platforms={platforms} />
+      <DashboardOverview sent={sent} active={active} platforms={platforms} topCampaigns={topCampaigns} />
     </main>
   );
 }

@@ -1,12 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Card, SegmentedControl } from "@/app/ui";
+import { Badge, Card, SegmentedControl } from "@/app/ui";
 
 type Period = "today" | "week" | "month";
 type ChannelCounts = { push: number; sms: number; email: number; total: number };
 type ActiveCounts = { push: number; sms: number; email: number };
 type PlatformCounts = { ios: number; android: number; desktop: number };
+type TopCampaign = { id: string; title: string; channel: string; ctr: number; clicked: number; delivered: number };
+
+const CHANNEL_LABEL: Record<string, string> = { push: "Push", sms: "SMS", email: "Email" };
 
 const PERIOD_LABEL: Record<Period, string> = { today: "Сегодня", week: "Неделя", month: "Месяц" };
 
@@ -20,15 +23,18 @@ export default function DashboardOverview({
   sent,
   active,
   platforms,
+  topCampaigns,
 }: {
   sent: Record<Period, ChannelCounts>;
   active: Record<Period, ActiveCounts>;
   platforms: Record<Period, PlatformCounts>;
+  topCampaigns: Record<Period, TopCampaign[]>;
 }) {
   const [period, setPeriod] = useState<Period>("today");
   const s = sent[period];
   const a = active[period];
   const p = platforms[period];
+  const top = topCampaigns[period];
 
   return (
     <div>
@@ -59,6 +65,25 @@ export default function DashboardOverview({
         <Tile label="Android" value={p.android} />
         <Tile label="Desktop" value={p.desktop} />
       </div>
+
+      <div className="text-[13px] text-ink-muted mt-4 sm:mt-8 mb-2">Лучшие рассылки по CTR</div>
+      <Card>
+        {top.length === 0 ? (
+          <div className="text-ink-faint text-sm">Нет отправленных рассылок за этот период</div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {top.map((c) => (
+              <div key={c.id} className="flex items-center justify-between text-[13.5px] gap-2">
+                <span className="flex items-center gap-2 min-w-0">
+                  <Badge tone="accent">{CHANNEL_LABEL[c.channel] || c.channel}</Badge>
+                  <span className="truncate">{c.title}</span>
+                </span>
+                <span className="tabular-nums text-ink-muted shrink-0 ml-3">{c.ctr}% CTR</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

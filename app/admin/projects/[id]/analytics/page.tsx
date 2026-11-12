@@ -4,6 +4,7 @@ import { ensureProjectAccessible } from "@/lib/guards";
 import { Badge, Card } from "@/app/ui";
 import AnalyticsPeriodSwitcher from "./AnalyticsPeriodSwitcher";
 import SendTimeControls from "./SendTimeControls";
+import { loadCampaignStats, loadExcludedIdentityIds } from "@/lib/campaignStats";
 import { computeBestSendTimes, parseSettings, MIN_SAMPLE, type Channel, type ChannelResult, type RecipientRow } from "@/lib/sendTimeAnalytics";
 import { DEFAULT_TZ, todayInTz, wallTimeToUtc } from "@/lib/datetime";
 
@@ -64,7 +65,7 @@ export default async function AnalyticsPage({
   const sinceIso = since.toISOString();
   const untilIso = until.toISOString();
 
-  const [{ data: subs }, { data: campaigns }, { data: attribution }, { data: channelGrowth }, { data: widgetEvents }] = await Promise.all([
+  const [{ data: subs }, { data: attribution }, { data: channelGrowth }, { data: widgetEvents }] = await Promise.all([
     supabase
       .from("subscribers")
       .select("platform, is_active, created_at")
@@ -73,13 +74,6 @@ export default async function AnalyticsPage({
       .not("endpoint", "is", null)
       .gte("created_at", sinceIso)
       .lte("created_at", untilIso),
-    supabase
-      .from("campaigns")
-      .select("id, channel, status, sent_count, delivered_count, failed_count, clicked_count, title, internal_title, sent_at")
-      .eq("project_id", id)
-      .eq("status", "sent")
-      .gte("sent_at", sinceIso)
-      .lte("sent_at", untilIso),
     // выручка показывается всегда (0, если атрибуция не подключена);
     // best-effort: до миграции 0009 таблицы нет — data будет null. is_paid/
     // paid_amount — миграция 0075, тоже best-effort на случай отставания.
@@ -119,8 +113,7 @@ export default async function AnalyticsPage({
   // состоявшихся доставок. Считаем за всё время, не за период страницы: окон отправки у нас
   // мало, и данные нужно копить, а не отбрасывать. Тестовые контакты (флаг «не учитывать в
   // аналитике» в Подписчиках) в расчёт не входят. Подробности расчёта — lib/sendTimeAnalytics.ts.
-  const { data: excludedRows } = await supabase.from("identities").select("id").eq("project_id", id).eq("exclude_from_analytics", true).limit(5000);
-  const excludedIds = new Set((excludedRows ?? []).map((r) => r.id as string));
+  const excludedIds = await loadExcludedIdentityIds(supabase, id);
   const recipientRows: (RecipientRow & { identity_id: string | null })[] = [];
   for (let from = 0; from < 100_000; from += 1000) {
     const { data: page } = await supabase
@@ -167,17 +160,12 @@ export default async function AnalyticsPage({
   }
   const maxDay = Math.max(1, ...days.map((d) => d.push + d.sms + d.email));
 
-  // у рассылок, созданных по API, title пустой или равен тексту: показываем внутреннее название
-  const camp = (campaigns ?? []).map((c) => ({ ...c, title: (c as { internal_title?: string | null }).internal_title || c.title || "Рассылка" }));
+  // Рассылки за период со счётчиками без тестовых контактов (lib/campaignStats.ts)
+  const camp = await loadCampaignStats(supabase, id, sinceIso, untilIso, excludedIds);
   const totalSent = camp.reduce((s, c) => s + (c.sent_count || 0), 0);
   const totalDelivered = camp.reduce((s, c) => s + (c.delivered_count || 0), 0);
   const totalClicked = camp.reduce((s, c) => s + (c.clicked_count || 0), 0);
   const ctr = totalDelivered ? Math.round((totalClicked / totalDelivered) * 100) : 0;
-  const topByCtr = [...camp]
-    .filter((c) => (c.delivered_count || 0) > 0)
-    .map((c) => ({ ...c, ctr: Math.round(((c.clicked_count || 0) / c.delivered_count) * 100) }))
-    .sort((a, b) => b.ctr - a.ctr)
-    .slice(0, 5);
 
   const chart = [...camp]
     .sort((a, b) => new Date(b.sent_at || 0).getTime() - new Date(a.sent_at || 0).getTime())
@@ -273,26 +261,6 @@ export default async function AnalyticsPage({
         ) : (
           <div className="flex flex-col gap-5">
             {(["push", "sms", "email"] as const).map((ch) => (bestTimes[ch].delivered ? <SendTimeBlock key={ch} r={bestTimes[ch]} /> : null))}
-          </div>
-        )}
-      </Card>
-
-      {/* top campaigns */}
-      <Card className="mt-4 sm:mt-8">
-        <div className="text-[13px] text-ink-muted mb-3">Лучшие рассылки по CTR</div>
-        {topByCtr.length === 0 ? (
-          <div className="text-ink-faint text-sm">Пока нет отправленных рассылок</div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {topByCtr.map((c, i) => (
-              <div key={i} className="flex items-center justify-between text-[13.5px] gap-2">
-                <span className="flex items-center gap-2 min-w-0">
-                  <Badge tone="accent">{channelLabel[c.channel] || c.channel}</Badge>
-                  <span className="truncate">{c.title}</span>
-                </span>
-                <span className="tabular-nums text-ink-muted shrink-0 ml-3">{c.ctr}% CTR</span>
-              </div>
-            ))}
           </div>
         )}
       </Card>
