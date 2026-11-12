@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ensureProjectAccessible } from "@/lib/guards";
 import EditSubscriberForm from "./EditSubscriberForm";
+import { isWebhookContactField } from "@/lib/shopFields";
 
 export default async function EditSubscriberPage({ params }: { params: Promise<{ id: string; identityId: string }> }) {
   const { id, identityId } = await params;
@@ -25,7 +26,8 @@ export default async function EditSubscriberPage({ params }: { params: Promise<{
   // (см. EditSubscriberForm — блок «Доп. поля»), не только у того, кому его
   // изначально проставили импортом.
   const { data: allAttrs } = await supabase.from("identities").select("attributes").eq("project_id", id);
-  const attributeKeys = [...new Set((allAttrs ?? []).flatMap((i) => Object.keys((i.attributes as object) || {})))].sort((a, b) =>
+  // Поля, которые заполняет вебхук клиентов (бонусы, признак регистрации), доп. полями не являются
+  const attributeKeys = [...new Set((allAttrs ?? []).flatMap((i) => Object.keys((i.attributes as object) || {})))].filter((k) => !isWebhookContactField(k)).sort((a, b) =>
     a.localeCompare(b, "ru")
   );
 

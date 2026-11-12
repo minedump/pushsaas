@@ -8,6 +8,24 @@
 export const SYSTEM_FIELD_KEYS = ["timezone", "ym_client_id", "telegram_id"] as const;
 export type FieldMapRow = { handle: string; key: string };
 
+// Поля, которые вебхук клиентов (/api/v1/client) заполняет сам, привязка жёсткая: выбрать другое поле магазина
+// нельзя. Лежат в attributes контакта, но доп. полями не считаются: в форме изменения только показываются.
+export const WEBHOOK_CONTACT_FIELDS: Record<string, string> = {
+  bonus_points: "Бонусные баллы",
+  shop_registered: "Зарегистрирован в магазине",
+};
+
+export function isWebhookContactField(key: string): boolean {
+  return key in WEBHOOK_CONTACT_FIELDS;
+}
+
+// «1» / «0» у shop_registered показываем словами, остальное как есть
+export function formatWebhookContactField(key: string, value: unknown): string {
+  const v = String(value ?? "");
+  if (key === "shop_registered") return v === "1" ? "да" : v === "0" ? "нет" : v;
+  return v;
+}
+
 export function isSystemFieldKey(key: string): boolean {
   return (SYSTEM_FIELD_KEYS as readonly string[]).includes(key);
 }

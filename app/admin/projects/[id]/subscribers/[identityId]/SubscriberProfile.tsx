@@ -10,6 +10,7 @@ import { MessagePreviewModal, type PreviewContent } from "../../MessagePreviewMo
 import { OrderDetailsModal, orderStatusLabel, type OrderRow } from "./OrderDetailsModal";
 import { useProjectTz } from "../../ProjectTimeProvider";
 import { formatDateTime } from "@/lib/datetime";
+import { WEBHOOK_CONTACT_FIELDS, formatWebhookContactField, isWebhookContactField } from "@/lib/shopFields";
 
 type Identity = {
   id: string;
@@ -149,7 +150,8 @@ export default function SubscriberProfile({
   }
 
   const attrs = identity.attributes || {};
-  const attrKeys = Object.keys(attrs);
+  const attrKeys = Object.keys(attrs).filter((k) => !isWebhookContactField(k));
+  const webhookKeys = Object.keys(WEBHOOK_CONTACT_FIELDS).filter((k) => attrs[k] != null && attrs[k] !== "");
   // Заказы контакта: поиск по номеру, фильтр по статусу и по оплате.
   const orderStatusOptions = [...new Set(orders.map((o) => orderStatusLabel(o.custom_status, o.fulfillment_status)))].sort((a, b) => a.localeCompare(b, "ru"));
   const filteredOrders = orders.filter((o) => {
@@ -264,6 +266,11 @@ export default function SubscriberProfile({
                 UUID метрики: <span className="font-mono text-ink break-all">{ymClientIds.join(", ")}</span>
               </div>
             )}
+            {webhookKeys.map((k) => (
+              <div key={k}>
+                {WEBHOOK_CONTACT_FIELDS[k]}: <span className="font-mono text-ink">{formatWebhookContactField(k, attrs[k])}</span>
+              </div>
+            ))}
             {attrKeys.map((k) => (
               <div key={k}>
                 {k}: <span className="font-mono text-ink">{String(attrs[k])}</span>

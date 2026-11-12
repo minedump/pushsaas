@@ -6,6 +6,7 @@ import { IconPlus, IconTrash } from "@tabler/icons-react";
 import { Button, Card, Input, SearchSelect, useDialogs } from "@/app/ui";
 import type { ComboOption } from "@/app/ui/CustomSelect";
 import CopyBox from "../CopyBox";
+import { WEBHOOK_CONTACT_FIELDS } from "@/lib/shopFields";
 
 // Атрибуция заказов к пушам — вебхук всегда живой по своему токену, никакого
 // отдельного "включить" нет (см. lib/attribution.ts): нет заказов с этой
@@ -235,7 +236,7 @@ export default function AttributionSettings({
 // Строки соответствия «поле в магазине → поле у нас». В обоих полях выпадающий список с поиском:
 // показываются первые подсказки, остальные находятся вводом, а своё значение можно просто вписать.
 // Системные поля контакта (timezone, ym_client_id, telegram_id) подсказываются вместе с уже существующими доп. полями.
-const AUTO_CONTACT_KEYS = ["bonus_points", "shop_registered"];
+const AUTO_CONTACT_KEYS = Object.keys(WEBHOOK_CONTACT_FIELDS);
 const SYSTEM_KEY_HINTS = [
   { value: "timezone", label: "Часовой пояс" },
   { value: "ym_client_id", label: "ClientID Метрики" },

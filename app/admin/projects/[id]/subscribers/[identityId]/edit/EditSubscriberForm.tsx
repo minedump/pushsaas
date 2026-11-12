@@ -50,6 +50,11 @@ export default function EditSubscriberForm({
   const [smsActive, setSmsActive] = useState(!!identity.sms_marketing_active_at);
   const [emailActive, setEmailActive] = useState(!!identity.email_marketing_active_at);
   const [excludeAnalytics, setExcludeAnalytics] = useState(!!identity.exclude_from_analytics);
+  // Системные поля, которые обычно заполняет вебхук клиентов (привязка в теле вебхука жёсткая): бонусные баллы и признак регистрации
+  const origBonus = identity.attributes?.bonus_points != null ? String(identity.attributes.bonus_points) : "";
+  const origRegistered = identity.attributes?.shop_registered != null ? String(identity.attributes.shop_registered) : "";
+  const [bonusPoints, setBonusPoints] = useState(origBonus);
+  const [shopRegistered, setShopRegistered] = useState(origRegistered);
   // Доп. поля — набор ключей, встречавшихся хотя бы у одного контакта
   // проекта (см. page.tsx), не только у текущего: поле, расширенное через
   // CSV-импорт одному подписчику, должно быть видно и заполняемо у всех
@@ -75,6 +80,14 @@ export default function EditSubscriberForm({
     for (const key of attributeKeys) {
       if (!(key in attributes)) attributes[key] = null;
     }
+
+    // системные поля уходят, только если их изменили: иначе значение от вебхука переписывалось бы зря
+    if (bonusPoints.trim() !== origBonus) {
+      const v = bonusPoints.trim();
+      if (v && !/^\d+$/.test(v)) return toast("Бонусные баллы: целое число от 0, например 150", "bad");
+      attributes.bonus_points = v || null;
+    }
+    if (shopRegistered !== origRegistered) attributes.shop_registered = shopRegistered || null;
 
     const nameChanged =
       lastName.trim() !== (identity.last_name || "") || firstName.trim() !== (identity.first_name || "") || middleName.trim() !== (identity.middle_name || "");
@@ -196,6 +209,14 @@ export default function EditSubscriberForm({
           <Label>UUID метрики</Label>
           <Input value={ymIds} onChange={(e) => setYmIds(e.target.value)} placeholder="ClientID Яндекс.Метрики, несколько через запятую" className="font-mono" />
           <p className="text-[12.5px] text-ink-faint mt-1.5 mb-0">У человека их может быть несколько (по одному на браузер или устройство). Список заменяется целиком.</p>
+        </div>
+
+        <div>
+          <Label>Бонусные баллы</Label>
+          <Input value={bonusPoints} onChange={(e) => setBonusPoints(e.target.value)} inputMode="numeric" placeholder="Например, 150" />
+        </div>
+        <div>
+          <Toggle checked={shopRegistered === "1"} onChange={(v) => setShopRegistered(v ? "1" : "0")} label="Зарегистрирован в магазине" />
         </div>
 
         <div>
