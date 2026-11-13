@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { IconX } from "@tabler/icons-react";
+import { IconX, IconLock } from "@tabler/icons-react";
 import { Badge, cn } from "@/app/ui";
 
 // Мультивыбор тегов сегмента — выбранные оседают внутри поля бейджами,
@@ -50,7 +50,7 @@ export function SegmentTagsInput({
       <div
         className={cn(
           "flex flex-wrap items-center gap-1.5 w-full min-h-[38px] px-2.5 py-1.5 rounded-xl border border-border bg-surface transition-colors",
-          disabled ? "opacity-60" : "focus-within:border-accent-line focus-within:ring-2 focus-within:ring-accent-line"
+          disabled ? "opacity-60 cursor-not-allowed pr-9 relative" : "focus-within:border-accent-line focus-within:ring-2 focus-within:ring-accent-line"
         )}
       >
         {value.map((t) => (
@@ -86,6 +86,7 @@ export function SegmentTagsInput({
           placeholder={value.length ? "" : "Тег и Enter — пусто = всем"}
           className="flex-1 min-w-[80px] bg-transparent text-sm text-ink placeholder:text-ink-faint focus:outline-none disabled:cursor-not-allowed"
         />
+        {disabled && <IconLock size={16} stroke={1.8} className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-faint pointer-events-none" />}
       </div>
 
       {open && !disabled && suggestions.length > 0 && (

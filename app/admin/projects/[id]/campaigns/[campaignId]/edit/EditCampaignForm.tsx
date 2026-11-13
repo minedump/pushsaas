@@ -526,7 +526,7 @@ export default function EditCampaignForm({
 
         <fieldset disabled={readOnly} className="m-0 p-0 border-0 min-w-0 flex flex-col gap-3">
         <div>
-          <Toggle checked={transactional} onChange={setTransactional} label="Транзакционная" />
+          <Toggle disabled={readOnly} checked={transactional} onChange={setTransactional} label="Транзакционная" />
         </div>
 
         {noProvider && !readOnly && (
@@ -539,13 +539,13 @@ export default function EditCampaignForm({
         {channel === "sms" && providerOptions.sms.length > 1 && (
           <div>
             <Label>Через</Label>
-            <CustomSelect value={smsProvider} onChange={setSmsProvider} options={providerOptions.sms} className="w-full" />
+            <CustomSelect disabled={readOnly} value={smsProvider} onChange={setSmsProvider} options={providerOptions.sms} className="w-full" />
           </div>
         )}
         {channel === "email" && providerOptions.email.length > 1 && (
           <div>
             <Label>Через</Label>
-            <CustomSelect value={emailProvider} onChange={setEmailProvider} options={providerOptions.email} className="w-full" />
+            <CustomSelect disabled={readOnly} value={emailProvider} onChange={setEmailProvider} options={providerOptions.email} className="w-full" />
           </div>
         )}
 
@@ -553,40 +553,40 @@ export default function EditCampaignForm({
           <>
             <div>
               <Label>Шаблон</Label>
-              <SearchSelect value={templateId} onChange={selectTemplate} options={templateOptions} className="w-full" />
+              <SearchSelect disabled={readOnly} value={templateId} onChange={selectTemplate} options={templateOptions} className="w-full" />
             </div>
-            <ContextField enabled={contextEnabled} onToggle={setContextEnabled} value={contextJson} onChange={setContextJson} error={contextError} />
+            <ContextField disabled={readOnly} enabled={contextEnabled} onToggle={setContextEnabled} value={contextJson} onChange={setContextJson} error={contextError} />
             {!readOnly && <ContextDocs variant="campaign" />}
             <div>
               <Label>
                 Заголовок <span className="text-bad">*</span>
               </Label>
-              <Input value={title} onChange={(e) => setTitle(e.target.value)} required maxLength={80} placeholder="Скидка 20% сегодня" />
+              <Input disabled={readOnly} value={title} onChange={(e) => setTitle(e.target.value)} required maxLength={80} placeholder="Скидка 20% сегодня" />
               <p className="text-[11px] text-ink-faint text-right mt-1 mb-0">{80 - title.length} символов осталось</p>
             </div>
             <div>
               <Label>
                 Текст <span className="text-bad">*</span>
               </Label>
-              <Textarea value={message} onChange={(e) => setMessage(e.target.value)} required rows={3} placeholder="Только до конца дня…" />
+              <Textarea disabled={readOnly} value={message} onChange={(e) => setMessage(e.target.value)} required rows={3} placeholder="Только до конца дня…" />
               <p className="text-[11px] text-ink-faint text-right mt-1 mb-0">{200 - withShortenedLinks(message).length} символов осталось</p>
             </div>
             <div>
               <Label>Ссылка при клике</Label>
-              <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://ваш-сайт/акция" />
+              <Input disabled={readOnly} value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://ваш-сайт/акция" />
             </div>
             <div className="flex gap-3">
               <div className="flex-1">
                 <Label>URL иконки</Label>
-                <Input value={icon} onChange={(e) => setIcon(e.target.value)} placeholder="https://ваш-сайт/icon-192.png" />
+                <Input disabled={readOnly} value={icon} onChange={(e) => setIcon(e.target.value)} placeholder="https://ваш-сайт/icon-192.png" />
               </div>
               <div className="flex-1">
                 <Label>URL картинки</Label>
-                <Input value={image} onChange={(e) => setImage(e.target.value)} placeholder="https://ваш-сайт/image.jpg" />
+                <Input disabled={readOnly} value={image} onChange={(e) => setImage(e.target.value)} placeholder="https://ваш-сайт/image.jpg" />
               </div>
               <div className="flex-1">
                 <Label>URL значка</Label>
-                <Input value={badge} onChange={(e) => setBadge(e.target.value)} placeholder="https://ваш-сайт/badge-72.png" />
+                <Input disabled={readOnly} value={badge} onChange={(e) => setBadge(e.target.value)} placeholder="https://ваш-сайт/badge-72.png" />
               </div>
             </div>
 
@@ -594,24 +594,24 @@ export default function EditCampaignForm({
               <Label>Кнопки действий</Label>
               {actions.map((a, i) => (
                 <div key={i} className="flex gap-2 mb-2">
-                  <Input
+                  <Input disabled={readOnly}
                     value={a.title}
                     onChange={(e) => setActions((as) => as.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)))}
                     placeholder="Текст кнопки"
                     maxLength={30}
                   />
-                  <Input
+                  <Input disabled={readOnly}
                     value={a.url}
                     onChange={(e) => setActions((as) => as.map((x, j) => (j === i ? { ...x, url: e.target.value } : x)))}
                     placeholder="https://..."
                   />
-                  <Button type="button" variant="secondary" size="sm" onClick={() => setActions((as) => as.filter((_, j) => j !== i))}>
+                  <Button type="button" variant="secondary" size="sm" disabled={readOnly} onClick={() => setActions((as) => as.filter((_, j) => j !== i))}>
                     <IconX size={15} stroke={2} />
                   </Button>
                 </div>
               ))}
               {actions.length < 2 && (
-                <Button type="button" variant="secondary" size="sm" onClick={() => setActions((as) => [...as, { title: "", url: "" }])}>
+                <Button type="button" variant="secondary" size="sm" disabled={readOnly} onClick={() => setActions((as) => [...as, { title: "", url: "" }])}>
                   <IconPlus size={15} stroke={2} />
                   Кнопка
                 </Button>
@@ -625,15 +625,15 @@ export default function EditCampaignForm({
           <>
             <div>
               <Label>Шаблон</Label>
-              <SearchSelect value={templateId} onChange={selectTemplate} options={templateOptions} className="w-full" />
+              <SearchSelect disabled={readOnly} value={templateId} onChange={selectTemplate} options={templateOptions} className="w-full" />
             </div>
-            <ContextField enabled={contextEnabled} onToggle={setContextEnabled} value={contextJson} onChange={setContextJson} error={contextError} />
+            <ContextField disabled={readOnly} enabled={contextEnabled} onToggle={setContextEnabled} value={contextJson} onChange={setContextJson} error={contextError} />
             {!readOnly && <ContextDocs variant="campaign" />}
             <div>
               <Label>
                 Текст сообщения <span className="text-bad">*</span>
               </Label>
-              <Textarea value={smsText} onChange={(e) => setSmsText(e.target.value)} required rows={4} maxLength={400} placeholder="Скидка 20% только сегодня!" />
+              <Textarea disabled={readOnly} value={smsText} onChange={(e) => setSmsText(e.target.value)} required rows={4} maxLength={400} placeholder="Скидка 20% только сегодня!" />
               <p className="text-[11px] text-ink-faint text-right mt-1 mb-0">
                 {smsTextShortened.length} символов · {segments.encoding} · {segments.count || 1} SMS
               </p>
@@ -645,28 +645,28 @@ export default function EditCampaignForm({
           <>
             <div>
               <Label>Шаблон</Label>
-              <SearchSelect value={templateId} onChange={selectTemplate} options={templateOptions} className="w-full" />
+              <SearchSelect disabled={readOnly} value={templateId} onChange={selectTemplate} options={templateOptions} className="w-full" />
             </div>
-            <ContextField enabled={contextEnabled} onToggle={setContextEnabled} value={contextJson} onChange={setContextJson} error={contextError} />
+            <ContextField disabled={readOnly} enabled={contextEnabled} onToggle={setContextEnabled} value={contextJson} onChange={setContextJson} error={contextError} />
             {!readOnly && <ContextDocs variant="campaign" />}
             <div>
               <Label>
                 Тема письма <span className="text-bad">*</span>
               </Label>
-              <Input value={subject} onChange={(e) => setSubject(e.target.value)} required placeholder="Скидка недели" />
+              <Input disabled={readOnly} value={subject} onChange={(e) => setSubject(e.target.value)} required placeholder="Скидка недели" />
             </div>
             <div>
               <Label>
                 HTML письма <span className="text-bad">*</span>
               </Label>
-              <Textarea value={html} onChange={(e) => setHtml(e.target.value)} required rows={10} className="font-mono text-xs" placeholder="<p>Привет!</p>" />
+              <Textarea disabled={readOnly} value={html} onChange={(e) => setHtml(e.target.value)} required rows={10} className="font-mono text-xs" placeholder="<p>Привет!</p>" />
             </div>
           </>
         )}
 
         <div>
           <Label>Сегмент по тегам</Label>
-          <SegmentTagsInput value={segment} onChange={setSegment} options={segmentOptions} />
+          <SegmentTagsInput disabled={readOnly} value={segment} onChange={setSegment} options={segmentOptions} />
         </div>
 
         {channel === "push" && (
@@ -674,20 +674,20 @@ export default function EditCampaignForm({
             <Label>
               Платформы <span className="text-bad">*</span>
             </Label>
-            <PlatformFilter value={platforms} onChange={setPlatforms} />
+            <PlatformFilter disabled={readOnly} value={platforms} onChange={setPlatforms} />
           </div>
         )}
 
         <div>
           <Label>Контакты (телефон/email, через запятую)</Label>
           <div className="flex gap-2">
-            <Input
+            <Input disabled={readOnly}
               value={contacts}
               onChange={(e) => setContacts(e.target.value)}
               placeholder={channel === "sms" ? "+79991234567, +79997654321" : channel === "email" ? "client@example.ru, second@example.ru" : "+79991234567, client@example.ru"}
               className="flex-1"
             />
-            <Button type="button" variant="secondary" disabled={checkBusy || !contacts.trim()} onClick={checkContacts}>
+            <Button type="button" variant="secondary" disabled={readOnly || checkBusy || !contacts.trim()} onClick={checkContacts}>
               {checkBusy ? "Проверяем…" : "Проверить"}
             </Button>
           </div>
@@ -695,11 +695,11 @@ export default function EditCampaignForm({
 
         {!readOnly && (
           <div>
-            <Toggle checked={schedule} onChange={setSchedule} label="Запланировать на потом" />
+            <Toggle disabled={readOnly} checked={schedule} onChange={setSchedule} label="Запланировать на потом" />
             {schedule && (
               <div className="flex gap-2 mt-2.5">
-                <Input type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} required />
-                <Input type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} required />
+                <Input disabled={readOnly} type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} required />
+                <Input disabled={readOnly} type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} required />
               </div>
             )}
             {schedule && contacts.trim() && (
@@ -710,7 +710,7 @@ export default function EditCampaignForm({
           </div>
         )}
 
-        <SendWindowFields value={sendWindow} onChange={setSendWindow} projectTimezone={projectTimezone} />
+        <SendWindowFields disabled={readOnly} value={sendWindow} onChange={setSendWindow} projectTimezone={projectTimezone} />
         </fieldset>
 
         {readOnly ? (

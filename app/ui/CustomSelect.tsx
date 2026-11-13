@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { IconChevronDown, IconCheck } from "@tabler/icons-react";
+import { IconChevronDown, IconCheck, IconLock } from "@tabler/icons-react";
 import { cn } from "./cn";
 
 export type ComboOption = { value: string; label: string; disabled?: boolean };
@@ -45,6 +45,7 @@ export function CustomSelect({
   ariaLabel,
   footer,
   size = "md",
+  disabled = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -57,6 +58,8 @@ export function CustomSelect({
   // готовый узел (ссылка/кнопка), а не как ComboOption.
   footer?: React.ReactNode;
   size?: Size;
+  // заблокированный список: не открывается, затемнён, вместо стрелки замок, курсор «нельзя»
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -111,20 +114,26 @@ export function CustomSelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={ariaLabel}
-        onClick={() => setOpen((v) => !v)}
+        disabled={disabled}
+        onClick={() => !disabled && setOpen((v) => !v)}
         className={cn(
           "group flex items-center justify-between gap-2 w-full border border-border bg-surface text-ink cursor-pointer transition-colors",
           triggerSizes[size],
           "hover:border-accent-line focus:outline-none focus:ring-2 focus:ring-accent-line",
+          "disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:border-border",
           open && "border-accent-line ring-2 ring-accent-line"
         )}
       >
         <span className={cn("truncate", !selected && "text-ink-faint")}>{selected ? selected.label : placeholder}</span>
-        <IconChevronDown
-          size={chevronSizes[size]}
-          stroke={2}
-          className={cn("shrink-0 text-ink-faint transition-[transform,color] group-hover:text-ink", open && "rotate-180")}
-        />
+        {disabled ? (
+          <IconLock size={chevronSizes[size]} stroke={1.8} className="shrink-0 text-ink-faint" />
+        ) : (
+          <IconChevronDown
+            size={chevronSizes[size]}
+            stroke={2}
+            className={cn("shrink-0 text-ink-faint transition-[transform,color] group-hover:text-ink", open && "rotate-180")}
+          />
+        )}
       </button>
 
       {open &&

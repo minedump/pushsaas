@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { IconChevronRight, IconDownload, IconSearch, IconX, IconSend, IconTrash, IconPencil, IconCopy, IconEye } from "@tabler/icons-react";
@@ -104,7 +104,6 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
   const [initiatorFilter, setInitiatorFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [titleOverrides, setTitleOverrides] = useState<Record<string, string>>({});
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const router = useRouter();
@@ -129,19 +128,6 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
   function updateSearch(v: string) {
     setSearch(v);
     setPage(1);
-  }
-
-  // Внутреннее название — только для организации в списке, получателям не
-  // уходит (в отличие от title, который и есть контент). titleOverrides —
-  // локальный кэш поверх серверных данных, чтобы правка отражалась сразу,
-  // без router.refresh() на каждую букву.
-  async function saveInternalTitle(campaignId: string, value: string, previous: string) {
-    setTitleOverrides((o) => ({ ...o, [campaignId]: value }));
-    const { error } = await supabase.from("campaigns").update({ internal_title: value || null }).eq("id", campaignId);
-    if (error) {
-      setTitleOverrides((o) => ({ ...o, [campaignId]: previous }));
-      toast("Не удалось сохранить название", "bad");
-    }
   }
 
   async function sendDraft(campaignId: string) {
@@ -310,16 +296,27 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
               // unsubscribe_url подставляется исключительно при отправке
               // писем) — на push/sms кампаниях столбец всегда прочерк, не 0.
               const hasUnsubStats = hasStats && c.channel === "email";
-              const titleOverride = c.campaignId ? titleOverrides[c.campaignId] : undefined;
-              const displayTitle = titleOverride !== undefined ? titleOverride || c.title : c.internal_title || c.title;
+              const displayTitle = c.internal_title || c.title;
+              // Название всегда ведёт в карточку рассылки: черновик и запланированная открываются на редактирование,
+              // ушедшая — на просмотр настроек (там можно сменить название)
+              const openHref = c.campaignId
+                ? `/admin/projects/${projectId}/campaigns/${c.campaignId}${c.status === "draft" || c.status === "scheduled" ? "/edit" : ""}`
+                : null;
               return (
-                <tr key={c.id} className="border-t border-border row-hover group">
+                <tr key={c.id} className="border-t border-border row-hover">
                   <Td>
-                    <InlineTitle
-                      value={displayTitle}
-                      editable={!!c.campaignId}
-                      onSave={(v) => c.campaignId && saveInternalTitle(c.campaignId, v, displayTitle)}
-                    />
+                    {openHref ? (
+                      <Link href={openHref} className="inline-flex items-center gap-1 max-w-full font-semibold text-ink hover:underline">
+                        <span className="min-w-0 truncate max-w-[220px]" title={displayTitle}>
+                          {displayTitle}
+                        </span>
+                        <IconChevronRight size={13} stroke={2} className="shrink-0" />
+                      </Link>
+                    ) : (
+                      <span className="block truncate max-w-[220px] text-ink-muted" title={displayTitle}>
+                        {displayTitle}
+                      </span>
+                    )}
                   </Td>
                   <Td>
                     <Badge tone="accent">{CHANNEL_LABEL[c.channel] || c.channel}</Badge>
@@ -455,63 +452,6 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
 
       <Pagination page={pageSafe} total={filtered.length} pageSize={PAGE_SIZE} onChange={setPage} />
     </div>
-  );
-}
-
-// Внутреннее название — карандашик появляется по наведению на строку (класс
-// group на <tr>), клик превращает текст в обычный input без рамки/фона
-// (визуально остаётся текстом, а не полноценным полем), сохранение — по
-// потере фокуса или Enter, Escape — отмена без сохранения.
-function InlineTitle({ value, editable, onSave }: { value: string; editable: boolean; onSave: (v: string) => void }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-
-  useEffect(() => {
-    if (!editing) setDraft(value);
-  }, [value, editing]);
-
-  if (editing) {
-    return (
-      <input
-        autoFocus
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => {
-          setEditing(false);
-          const trimmed = draft.trim();
-          if (trimmed !== value.trim()) onSave(trimmed);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            (e.target as HTMLInputElement).blur();
-          }
-          if (e.key === "Escape") {
-            setDraft(value);
-            setEditing(false);
-          }
-        }}
-        className="bg-transparent border-none outline-none p-0 m-0 text-[13.5px] text-ink w-full max-w-[240px] focus:ring-1 focus:ring-accent-line rounded px-1 -mx-1"
-      />
-    );
-  }
-
-  return (
-    <span className="inline-flex items-center gap-1.5 max-w-full">
-      <span className="truncate max-w-[220px]" title={value}>
-        {value}
-      </span>
-      {editable && (
-        <button
-          type="button"
-          onClick={() => setEditing(true)}
-          className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 p-0.5 rounded text-ink-faint hover:text-ink transition-colors cursor-pointer"
-          title="Изменить название"
-        >
-          <IconPencil size={16} stroke={1.8} />
-        </button>
-      )}
-    </span>
   );
 }
 

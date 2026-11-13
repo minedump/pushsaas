@@ -7,14 +7,16 @@ export function Checkbox({
   onChange,
   label,
   className,
+  disabled,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   label?: React.ReactNode;
   className?: string;
+  disabled?: boolean;
 }) {
   return (
-    <label className={cn("inline-flex items-start gap-2 text-sm cursor-pointer select-none", className)}>
+    <label className={cn("inline-flex items-start gap-2 text-sm select-none", disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer", className)}>
       <span
         className={cn(
           "grid place-items-center w-[18px] h-[18px] mt-[0.5px] shrink-0 rounded-[5px] border transition-colors",
@@ -27,7 +29,7 @@ export function Checkbox({
           </svg>
         )}
       </span>
-      <input type="checkbox" className="sr-only" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <input type="checkbox" className="sr-only" checked={checked} disabled={disabled} onChange={(e) => !disabled && onChange(e.target.checked)} />
       {label}
     </label>
   );

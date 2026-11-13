@@ -20,7 +20,7 @@ export function Toggle({
   className?: string;
 }) {
   return (
-    <label className={cn("inline-flex items-center gap-2.5 text-sm select-none", disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer", className)}>
+    <label className={cn("inline-flex items-center gap-2.5 text-sm select-none has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50", disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer", className)}>
       <button
         type="button"
         role="switch"
@@ -28,7 +28,7 @@ export function Toggle({
         disabled={disabled}
         onClick={() => !disabled && onChange(!checked)}
         className={cn(
-          "relative w-9 h-5 rounded-full transition-colors shrink-0",
+          "relative w-9 h-5 rounded-full transition-colors shrink-0 disabled:cursor-not-allowed",
           disabled ? "cursor-not-allowed" : "cursor-pointer",
           checked ? "bg-accent" : "bg-border"
         )}

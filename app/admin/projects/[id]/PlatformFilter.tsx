@@ -13,7 +13,7 @@ export const PLATFORM_VALUES = PLATFORM_OPTIONS.map((o) => o.value);
 // резолвленных по контактам/сегменту получателей, не отдельный источник
 // аудитории (см. dispatchCampaign/countAudience в lib/sender.ts). Пусто =
 // без фильтра, все платформы.
-export function PlatformFilter({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+export function PlatformFilter({ value, onChange, disabled }: { value: string[]; onChange: (v: string[]) => void; disabled?: boolean }) {
   function toggle(v: string) {
     onChange(value.includes(v) ? value.filter((x) => x !== v) : [...value, v]);
   }
@@ -23,10 +23,11 @@ export function PlatformFilter({ value, onChange }: { value: string[]; onChange:
         <button
           key={o.value}
           type="button"
+          disabled={disabled}
           onClick={() => toggle(o.value)}
           className={cn(
-            "px-3 py-1.5 rounded-lg border text-[13px] cursor-pointer transition-colors",
-            value.includes(o.value) ? "border-accent-line bg-accent-tint text-accent" : "border-border bg-surface text-ink-muted hover:text-ink"
+            "px-3 py-1.5 rounded-lg border text-[13px] cursor-pointer transition-colors disabled:opacity-60 disabled:cursor-not-allowed",
+            value.includes(o.value) ? "border-accent-line bg-accent-tint text-accent" : "border-border bg-surface text-ink-muted hover:text-ink disabled:hover:text-ink-muted"
           )}
         >
           {o.label}

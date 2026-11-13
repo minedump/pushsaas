@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { IconChevronDown } from "@tabler/icons-react";
+import { IconChevronDown, IconLock } from "@tabler/icons-react";
 import { cn } from "./cn";
 import type { ComboOption } from "./CustomSelect";
 
@@ -30,6 +30,7 @@ export function SearchSelect({
   className,
   allowCustom = false,
   limit,
+  disabled = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -41,6 +42,8 @@ export function SearchSelect({
   // Сколько вариантов показывать, пока человек ничего не ввёл: остальные находятся поиском.
   // Нужен там, где подсказок много, а раскрытый список на весь экран только мешает.
   limit?: number;
+  // заблокированный выбор: не открывается и не редактируется, затемнён, вместо стрелки замок
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -108,6 +111,7 @@ export function SearchSelect({
       <div className="relative group">
         <input
           type="text"
+          disabled={disabled}
           value={open ? query : allowCustom ? value : selected?.label || ""}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -124,17 +128,22 @@ export function SearchSelect({
           placeholder={selected ? selected.label : placeholder}
           className={cn(
             "w-full text-sm pl-3 pr-8 py-2 rounded-xl border border-border bg-surface text-ink placeholder:text-ink-faint focus:outline-none focus:ring-2 focus:ring-accent-line",
+            "disabled:opacity-60 disabled:cursor-not-allowed",
             allowCustom ? "cursor-text" : "cursor-pointer"
           )}
         />
-        <IconChevronDown
-          size={16}
-          stroke={2}
-          className={cn(
-            "pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint transition-[transform,color] group-hover:text-ink",
-            open && "rotate-180"
-          )}
-        />
+        {disabled ? (
+          <IconLock size={16} stroke={1.8} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint" />
+        ) : (
+          <IconChevronDown
+            size={16}
+            stroke={2}
+            className={cn(
+              "pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint transition-[transform,color] group-hover:text-ink",
+              open && "rotate-180"
+            )}
+          />
+        )}
       </div>
 
       {open &&

@@ -12,21 +12,24 @@ export function ContextField({
   value,
   onChange,
   error,
+  disabled,
 }: {
   enabled: boolean;
   onToggle: (v: boolean) => void;
   value: string;
   onChange: (v: string) => void;
   error: string | null;
+  disabled?: boolean;
 }) {
   return (
     <div>
-      <Toggle checked={enabled} onChange={onToggle} label="Добавить контекст" />
+      <Toggle checked={enabled} onChange={onToggle} label="Добавить контекст" disabled={disabled} />
       {enabled && (
         <>
           <div className="h-2" />
           <Textarea
             value={value}
+            disabled={disabled}
             onChange={(e) => onChange(e.target.value)}
             rows={4}
             className="font-mono text-xs"
