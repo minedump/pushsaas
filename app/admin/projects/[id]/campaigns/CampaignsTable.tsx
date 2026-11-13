@@ -281,8 +281,8 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
               <SortableTh label="Статус" sortKey="status" active={sortKey === "status"} dir={sortDir} onClick={onSortClick} />
               <SortableTh label="Отправлено" sortKey="delivered_count" active={sortKey === "delivered_count"} dir={sortDir} onClick={onSortClick} right />
               <Th right>Доставлено</Th>
-              <SortableTh label="Клики" sortKey="clicked_count" active={sortKey === "clicked_count"} dir={sortDir} onClick={onSortClick} right />
-              <SortableTh label="CTR" sortKey="ctr" active={sortKey === "ctr"} dir={sortDir} onClick={onSortClick} right />
+              <SortableTh label="Переходы" tip="Сколько получателей перешли по ссылке. Повторные переходы одного человека не считаются." sortKey="clicked_count" active={sortKey === "clicked_count"} dir={sortDir} onClick={onSortClick} right />
+              <SortableTh label="CTR" tip="Доля получателей, перешедших по ссылке, от доставленных." sortKey="ctr" active={sortKey === "ctr"} dir={sortDir} onClick={onSortClick} right />
               <SortableTh
                 label="Отписки"
                 sortKey="unsubscribed_count"

@@ -16,6 +16,7 @@ export function SortableTh<K extends string>({
   dir,
   onClick,
   right,
+  tip,
 }: {
   label: string;
   sortKey: K;
@@ -23,12 +24,15 @@ export function SortableTh<K extends string>({
   dir: SortDir;
   onClick: (key: K) => void;
   right?: boolean;
+  // подсказка при наведении (data-tip, см. Tooltip.tsx)
+  tip?: string;
 }) {
   return (
     <th className={cn("px-3.5 py-2.5 text-[11px] font-normal whitespace-nowrap", right ? "text-right" : "text-left")}>
       <button
         type="button"
         onClick={() => onClick(sortKey)}
+        data-tip={tip}
         className={cn(
           "inline-flex items-center gap-1 cursor-pointer transition-colors",
           active ? "text-ink" : "text-ink-muted hover:text-ink"

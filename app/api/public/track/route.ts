@@ -35,6 +35,16 @@ export async function POST(req: Request) {
 
   if (!campaign) return NextResponse.json({ ok: false }, { status: 404, headers: CORS });
 
+  // Персональная отметка перехода (миграция 0125): push узнаётся по subscriberId, sms/email по токену из ?pss_r=...
+  // Счётчик рассылки и событие считают людей: повторный переход того же получателя не добавляется (он остаётся
+  // в campaign_recipients.click_count). Получателя не нашли (нет метки) — считаем переход как раньше.
+  let isFirst: boolean | null = null;
+  if (token || subscriberId) {
+    const { data } = await admin.rpc("record_recipient_click", { p_campaign: campaignId, p_token: token || null, p_subscriber: token ? null : subscriberId || null });
+    isFirst = typeof data === "boolean" ? data : null;
+  }
+  if (isFirst === false) return NextResponse.json({ ok: true, repeat: true }, { headers: CORS });
+
   await admin.from("push_events").insert({
     project_id: campaign.project_id,
     campaign_id: campaignId,
@@ -46,16 +56,6 @@ export async function POST(req: Request) {
     .from("campaigns")
     .update({ clicked_count: (campaign.clicked_count || 0) + 1 })
     .eq("id", campaignId);
-
-  // Персональная отметка клика — push узнаётся по subscriberId (уже знает
-  // его сервис-воркер), sms/email по непрозрачному token из ?pss_r=...
-  // (см. lib/sender.injectClickTracking, миграция 0024). Первый клик
-  // выигрывает (is("clicked_at", null)) — повторные клики того же человека
-  // не должны переписывать время первого перехода.
-  // Заодно считаем все клики и время последнего (миграция 0124) — для анализа окон отправки.
-  if (token || subscriberId) {
-    await admin.rpc("record_recipient_click", { p_campaign: campaignId, p_token: token || null, p_subscriber: token ? null : subscriberId || null });
-  }
 
   return NextResponse.json({ ok: true }, { headers: CORS });
 }

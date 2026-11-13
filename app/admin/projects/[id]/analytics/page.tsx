@@ -360,7 +360,7 @@ function BarChart({
           const dateLabel = c.sent_at ? formatDayLabel(c.sent_at) : "";
           return (
             <g key={c.id} className="cursor-default">
-              <title>{`${c.title}${dateLabel ? ` — ${dateLabel}` : ""}\nДоставлено: ${delivered}\nКликов: ${clicked} (CTR ${ctr}%)`}</title>
+              <title>{`${c.title}${dateLabel ? ` — ${dateLabel}` : ""}\nДоставлено: ${delivered}\nПереходов: ${clicked} (CTR ${ctr}%)`}</title>
               <rect x={x} y={pad} width={bw} height={H - pad * 2} fill="transparent" />
               <rect x={x} y={H - pad - dh} width={bw} height={dh} rx={3} fill="var(--accent-line)" />
               <rect x={x} y={H - pad - ch} width={bw} height={ch} rx={3} fill="var(--accent)" />
