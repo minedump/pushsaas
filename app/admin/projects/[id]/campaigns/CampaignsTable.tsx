@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { IconChevronRight, IconDownload, IconSearch, IconX, IconSend, IconTrash, IconPencil, IconCopy } from "@tabler/icons-react";
+import { IconChevronRight, IconDownload, IconSearch, IconX, IconSend, IconTrash, IconPencil, IconCopy, IconEye } from "@tabler/icons-react";
 import { Badge, Button, Input, Pagination, SortableTh, useDialogs, type SortDir } from "@/app/ui";
 import { CustomSelect, type ComboOption } from "@/app/ui/CustomSelect";
 import { createClient } from "@/lib/supabase/client";
@@ -418,6 +418,15 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
                             <IconTrash size={15} stroke={1.8} />
                           </button>
                         </>
+                      )}
+                      {c.campaignId && c.status !== "draft" && c.status !== "scheduled" && (
+                        <Link
+                          href={`/admin/projects/${projectId}/campaigns/${c.campaignId}`}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink transition-colors hover:bg-surface-2"
+                          title="Настройки рассылки"
+                        >
+                          <IconEye size={15} stroke={1.8} />
+                        </Link>
                       )}
                       {c.campaignId && (c.status === "sent" || c.status === "failed") && (
                         <a

@@ -8,6 +8,7 @@ import { CustomSelect, type ComboOption } from "@/app/ui/CustomSelect";
 import { SearchSelect } from "@/app/ui/SearchSelect";
 import { friendlyError } from "@/lib/errors";
 import { createClient } from "@/lib/supabase/client";
+import { formatDateTime } from "@/lib/datetime";
 import { MessagePreviewModal, type PreviewContent } from "../../../MessagePreviewModal";
 import { SegmentTagsInput } from "../../../SegmentTagsInput";
 import { PlatformFilter, PLATFORM_VALUES } from "../../../PlatformFilter";
@@ -25,7 +26,7 @@ const CUSTOM_HTML = "__custom__";
 type Campaign = {
   id: string;
   channel: Channel;
-  status: "draft" | "scheduled";
+  status: "draft" | "scheduled" | "sending" | "sent" | "failed" | "canceled";
   title: string;
   body: string;
   subject: string | null;
@@ -51,7 +52,21 @@ type Campaign = {
   send_window_subscriber_tz?: boolean | null;
   spacing_enabled?: boolean | null;
   spacing_minutes?: number | null;
+  // только для просмотра уже отправленной рассылки
+  initiator?: string | null;
+  created_at?: string | null;
+  sent_at?: string | null;
+  sent_count?: number | null;
+  delivered_count?: number | null;
+  failed_count?: number | null;
+  clicked_count?: number | null;
+  confirmed_count?: number | null;
+  unsubscribed_count?: number | null;
+  error?: string | null;
 };
+
+const STATUS_LABEL: Record<string, string> = { draft: "черновик", scheduled: "запланирована", sending: "отправляется", sent: "отправлена", failed: "ошибка отправки", canceled: "отменена" };
+const INITIATOR_LABEL: Record<string, string> = { manual: "Ручная", api: "API", automation: "Автоматизация" };
 
 function toLocalDateValue(iso: string | null): string {
   if (!iso) return "";
@@ -100,6 +115,7 @@ export default function EditCampaignForm({
   segmentOptions = [],
   providerOptions = { sms: [], email: [] },
   projectTimezone,
+  readOnly = false,
 }: {
   projectId: string;
   campaign: Campaign;
@@ -107,6 +123,8 @@ export default function EditCampaignForm({
   segmentOptions?: string[];
   providerOptions?: { sms: ComboOption[]; email: ComboOption[] };
   projectTimezone: string;
+  // Просмотр уже отправленной рассылки: все настройки показаны, но не меняются; можно только переименовать
+  readOnly?: boolean;
 }) {
   const { toast, confirm, prompt } = useDialogs();
   const router = useRouter();
@@ -426,6 +444,20 @@ export default function EditCampaignForm({
     toast("Тест отправлен", "good");
   }
 
+  // Внутреннее название можно менять и у отправленной рассылки
+  const [savedTitle, setSavedTitle] = useState(campaign.internal_title || "");
+  async function saveTitleOnly() {
+    const next = internalTitle.trim();
+    if (!next) return toast("Укажите название", "bad");
+    setBusy(true);
+    const { error: dbErr } = await supabase.from("campaigns").update({ internal_title: next }).eq("id", campaign.id);
+    setBusy(false);
+    if (dbErr) return toast(friendlyError(dbErr), "bad");
+    setSavedTitle(next);
+    toast("Название сохранено", "good");
+    router.refresh();
+  }
+
   async function remove() {
     const ok = await confirm({
       title: campaign.status === "draft" ? "Удалить черновик?" : "Отменить запланированную рассылку?",
@@ -447,27 +479,57 @@ export default function EditCampaignForm({
 
   return (
     <main className="max-w-4xl mx-auto">
-      <h1 className="text-2xl font-semibold">{campaign.status === "draft" ? "Черновик рассылки" : "Запланированная рассылка"}</h1>
+      <h1 className="text-2xl font-semibold">
+        {readOnly ? "Рассылка" : campaign.status === "draft" ? "Черновик рассылки" : "Запланированная рассылка"}
+      </h1>
 
       <div className="mt-4 flex flex-col gap-3">
         <div>
           <Label>
             Название <span className="text-bad">*</span>
           </Label>
-          <Input value={internalTitle} onChange={(e) => setInternalTitle(e.target.value)} placeholder="Не показывается получателю" required />
+          <div className="flex gap-2">
+            <Input value={internalTitle} onChange={(e) => setInternalTitle(e.target.value)} placeholder="Не показывается получателю" required className="flex-1" />
+            {readOnly && internalTitle.trim() !== savedTitle.trim() && (
+              <Button type="button" disabled={busy} onClick={saveTitleOnly}>
+                {busy ? "Сохраняем…" : "Сохранить название"}
+              </Button>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Badge tone="accent">{CHANNEL_LABEL[channel]}</Badge>
-            <Badge tone={campaign.status === "draft" ? "neutral" : "warn"} dot>
-              {campaign.status === "draft" ? "черновик" : "запланирована"}
+            <Badge tone={campaign.status === "sent" ? "good" : campaign.status === "failed" ? "bad" : campaign.status === "draft" ? "neutral" : "warn"} dot>
+              {STATUS_LABEL[campaign.status] || campaign.status}
             </Badge>
           </div>
+        </div>
+
+        {readOnly && (
+          <div className="rounded-xl border border-border bg-surface-2 px-3.5 py-3 text-[13.5px] flex flex-col gap-1">
+            <div className="text-[12px] text-ink-muted mb-0.5">Как прошла отправка</div>
+            {campaign.sent_at && <div>Отправлена: <span className="text-ink">{formatDateTime(campaign.sent_at, projectTimezone)}</span></div>}
+            {campaign.created_at && <div>Создана: <span className="text-ink">{formatDateTime(campaign.created_at, projectTimezone)}</span></div>}
+            {campaign.initiator && <div>Инициатор: <span className="text-ink">{INITIATOR_LABEL[campaign.initiator] || campaign.initiator}</span></div>}
+            <div>
+              Получателей: <span className="text-ink tabular-nums">{campaign.sent_count ?? 0}</span> · доставлено: <span className="text-ink tabular-nums">{campaign.delivered_count ?? 0}</span> · ошибок:{" "}
+              <span className="text-ink tabular-nums">{campaign.failed_count ?? 0}</span> · переходов: <span className="text-ink tabular-nums">{campaign.clicked_count ?? 0}</span>
+              {channel === "sms" ? <> · подтверждено оператором: <span className="text-ink tabular-nums">{campaign.confirmed_count ?? 0}</span></> : null}
+              {channel === "email" ? <> · отписок: <span className="text-ink tabular-nums">{campaign.unsubscribed_count ?? 0}</span></> : null}
+            </div>
+            {campaign.error && <div className="text-bad">Ошибка: {campaign.error}</div>}
+            <p className="text-[12px] text-ink-faint mt-1 mb-0">Показаны настройки, с которыми рассылка была отправлена. Изменить можно только название.</p>
+          </div>
+        )}
+
+        <fieldset disabled={readOnly} className="m-0 p-0 border-0 min-w-0 flex flex-col gap-3">
+        <div>
           <Toggle checked={transactional} onChange={setTransactional} label="Транзакционная" />
         </div>
 
-        {noProvider && (
+        {noProvider && !readOnly && (
           <p className="text-bad text-[13px] mt-0 mb-0">
             {channel === "sms" ? "SMS" : "Email"} не настроен — сначала добавьте провайдера в разделе «Подключения». Черновик можно сохранить, но
             отправить не получится.
@@ -494,7 +556,7 @@ export default function EditCampaignForm({
               <SearchSelect value={templateId} onChange={selectTemplate} options={templateOptions} className="w-full" />
             </div>
             <ContextField enabled={contextEnabled} onToggle={setContextEnabled} value={contextJson} onChange={setContextJson} error={contextError} />
-            <ContextDocs variant="campaign" />
+            {!readOnly && <ContextDocs variant="campaign" />}
             <div>
               <Label>
                 Заголовок <span className="text-bad">*</span>
@@ -566,7 +628,7 @@ export default function EditCampaignForm({
               <SearchSelect value={templateId} onChange={selectTemplate} options={templateOptions} className="w-full" />
             </div>
             <ContextField enabled={contextEnabled} onToggle={setContextEnabled} value={contextJson} onChange={setContextJson} error={contextError} />
-            <ContextDocs variant="campaign" />
+            {!readOnly && <ContextDocs variant="campaign" />}
             <div>
               <Label>
                 Текст сообщения <span className="text-bad">*</span>
@@ -586,7 +648,7 @@ export default function EditCampaignForm({
               <SearchSelect value={templateId} onChange={selectTemplate} options={templateOptions} className="w-full" />
             </div>
             <ContextField enabled={contextEnabled} onToggle={setContextEnabled} value={contextJson} onChange={setContextJson} error={contextError} />
-            <ContextDocs variant="campaign" />
+            {!readOnly && <ContextDocs variant="campaign" />}
             <div>
               <Label>
                 Тема письма <span className="text-bad">*</span>
@@ -631,23 +693,37 @@ export default function EditCampaignForm({
           </div>
         </div>
 
-        <div>
-          <Toggle checked={schedule} onChange={setSchedule} label="Запланировать на потом" />
-          {schedule && (
-            <div className="flex gap-2 mt-2.5">
-              <Input type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} required />
-              <Input type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} required />
-            </div>
-          )}
-          {schedule && contacts.trim() && (
-            <p className="text-[12px] text-ink-faint mt-1 mb-0">
-              Контакты резолвятся заново в момент отправки — актуальные на тот момент устройства/согласие, а не на момент планирования.
-            </p>
-          )}
-        </div>
+        {!readOnly && (
+          <div>
+            <Toggle checked={schedule} onChange={setSchedule} label="Запланировать на потом" />
+            {schedule && (
+              <div className="flex gap-2 mt-2.5">
+                <Input type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} required />
+                <Input type="time" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} required />
+              </div>
+            )}
+            {schedule && contacts.trim() && (
+              <p className="text-[12px] text-ink-faint mt-1 mb-0">
+                Контакты резолвятся заново в момент отправки — актуальные на тот момент устройства/согласие, а не на момент планирования.
+              </p>
+            )}
+          </div>
+        )}
 
         <SendWindowFields value={sendWindow} onChange={setSendWindow} projectTimezone={projectTimezone} />
+        </fieldset>
 
+        {readOnly ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" onClick={() => setPreviewOpen(true)} type="button">
+            <IconEye size={15} stroke={1.8} />
+            Превью
+          </Button>
+          <Button variant="secondary" onClick={() => router.push(`/admin/projects/${projectId}/campaigns`)} type="button">
+            Назад к рассылкам
+          </Button>
+        </div>
+        ) : (
         <div className="flex flex-wrap items-center gap-2">
           <Button disabled={busy || noProvider} onClick={sendNow} type="button">
             {busy ? "Отправляем…" : "Отправить сейчас"}
@@ -669,6 +745,7 @@ export default function EditCampaignForm({
             Удалить
           </Button>
         </div>
+        )}
       </div>
 
       {previewOpen && (

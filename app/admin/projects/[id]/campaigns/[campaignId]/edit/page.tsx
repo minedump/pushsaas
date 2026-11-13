@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureProjectAccessible } from "@/lib/guards";
@@ -26,7 +26,9 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
   // (см. /api/admin/campaigns/[id]/send-draft), как и у обычного черновика.
   // Настроенность провайдера всё же проверяем — чтобы предупредить, если его
   // отключили в «Подключениях» уже после создания черновика.
-  if (!campaign || (campaign.status !== "draft" && campaign.status !== "scheduled")) notFound();
+  if (!campaign) notFound();
+  // уже ушедшую рассылку не редактируем, а показываем её настройки (страница просмотра)
+  if (campaign.status !== "draft" && campaign.status !== "scheduled") redirect(`/admin/projects/${id}/campaigns/${campaignId}`);
 
   const { data: templates } = await supabase
     .from("templates")
