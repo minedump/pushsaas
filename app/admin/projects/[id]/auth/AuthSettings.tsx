@@ -371,8 +371,7 @@ export default function AuthSettings({
   return (
     <div className={busy ? "opacity-60" : ""}>
       <section className="mt-4 sm:mt-8">
-        <h2 className="text-lg font-semibold mb-1">Приложение для InSales</h2>
-        <p className="text-[13px] text-ink-muted mt-0 mb-3">Значения, которые нужно вписать в настройках авторизации магазина.</p>
+        <h2 className="text-lg font-semibold mb-3">Приложение для авторизации</h2>
 
         <Card>
           <div className="text-base font-semibold mb-1">Данные приложения</div>
@@ -384,10 +383,6 @@ export default function AuthSettings({
             <div>
               <div className={labelCls}>Имя приложения</div>
               <CopyBox text="Авторизоваться" />
-              <p className={hintCls}>
-                В InSales это поле называется так же и задаёт подпись кнопки входа на сайте. Впишите «Авторизоваться», остальные
-                значения ниже мы выпускаем сами.
-              </p>
             </div>
             <div>
               <div className={labelCls}>ID приложения</div>
