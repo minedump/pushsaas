@@ -30,13 +30,14 @@ const BASE = "https://smsc.ru/sys";
 type SmscSendResponse = { id?: number | string; cnt?: number; error?: string; error_code?: number };
 
 async function callSend(login: string, password: string, params: Record<string, string>): Promise<SmscSendResponse> {
-  const url = new URL(`${BASE}/send.php`);
-  url.searchParams.set("login", login);
-  url.searchParams.set("psw", password);
-  url.searchParams.set("fmt", "3");
-  url.searchParams.set("charset", "utf-8");
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const res = await fetch(url.toString());
+  // POST, а не GET: HTML-шаблон письма на десятки килобайт не помещается в адресную
+  // строку (smsc.ru отвечает 414 уже около 16 000 символов), а в теле запроса проходит.
+  const body = new URLSearchParams({ login, psw: password, fmt: "3", charset: "utf-8", ...params });
+  const res = await fetch(`${BASE}/send.php`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
   if (!res.ok) return { error: "http_error", error_code: -1 };
   return res.json().catch(() => ({ error: "bad response", error_code: -1 }));
 }
