@@ -56,7 +56,6 @@ export type OidcContext = {
     channel_order?: string[];
     sms_sender?: string;
     email_from?: string;
-    hide_native_login_button?: boolean;
     auth_button_text?: string | null;
     auth_button_icon?: string | null;
     auth_button_color?: string | null;
@@ -96,8 +95,9 @@ export async function getOidcContext(projectId: string): Promise<OidcContext | n
   };
 }
 
-// Создаёт OIDC-конфигурацию проекта (или перевыпускает секрет).
-// Возвращает client_secret в открытом виде — показывается владельцу ОДИН раз.
+// Создаёт OIDC-конфигурацию проекта (или перевыпускает токен приложения).
+// Токен (client_secret) хранится открыто в project_secrets.oidc_client_secret и всегда виден владельцу,
+// для проверки при входе по-прежнему используется его хэш.
 export async function ensureOidcClient(
   projectId: string,
   opts: { regenerateSecret?: boolean } = {}
@@ -117,7 +117,7 @@ export async function ensureOidcClient(
   if (existing?.client_id) {
     await admin
       .from("project_secrets")
-      .update({ oidc_client_secret_hash: sha256(clientSecret) })
+      .update({ oidc_client_secret_hash: sha256(clientSecret), oidc_client_secret: clientSecret })
       .eq("project_id", projectId);
     return { clientId: existing.client_id, clientSecret };
   }
@@ -130,12 +130,21 @@ export async function ensureOidcClient(
   // is_enabled: false явно — вход не должен стать доступен покупателям, пока
   // админ не настроит хотя бы один рабочий канал и не включит его сам
   // (см. «Статус входа» в AuthSettings.tsx и проверку в /api/admin/oidc/settings).
-  if (existing) await admin.from("oidc_clients").update({ client_id: clientId, kid, is_enabled: false }).eq("project_id", projectId);
-  else await admin.from("oidc_clients").insert({ project_id: projectId, client_id: clientId, kid, is_enabled: false });
+  // Все каналы каскада по умолчанию выключены, как и сам вход
+  const offChannels = { push: false, email: false, telegram: false, sms: false };
+  if (existing) {
+    const { data: cur } = await admin.from("oidc_clients").select("config").eq("project_id", projectId).maybeSingle();
+    await admin
+      .from("oidc_clients")
+      .update({ client_id: clientId, kid, is_enabled: false, config: { ...(cur?.config || {}), channels: offChannels } })
+      .eq("project_id", projectId);
+  } else {
+    await admin.from("oidc_clients").insert({ project_id: projectId, client_id: clientId, kid, is_enabled: false, config: { channels: offChannels } });
+  }
   await admin
     .from("project_secrets")
     .upsert(
-      { project_id: projectId, oidc_private_key_pem: pem, oidc_client_secret_hash: sha256(clientSecret) },
+      { project_id: projectId, oidc_private_key_pem: pem, oidc_client_secret_hash: sha256(clientSecret), oidc_client_secret: clientSecret },
       { onConflict: "project_id" }
     );
 

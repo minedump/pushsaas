@@ -238,7 +238,7 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
   const { data: mtsSecret } = await admin.from("project_secrets").select("mts_token").eq("project_id", projectId).maybeSingle();
   const mtsToken = mtsSecret?.mts_token || null;
   const { data: oidcClient } = await admin.from("oidc_clients").select("config").eq("project_id", projectId).maybeSingle();
-  const channels: ChannelConfig = { push: true, email: true, telegram: true, sms: true, ...(oidcClient?.config?.channels || {}) };
+  const channels: ChannelConfig = { push: false, email: false, telegram: false, sms: false, ...(oidcClient?.config?.channels || {}) };
   const smsSender: string | undefined = oidcClient?.config?.sms_sender;
   const emailFrom: string | undefined = oidcClient?.config?.email_from;
   const smsProvider = resolveSmsProvider(oidcClient?.config?.providers?.sms);

@@ -351,7 +351,7 @@ function redirectHostAllowed(ctx: OidcContext, redirectUri: string): boolean {
 // telegram/sms первыми (или email выключен) → телефон, как обычно.
 function startKeyFor(ctx: OidcContext): "phone" | "email" {
   const order = resolveOrder(ctx.config?.channel_order).filter((c) => c !== "push");
-  return order[0] === "email" && ctx.config?.channels?.email !== false ? "email" : "phone";
+  return order[0] === "email" && ctx.config?.channels?.email === true ? "email" : "phone";
 }
 
 type SessionRow = {
@@ -478,7 +478,7 @@ async function renderForSession(
   // Молчаливое узнавание по push уважает настроенный порядок каналов:
   // если магазин явно поставил push НЕ первым (телефон/SMS раньше него),
   // не перепрыгиваем вперёд без спроса — сразу показываем форму.
-  const pushFirst = resolveOrder(ctx.config?.channel_order)[0] === "push" && ctx.config?.channels?.push !== false;
+  const pushFirst = resolveOrder(ctx.config?.channel_order)[0] === "push" && ctx.config?.channels?.push === true;
   const recognized = pushFirst ? await tryRecognizeDevice(admin, projectId, session) : null;
   if (recognized) {
     const maskedTarget = recognized.key === "phone" ? maskPhone(recognized.target) : maskEmail(recognized.target);

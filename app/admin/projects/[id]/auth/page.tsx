@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureProjectAccessible } from "@/lib/guards";
-import { issuerFor } from "@/lib/oidc";
+import { ensureOidcClient, issuerFor } from "@/lib/oidc";
 import { resolveLoginStyle } from "@/lib/login-style";
 import AuthSettings from "./AuthSettings";
 
@@ -19,12 +19,14 @@ export default async function AuthPage({ params }: { params: Promise<{ id: strin
   if (!project) notFound();
   await ensureProjectAccessible(project.id, project.is_active);
 
+  // Приложение для входа создаётся вместе с проектом; у проектов, созданных раньше, доводим его здесь (повторный вызов ничего не меняет)
+  await ensureOidcClient(id).catch(() => null);
+
   const { data: oidcRow } = await supabase
     .from("oidc_clients")
     .select("client_id, is_enabled, config")
     .eq("project_id", id)
     .maybeSingle();
-  // запись без client_id — только подписи отправителя из «Подключений», вход не настроен
   const oidc = oidcRow?.client_id ? oidcRow : null;
 
   // Наличие токенов каналов (сами значения владельцу не показываем)
@@ -33,8 +35,11 @@ export default async function AuthPage({ params }: { params: Promise<{ id: strin
   let hasHaskimail = false;
   let hasSmsc = false;
   let hasMts = false;
+  let clientSecret: string | null = null;
   if (oidc) {
     const admin = createAdminClient();
+    const { data: appSecret } = await admin.from("project_secrets").select("oidc_client_secret").eq("project_id", id).maybeSingle();
+    clientSecret = appSecret?.oidc_client_secret || null;
     const { data: secrets } = await admin
       .from("project_secrets")
       .select("telegram_gateway_token, bytehand_service_key")
@@ -83,12 +88,12 @@ export default async function AuthPage({ params }: { params: Promise<{ id: strin
           oidc
             ? {
                 clientId: oidc.client_id,
+                clientSecret,
                 isEnabled: oidc.is_enabled,
-                channels: { push: true, email: true, telegram: true, sms: true, ...(oidc.config?.channels || {}) },
+                channels: { push: false, email: false, telegram: false, sms: false, ...(oidc.config?.channels || {}) },
                 channelOrder: Array.isArray(oidc.config?.channel_order) ? oidc.config.channel_order : [],
                 providers: oidc.config?.providers || {},
                 otpTemplates: oidc.config?.otp_templates || {},
-                hideNativeLoginButton: !!oidc.config?.hide_native_login_button,
                 authButtonText: oidc.config?.auth_button_text || "",
                 authButtonIcon: oidc.config?.auth_button_icon || "",
                 authButtonColor: oidc.config?.auth_button_color || "",

@@ -2,8 +2,8 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { IconPhone, IconRefresh, IconGripVertical } from "@tabler/icons-react";
-import { Button, Card, ColorField, CustomSelect, Input, Label, Textarea, Toggle, useDialogs } from "@/app/ui";
+import { IconRefresh, IconGripVertical, IconCopy, IconCheck } from "@tabler/icons-react";
+import { Button, Card, ColorField, CustomSelect, Input, Label, Textarea, Toggle, useCopy, useDialogs } from "@/app/ui";
 import CopyBox from "../CopyBox";
 import IntegrationCard from "../IntegrationCard";
 import { SMS_PROVIDERS, TELEGRAM_PROVIDERS, EMAIL_PROVIDERS } from "@/lib/otp/providers";
@@ -41,12 +41,13 @@ type Template = { id: string; name: string; channel: "push" | "sms" | "email" };
 
 type Initial = {
   clientId: string;
+  // токен приложения виден всегда; null — у приложения, созданного до появления открытого хранения (нужно выпустить заново)
+  clientSecret: string | null;
   isEnabled: boolean;
   channels: Record<ChannelKey, boolean | undefined>;
   channelOrder: ChannelKey[];
   providers: Providers;
   otpTemplates: OtpTemplates;
-  hideNativeLoginButton: boolean;
   authButtonText: string;
   authButtonIcon: string;
   authButtonColor: string;
@@ -77,16 +78,14 @@ export default function AuthSettings({
   const router = useRouter();
   const { confirm, toast } = useDialogs();
   const [busy, setBusy] = useState(false);
-  const [freshSecret, setFreshSecret] = useState<string | null>(null);
   const [otpTemplates, setOtpTemplates] = useState<OtpTemplates>(initial?.otpTemplates || {});
   const [isEnabled, setIsEnabled] = useState(initial?.isEnabled ?? false);
-  const [channels, setChannels] = useState(initial?.channels || { push: true, email: true, telegram: true, sms: true });
+  const [channels, setChannels] = useState(initial?.channels || { push: false, email: false, telegram: false, sms: false });
   const [order, setOrder] = useState<ChannelKey[]>(() => {
     const saved = initial?.channelOrder?.filter((c): c is ChannelKey => DEFAULT_ORDER.includes(c)) ?? [];
     const missing = DEFAULT_ORDER.filter((c) => !saved.includes(c));
     return [...saved, ...missing];
   });
-  const [hideLoginButton, setHideLoginButton] = useState(initial?.hideNativeLoginButton ?? false);
   const [authButtonText, setAuthButtonText] = useState(initial?.authButtonText || "");
   const [authButtonIcon, setAuthButtonIcon] = useState(initial?.authButtonIcon || "");
   const [authButtonColor, setAuthButtonColor] = useState(initial?.authButtonColor || "");
@@ -222,7 +221,7 @@ export default function AuthSettings({
   // каналом» для целей этой проверки. Нужен хотя бы один канал с кодом,
   // реально включённый И готовый (ключ уже сохранён или введён прямо сейчас).
   function loginReadiness(): { ok: boolean; message?: string } {
-    const ready = (["email", "telegram", "sms"] as ChannelKey[]).some((ch) => channels[ch] !== false && channelReadiness(ch).ok);
+    const ready = (["email", "telegram", "sms"] as ChannelKey[]).some((ch) => channels[ch] === true && channelReadiness(ch).ok);
     if (!ready) {
       return {
         ok: false,
@@ -259,10 +258,10 @@ export default function AuthSettings({
   }
 
   async function setup(regenerate = false) {
-    if (regenerate) {
+    if (regenerate && initial?.clientSecret) {
       const ok = await confirm({
-        title: "Перевыпустить секрет?",
-        message: "Старый секрет перестанет работать — его нужно будет заменить в настройках InSales.",
+        title: "Перевыпустить токен?",
+        message: "Старый токен перестанет работать — его нужно будет заменить в настройках InSales.",
         confirmText: "Перевыпустить",
         danger: true,
       });
@@ -277,25 +276,7 @@ export default function AuthSettings({
     const json = await res.json();
     setBusy(false);
     if (!res.ok) return toast(json.error || "Ошибка", "bad");
-    if (json.clientSecret) setFreshSecret(json.clientSecret);
-    router.refresh();
-  }
-
-  async function saveButtonVisibility(next: boolean) {
-    setHideLoginButton(next);
-    setBusy(true);
-    const res = await fetch("/api/admin/oidc/settings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, hideNativeLoginButton: next }),
-    });
-    setBusy(false);
-    if (!res.ok) {
-      setHideLoginButton(!next);
-      const j = await res.json().catch(() => ({}));
-      toast(j.error || "Ошибка", "bad");
-      return;
-    }
+    toast(regenerate ? "Токен перевыпущен" : "Токен выпущен", "good");
     router.refresh();
   }
 
@@ -388,20 +369,7 @@ export default function AuthSettings({
     toast("Порядок сохранён", "good");
   }
 
-  if (!initial) {
-    return (
-      <Card className="mt-4 sm:mt-8">
-        <p className="text-sm text-ink-muted m-0">
-          Нажмите кнопку — мы создадим OIDC-конфигурацию (client_id, ключ подписи, секрет) и покажем значения для
-          вставки в админку InSales.
-        </p>
-        <Button className="mt-3" disabled={busy} onClick={() => setup(false)}>
-          <IconPhone size={16} stroke={1.8} />
-          Включить вход по телефону
-        </Button>
-      </Card>
-    );
-  }
+  if (!initial) return null;
 
   const embedSnippet = `(function waitForAjaxAPI(tries){
   if (window.ajaxAPI && ajaxAPI.shop) {
@@ -415,14 +383,34 @@ export default function AuthSettings({
 
   return (
     <div className={busy ? "opacity-60" : ""}>
-      {freshSecret && (
-        <Card className="mt-4 sm:mt-8 border-good bg-good-tint">
-          <div className="text-[13px] font-semibold mb-1.5">
-            Секрет создан — скопируйте в InSales сейчас, больше он не покажется:
+      <h2 className="text-base font-semibold mt-4 sm:mt-8">Приложение для InSales</h2>
+      <Card className="mt-3">
+        <p className="text-sm text-ink-muted mt-0">
+          Значения для админки InSales: Магазин → Настройки → Авторизация покупателя → «Авторизация через OpenID Connect» →
+          добавить приложение.
+        </p>
+        <p className="text-sm text-ink-muted">
+          В InSales обязательно задайте <b>«Имя приложения»</b> — оно станет текстом кнопки входа на сайте (например, «Войти по телефону»).
+        </p>
+        <CopyRow label="ID приложения" value={initial.clientId} />
+        {initial.clientSecret ? (
+          <CopyRow label="API токен приложения" value={initial.clientSecret} />
+        ) : (
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 py-1.5">
+            <div className="w-56 shrink-0 text-[13px] text-ink-muted">API токен приложения</div>
+            <div className="text-[13px] text-ink-muted">Токен не выпущен или выпущен до этого обновления и не может быть показан. Нажмите «Выпустить токен».</div>
           </div>
-          <code className="break-all text-[13px] font-mono">{freshSecret}</code>
-        </Card>
-      )}
+        )}
+        <CopyRow label="Issuer" value={issuer.replace(/^https:\/\//, "")} />
+        <p className="text-[12.5px] text-ink-faint mt-2 mb-0">
+          ⚠️ В поле Issuer у InSales уже подставлено «https://» — вводите адрес <b>без</b> протокола, иначе вход
+          упадёт с ошибкой 500 (проверено).
+        </p>
+        <Button variant="secondary" size="sm" className="mt-3" disabled={busy} onClick={() => setup(!!initial.clientSecret)}>
+          <IconRefresh size={15} stroke={1.8} />
+          {initial.clientSecret ? "Перевыпустить токен" : "Выпустить токен"}
+        </Button>
+      </Card>
 
       <h2 className="text-base font-semibold mt-4 sm:mt-8">Каскад отправки кода</h2>
       <div className="mt-3 flex flex-col gap-1.5">
@@ -430,8 +418,8 @@ export default function AuthSettings({
           <ChannelRow
             key={key}
             label={CHANNEL_TITLE[key]}
-            on={channels[key] !== false}
-            locked={key !== "push" && channels[key] === false && !hasSecret[key]}
+            on={channels[key] === true}
+            locked={key !== "push" && !channels[key] && !hasSecret[key]}
             onChange={(v) => handleChannelToggle(key, v)}
             dragging={dragKey === key}
             rowRef={(el) => (rowRefs.current[key] = el)}
@@ -452,7 +440,7 @@ export default function AuthSettings({
           <div className="text-sm">
             {isEnabled
               ? "Вход включён — покупатели видят кнопку и могут войти"
-              : "Вход выключен — недоступен покупателям, даже если кнопка видна"}
+              : "Вход выключен — кнопка входа на сайте скрыта, войти нельзя"}
           </div>
           <Toggle checked={isEnabled} onChange={saveEnabled} disabled={busy} label={isEnabled ? "Вкл" : "Выкл"} />
         </div>
@@ -461,23 +449,6 @@ export default function AuthSettings({
           push один не подойдёт, он работает только для уже узнанных устройств.
         </p>
 
-        <div className="h-px bg-border my-3" />
-
-        <p className="text-sm text-ink-muted mt-0">
-          Значения для админки InSales: Магазин → Настройки → Авторизация покупателя → «Авторизация через OpenID
-          Connect» → добавить приложение.
-        </p>
-        <Row label="ID приложения (client_id)" value={initial.clientId} mono />
-        <Row label="API token приложения" value={freshSecret || "показан при создании (можно перевыпустить)"} mono={!!freshSecret} />
-        <Row label="Issuer" value={issuer.replace(/^https:\/\//, "")} mono />
-        <p className="text-[12.5px] text-ink-faint mt-2 mb-0">
-          ⚠️ В поле Issuer у InSales уже подставлено «https://» — вводите адрес <b>без</b> протокола, иначе вход
-          упадёт с ошибкой 500 (проверено).
-        </p>
-        <Button variant="secondary" size="sm" className="mt-3" disabled={busy} onClick={() => setup(true)}>
-          <IconRefresh size={15} stroke={1.8} />
-          Перевыпустить секрет
-        </Button>
       </IntegrationCard>
 
       <IntegrationCard title="Шаблоны кода входа" configured={Object.values(otpTemplates).some(Boolean)}>
@@ -508,22 +479,17 @@ export default function AuthSettings({
 
       <IntegrationCard
         title="Кнопка входа InSales"
-        configured={hideLoginButton || !!authButtonText || !!authButtonColor || !!authButtonIcon || authButtonRounded}
+        configured={!!authButtonText || !!authButtonColor || !!authButtonIcon || authButtonRounded}
       >
         <p className="text-sm text-ink-muted mt-0">
           Отдельный скрипт (<code className="font-mono">/embed/{"{projectId}"}/auth-button.js</code>), не влияет на
           основной виджет. Управляет нативной ссылкой «Войти через {"{"}приложение{"}"}» на странице входа: можно
-          скрыть целиком, либо задать свой текст, иконку, цвет и размер — тогда ссылка получает класс{" "}
-          <code className="font-mono">.button</code> темы магазина и выглядит как родная кнопка.
+          задать свой текст, иконку, цвет и размер — тогда ссылка получает класс{" "}
+          <code className="font-mono">.button</code> темы магазина и выглядит как родная кнопка. Пока вход выключен (переключатель «Статус входа»), кнопка
+          скрыта автоматически.
         </p>
-        <div className="flex justify-between items-center gap-3 mt-3">
-          <div className="text-sm">Скрыть кнопку целиком</div>
-          <Toggle checked={hideLoginButton} onChange={saveButtonVisibility} label={hideLoginButton ? "Вкл" : "Выкл"} />
-        </div>
-
-        {!hideLoginButton && (
+        {(
           <>
-            <div className="h-px bg-border my-3" />
             <div>
               <Label>Текст на кнопке</Label>
               <Input value={authButtonText} onChange={(e) => setAuthButtonText(e.target.value)} placeholder="оставьте пустым — родной текст InSales" />
@@ -669,11 +635,28 @@ export default function AuthSettings({
   );
 }
 
-function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+// Строка «название — значение» с кнопкой копирования: значения для админки InSales
+function CopyRow({ label, value }: { label: string; value: string }) {
+  const copy = useCopy();
+  const [copied, setCopied] = useState(false);
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 py-1.5">
       <div className="w-56 shrink-0 text-[13px] text-ink-muted">{label}</div>
-      <div className={`text-[13.5px] break-all ${mono ? "font-mono" : "text-ink-muted"}`}>{value}</div>
+      <div className="flex-1 min-w-0 flex items-center gap-2">
+        <code className="min-w-0 flex-1 text-[13px] font-mono break-all">{value}</code>
+        <button
+          type="button"
+          onClick={async () => {
+            if (!(await copy(value))) return;
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          }}
+          className="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2 transition-colors cursor-pointer"
+          title="Копировать"
+        >
+          {copied ? <IconCheck size={15} stroke={2} /> : <IconCopy size={15} stroke={1.8} />}
+        </button>
+      </div>
     </div>
   );
 }

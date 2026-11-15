@@ -4,6 +4,7 @@ import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateVapidKeys } from "@/lib/webpush";
 import { generateAttributionToken } from "@/lib/attribution";
+import { ensureOidcClient } from "@/lib/oidc";
 
 // Creates a project for the current user (client or superadmin — both may
 // own projects) + its own VAPID key pair. Uses the service-role client so it
@@ -55,6 +56,9 @@ export async function POST(req: Request) {
     await admin.from("projects").delete().eq("id", project.id);
     return NextResponse.json({ error: secretErr.message }, { status: 500 });
   }
+
+  // Приложение для входа (client_id, ключ подписи, токен) создаётся сразу; сам вход выключен, пока владелец не включит его
+  await ensureOidcClient(project.id).catch(() => null);
 
   return NextResponse.json({ id: project.id });
 }

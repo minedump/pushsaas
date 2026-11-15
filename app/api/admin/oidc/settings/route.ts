@@ -15,7 +15,6 @@ export async function POST(req: Request) {
     channelOrder,
     providers,
     otpTemplates,
-    hideNativeLoginButton,
     authButtonText,
     authButtonIcon,
     authButtonColor,
@@ -114,7 +113,7 @@ export async function POST(req: Request) {
   // Актуальное состояние каналов (сохранённое + то, что придёт этим вызовом)
   // нужно ЗАРАНЕЕ — от него зависит проверка isEnabled ниже, даже если сам
   // запрос channels не трогает (например, отдельный клик по «Вход включён»).
-  const savedChannels: Record<string, boolean> = { push: true, email: true, telegram: true, sms: true, ...(config.channels || {}) };
+  const savedChannels: Record<string, boolean> = { push: false, email: false, telegram: false, sms: false, ...(config.channels || {}) };
   let effectiveChannels = savedChannels;
   if (channels && typeof channels === "object") {
     const nextChannels = { ...savedChannels, ...channels };
@@ -144,7 +143,7 @@ export async function POST(req: Request) {
   // кодом — push сам по себе никого не онбордит (работает только для уже
   // узнанных устройств), поэтому не считается «настроенным каналом» здесь.
   if (isEnabled === true) {
-    const hasWorkingChannel = (["email", "telegram", "sms"] as const).some((ch) => effectiveChannels[ch] !== false && willHave[ch]);
+    const hasWorkingChannel = (["email", "telegram", "sms"] as const).some((ch) => effectiveChannels[ch] === true && willHave[ch]);
     if (!hasWorkingChannel) {
       return NextResponse.json(
         {
@@ -156,7 +155,6 @@ export async function POST(req: Request) {
     }
   }
   if (Array.isArray(channelOrder)) config.channel_order = channelOrder.filter((c: unknown) => typeof c === "string");
-  if (hideNativeLoginButton !== undefined) config.hide_native_login_button = !!hideNativeLoginButton;
   if (authButtonText !== undefined) config.auth_button_text = (authButtonText || "").trim() || null;
   if (authButtonIcon !== undefined) config.auth_button_icon = (authButtonIcon || "").trim() || null;
   if (authButtonColor !== undefined) {
