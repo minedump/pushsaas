@@ -48,7 +48,8 @@ function applyEmailTheme(html: string, theme: EmailTheme): string {
   // из-за которых браузер сам красил бы фон и элементы окна письма в тёмный
   const light = withDarkMedia(html, false).replace(/<meta\s+name="(?:supported-)?color-schemes?"[^>]*>/gi, "");
   if (theme === "invert") {
-    const style = "<style>html{background:#fff;filter:invert(1) hue-rotate(180deg)}img{filter:invert(1) hue-rotate(180deg)}</style>";
+    // фильтр на body, а не на корневой элемент: корневой по-разному обрабатывается браузером в зависимости от темы окружения
+    const style = "<style>html{background:#000}body{filter:invert(1) hue-rotate(180deg)}body img{filter:invert(1) hue-rotate(180deg)}</style>";
     return light.includes("</head>") ? light.replace("</head>", style + "</head>") : style + light;
   }
   return light;
@@ -157,7 +158,7 @@ export function MessagePreviewModal({
           <div>
             {rendered.subject && <div className="text-[12.5px] text-ink-muted mb-2">Тема: {rendered.subject}</div>}
             <SegmentedControl value={emailTheme} onChange={setEmailTheme} options={EMAIL_THEME_OPTIONS} className="mb-2 flex-wrap" />
-            <iframe srcDoc={applyEmailTheme(rendered.html || "", emailTheme)} className="w-full h-96 border border-border rounded-lg bg-white" sandbox="" title="Превью письма" />
+            <iframe srcDoc={applyEmailTheme(rendered.html || "", emailTheme)} className="w-full h-96 border border-border rounded-lg bg-white" style={{ colorScheme: "light" }} sandbox="" title="Превью письма" />
           </div>
         )}
         {content.channel === "push" && <PushPreview content={rendered} />}
