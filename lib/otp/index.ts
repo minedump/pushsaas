@@ -505,13 +505,15 @@ export async function verifyOtp(otpId: string, code: string): Promise<VerifyOtpR
 // каналом — берёт самую полезную причину из попыток (провайдерская ошибка
 // важнее, чем «канал не настроен» — это то, что реально можно почитать).
 export function describeNoChannel(attempts: ChannelAttempt[]): string {
+  // Исчерпанный лимит отправок показываем раньше «не настроено»: покупателю важно знать, что нужно
+  // подождать, а не что магазин ничего не настроил (остальные каналы могут быть просто выключены).
   const priority: ChannelSkipReason[] = [
     "provider_error",
     "send_failed",
+    "channel_rate_limited",
     "no_subscription",
     "country_not_allowed",
     "not_configured",
-    "channel_rate_limited",
   ];
   for (const reason of priority) {
     const hit = attempts.find((a) => a.reason === reason);
