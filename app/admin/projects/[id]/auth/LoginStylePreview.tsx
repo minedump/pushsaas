@@ -48,7 +48,7 @@ export default function LoginStylePreview({ config, logoUrl }: { config: LoginSt
                 ЛОГО
               </div>
             )}
-            <div className="text-center font-semibold mb-4" style={{ fontSize: 20 }}>
+            <div className="text-center font-semibold mb-4" style={{ fontSize: device === "phone" ? 18 : 20 }}>
               Вход по номеру телефона
             </div>
             <div

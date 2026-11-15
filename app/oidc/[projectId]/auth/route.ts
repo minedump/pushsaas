@@ -100,6 +100,7 @@ function page(title: string, inner: string, ctx: OidcContext): Response {
 <style>
   body{font:16px/1.5 system-ui,-apple-system,sans-serif;max-width:420px;margin:8vh auto 0;padding:0 1.2rem;color:${style.textColor}}
   h2{font-size:20px;margin:0 0 1rem;text-align:center}
+  @media (max-width:480px){h2{font-size:18px}}
   label{display:block;margin:.9rem 0 .25rem;font-size:14px;color:#45505c}
   input{width:100%;margin-top:.9rem;padding:${inputCss.padding};border:1px solid #c3ccd6;border-radius:${inputRadius};font-size:${inputCss.fontSize}px;line-height:1;box-sizing:border-box}
   button{width:100%;margin-top:1.1rem;padding:${buttonCss.padding};border:0;border-radius:${buttonRadius};background:${style.buttonColor};color:${style.buttonTextColor};font-size:${buttonCss.fontSize}px;line-height:1;cursor:pointer}
