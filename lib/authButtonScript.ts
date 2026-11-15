@@ -25,11 +25,12 @@ export const AUTH_BUTTON_SIZES = ["s", "m", "l", "xl"] as const;
 export type AuthButtonSize = (typeof AUTH_BUTTON_SIZES)[number];
 export const AUTH_BUTTON_DEFAULT_SIZE: AuthButtonSize = "m";
 
-// Работает внутри основного скрипта: PROJECT_ID и identify() — из его области видимости.
-function authEnrichBlock(): string {
+// Блок стоит ПОСЛЕ основного скрипта (вне его области видимости), поэтому берёт идентификатор проекта параметром,
+// а identify() — из window.sendera.
+function authEnrichBlock(projectId: string): string {
   return `(function(){
   var RETURN = /[?&]from_oauth=true(?:[&#]|$)/;
-  var KEY = "pss_oauth_" + PROJECT_ID;
+  var KEY = "pss_oauth_" + ${JSON.stringify(projectId)};
   var ss = null;
   try { ss = window.sessionStorage; } catch(e){}
   var landing = RETURN.test(location.search);
@@ -52,7 +53,8 @@ function authEnrichBlock(): string {
       try {
         ajaxAPI.shop.client.get().done(function(c){
           if(!c) return;
-          identify({ phone: c.phone, email: c.email, name: c.name, surname: c.surname, middlename: c.middlename, insales_client_id: c.id }).catch(function(){});
+          if(!window.sendera || !window.sendera.identify) return;
+          window.sendera.identify({ phone: c.phone, email: c.email, name: c.name, surname: c.surname, middlename: c.middlename, insales_client_id: c.id }).catch(function(){});
         });
       } catch(e){}
     } else if(tries-- > 0){
@@ -62,7 +64,7 @@ function authEnrichBlock(): string {
 })();`;
 }
 
-export function authButtonBlock(opts: { enabled: boolean; color: string | null; size: AuthButtonSize | null }): string {
+export function authButtonBlock(opts: { enabled: boolean; color: string | null; size: AuthButtonSize | null; projectId: string }): string {
   if (!opts.enabled) {
     return `(function(){
   var st = document.createElement("style");
@@ -70,7 +72,7 @@ export function authButtonBlock(opts: { enabled: boolean; color: string | null; 
   (document.head || document.documentElement).appendChild(st);
 })();`;
   }
-  return `${authEnrichBlock()}
+  return `${authEnrichBlock(opts.projectId)}
 (function(){
   var COLOR = ${JSON.stringify(opts.color)};
   var SIZE = ${JSON.stringify(opts.size || AUTH_BUTTON_DEFAULT_SIZE)};
@@ -94,9 +96,9 @@ export function authButtonBlock(opts: { enabled: boolean; color: string | null; 
 }
 
 // Настройки кнопки из oidc_clients (вход включён + config) -> код для вставки
-export function authButtonBlockFromConfig(isEnabled: boolean, config: Record<string, unknown> | null | undefined): string {
+export function authButtonBlockFromConfig(isEnabled: boolean, config: Record<string, unknown> | null | undefined, projectId: string): string {
   const c = config || {};
   const color = typeof c.auth_button_color === "string" && /^#[0-9a-fA-F]{3,8}$/.test(c.auth_button_color.trim()) ? c.auth_button_color.trim() : null;
   const size = (AUTH_BUTTON_SIZES as readonly unknown[]).includes(c.auth_button_size) ? (c.auth_button_size as AuthButtonSize) : null;
-  return authButtonBlock({ enabled: isEnabled, color, size });
+  return authButtonBlock({ enabled: isEnabled, color, size, projectId });
 }
