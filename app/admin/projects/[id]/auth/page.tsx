@@ -94,7 +94,6 @@ export default async function AuthPage({ params }: { params: Promise<{ id: strin
                 channelOrder: Array.isArray(oidc.config?.channel_order) ? oidc.config.channel_order : [],
                 providers: oidc.config?.providers || {},
                 otpTemplates: oidc.config?.otp_templates || {},
-                authButtonText: oidc.config?.auth_button_text || "",
                 authButtonIcon: oidc.config?.auth_button_icon || "",
                 authButtonColor: oidc.config?.auth_button_color || "",
                 authButtonSize: oidc.config?.auth_button_size || "",

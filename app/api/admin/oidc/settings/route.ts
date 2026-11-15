@@ -15,7 +15,6 @@ export async function POST(req: Request) {
     channelOrder,
     providers,
     otpTemplates,
-    authButtonText,
     authButtonIcon,
     authButtonColor,
     authButtonSize,
@@ -155,7 +154,6 @@ export async function POST(req: Request) {
     }
   }
   if (Array.isArray(channelOrder)) config.channel_order = channelOrder.filter((c: unknown) => typeof c === "string");
-  if (authButtonText !== undefined) config.auth_button_text = (authButtonText || "").trim() || null;
   if (authButtonIcon !== undefined) config.auth_button_icon = (authButtonIcon || "").trim() || null;
   if (authButtonColor !== undefined) {
     const c = (authButtonColor || "").trim();

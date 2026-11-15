@@ -26,7 +26,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ projectId: str
   const opts = {
     // кнопка входа скрыта, пока вход выключен (переключатель «Статус входа»)
     hide: !oidc?.is_enabled,
-    text: typeof config.auth_button_text === "string" && config.auth_button_text.trim() ? config.auth_button_text.trim() : null,
+    // текст кнопки всегда родной (имя приложения из InSales), свой текст не задаётся
+    text: null,
     icon: typeof config.auth_button_icon === "string" && config.auth_button_icon.trim() ? config.auth_button_icon.trim() : null,
     color: typeof config.auth_button_color === "string" && /^#[0-9a-fA-F]{3,8}$/.test(config.auth_button_color.trim()) ? config.auth_button_color.trim() : null,
     size: SIZES.includes(config.auth_button_size) ? (config.auth_button_size as Size) : null,

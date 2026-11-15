@@ -242,8 +242,7 @@ export default function ProjectSettings({
         </Card>
 
         <Card className={`mt-3 ${logoBusy ? "opacity-60" : ""}`}>
-          <div className="text-base font-semibold mb-1">Логотип</div>
-          <p className="text-[13px] text-ink-muted mt-0 mb-3">Загрузите логотип проекта.</p>
+          <div className="text-base font-semibold mb-3">Логотип</div>
           <div className="flex items-center gap-4 flex-wrap">
             <label className="flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-border rounded-xl w-28 h-28 cursor-pointer hover:border-accent transition-colors shrink-0">
               {logoUrl ? (
@@ -265,9 +264,8 @@ export default function ProjectSettings({
             </label>
             <div className="text-[13px] text-ink-muted">
               <div>PNG, WebP, SVG или JPG · до 2 МБ</div>
-              <div className="text-[12px] text-ink-faint mt-0.5">Нажмите на рамку, чтобы выбрать файл — загружается сразу</div>
               {logoUrl && (
-                <Button variant="danger" size="sm" type="button" className="mt-2" onClick={removeLogo} disabled={logoBusy}>
+                <Button variant="danger" type="button" className="mt-2" onClick={removeLogo} disabled={logoBusy}>
                   Убрать логотип
                 </Button>
               )}

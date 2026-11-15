@@ -47,7 +47,6 @@ type Initial = {
   channelOrder: ChannelKey[];
   providers: Providers;
   otpTemplates: OtpTemplates;
-  authButtonText: string;
   authButtonIcon: string;
   authButtonColor: string;
   authButtonSize: string;
@@ -85,7 +84,6 @@ export default function AuthSettings({
     const missing = DEFAULT_ORDER.filter((c) => !saved.includes(c));
     return [...saved, ...missing];
   });
-  const [authButtonText, setAuthButtonText] = useState(initial?.authButtonText || "");
   const [authButtonIcon, setAuthButtonIcon] = useState(initial?.authButtonIcon || "");
   const [authButtonColor, setAuthButtonColor] = useState(initial?.authButtonColor || "");
   const [authButtonSize, setAuthButtonSize] = useState(initial?.authButtonSize || "");
@@ -274,7 +272,6 @@ export default function AuthSettings({
       body: JSON.stringify({
         projectId,
         otpTemplates,
-        authButtonText,
         authButtonIcon,
         authButtonColor,
         authButtonSize,
@@ -381,10 +378,17 @@ export default function AuthSettings({
           <div className="text-base font-semibold mb-1">Данные приложения</div>
           <p className="text-[13px] text-ink-muted mt-0 mb-3">
             Добавьте их в InSales: Магазин → Настройки → Авторизация покупателя → «Авторизация через OpenID Connect» → добавить
-            приложение. В InSales обязательно задайте «Имя приложения» — оно станет текстом кнопки входа на сайте, например «Войти по
-            телефону».
+            приложение.
           </p>
           <div className="flex flex-col gap-3">
+            <div>
+              <div className={labelCls}>Имя приложения</div>
+              <CopyBox text="Авторизоваться" />
+              <p className={hintCls}>
+                В InSales это поле называется так же и задаёт подпись кнопки входа на сайте. Впишите «Авторизоваться», остальные
+                значения ниже мы выпускаем сами.
+              </p>
+            </div>
             <div>
               <div className={labelCls}>ID приложения</div>
               <CopyBox text={initial.clientId} />
@@ -402,10 +406,6 @@ export default function AuthSettings({
             <div>
               <div className={labelCls}>Issuer</div>
               <CopyBox text={issuer.replace(/^https:\/\//, "")} />
-              <p className={hintCls}>
-                В поле Issuer у InSales уже подставлено «https://»: вводите адрес <b>без</b> протокола, иначе вход упадёт с ошибкой 500
-                (проверено).
-              </p>
             </div>
             <div>
               <Button size="md" disabled={busy} onClick={() => setup(!!initial.clientSecret)}>
@@ -481,15 +481,6 @@ export default function AuthSettings({
               текст. Telegram без выбора: Gateway API может нести только код.
             </p>
 
-            <div>
-              <div className={labelCls}>Текст на кнопке</div>
-              <Input value={authButtonText} onChange={(e) => setAuthButtonText(e.target.value)} placeholder="оставьте пустым — родной текст InSales" />
-              <p className={hintCls}>
-                Кнопку на странице входа магазина ведёт отдельный скрипт (<code className="font-mono">/embed/{"{projectId}"}/auth-button.js</code>
-                ). Со своим текстом, иконкой, цветом или размером ссылка получает класс <code className="font-mono">.button</code> темы магазина
-                и выглядит как родная кнопка. Пока вход выключен, кнопка скрыта.
-              </p>
-            </div>
             <div>
               <div className={labelCls}>Иконка (SVG-разметка)</div>
               <Textarea
