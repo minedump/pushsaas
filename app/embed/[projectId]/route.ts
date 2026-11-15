@@ -339,7 +339,7 @@ function widget(
     });
   }
 
-  // sendera.identify({phone, email, name, insales_client_id}) — вызывается
+  // sendera.identify({phone, email, name, surname, middlename, insales_client_id}) — вызывается
   // ТЕМОЙ магазина вручную (например, на странице, где покупатель уже
   // авторизован — после ajaxAPI.shop.client.get()). НЕ требует push —
   // работает и по push-подписке (если есть), и по device_token (см. выше).
@@ -355,6 +355,7 @@ function widget(
         body: JSON.stringify(Object.assign({
           projectId: PROJECT_ID,
           phone: data.phone, email: data.email, name: data.name,
+          firstName: data.firstName, lastName: data.lastName || data.surname, middleName: data.middleName || data.middlename,
           insales_client_id: data.insales_client_id || data.insalesClientId
         }, idBody))
       }).then(function(r){ return r.json(); });

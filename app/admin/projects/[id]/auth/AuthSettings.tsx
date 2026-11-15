@@ -375,7 +375,7 @@ export default function AuthSettings({
   const embedSnippet = `(function waitForAjaxAPI(tries){
   if (window.ajaxAPI && ajaxAPI.shop) {
     ajaxAPI.shop.client.get().done(function(client){
-      sendera.identify({ phone: client.phone, email: client.email, name: client.name, insales_client_id: client.id });
+      sendera.identify({ phone: client.phone, email: client.email, name: client.name, surname: client.surname, middlename: client.middlename, insales_client_id: client.id });
     });
   } else if (tries > 0) {
     setTimeout(function(){ waitForAjaxAPI(tries - 1); }, 200);
@@ -517,10 +517,12 @@ export default function AuthSettings({
         <p className="text-[13px] text-ink-muted mt-0 mb-3">Данные об авторизованных в InSales клиентах, которые попадают в контакты.</p>
 
         <Card>
-          <div className="text-base font-semibold mb-1">Сниппет для страницы магазина</div>
+          <div className="text-base font-semibold mb-1">Подтягивается автоматически</div>
           <p className="text-[13px] text-ink-muted mt-0 mb-3">
-            На странице, где покупатель уже авторизован в InSales, после подключения нашего сниппета можно вызвать этот код.
+            После входа через нашу форму скрипт сайта сам запрашивает у магазина данные клиента (имя, фамилия, отчество, телефон, почта) и
+            записывает их в контакт. Вставлять ничего в шаблон не нужно.
           </p>
+          <div className={labelCls}>Вызвать вручную (для проверки)</div>
           <CopyBox text={embedSnippet} />
         </Card>
       </section>

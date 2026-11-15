@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { normalizePhone } from "@/lib/phone";
 import { checkRateLimit } from "@/lib/ratelimit";
 import { sha256 } from "@/lib/oidc";
-import { syncDeviceToIdentity } from "@/lib/identity";
+import { syncDeviceToIdentity, namePatch, splitName, logFieldChanges } from "@/lib/identity";
 
 // Public "enrich my own subscription" endpoint — called by the merchant's OWN
 // theme JS (window.sendera.identify({phone,email,name,insales_client_id})),
@@ -19,7 +19,9 @@ import { syncDeviceToIdentity } from "@/lib/identity";
 // email_verified_at. Sending a phone/email this device never verified
 // matches nothing — silently, no error, no new binding; the caller just
 // doesn't get what it didn't earn. Once matched:
-//   - name refreshes
+//   - ФИО обновляется ровно тем, что прислал магазин (объект клиента InSales: name — имя, surname —
+//     фамилия, middlename — отчество; пустые значения пропускаем, пустым ничего не стираем).
+//     Прислали только name — разбираем «Имя Фамилия», а то, что не пришло, остаётся как было
 //   - insales_client_id refreshes (the external CRM id, e.g. InSales
 //     client.id; this is a property of the PERSON, not of each individual
 //     device, so it does NOT live on subscribers.attributes)
@@ -39,13 +41,18 @@ export async function OPTIONS() {
 }
 
 export async function POST(req: Request) {
-  const { projectId, endpoint, deviceToken, phone, email, name, insales_client_id, insalesClientId } = (await req.json().catch(() => ({}))) as {
+  const { projectId, endpoint, deviceToken, phone, email, name, insales_client_id, insalesClientId, ...rest } = (await req.json().catch(() => ({}))) as {
     projectId?: string;
     endpoint?: string;
     deviceToken?: string;
     phone?: string;
     email?: string;
     name?: string;
+    firstName?: string;
+    lastName?: string;
+    surname?: string;
+    middleName?: string;
+    middlename?: string;
     insales_client_id?: string;
     insalesClientId?: string;
   };
@@ -89,7 +96,24 @@ export async function POST(req: Request) {
 
   const cleanEmail = (email || "").trim().toLowerCase();
   const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail) ? cleanEmail : null;
-  const cleanName = name?.trim() || undefined;
+  // имя, фамилия и отчество: объект клиента InSales (name, surname, middlename) и привычные алиасы
+  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "") || undefined;
+  const nameParts = {
+    firstName: str(rest.firstName),
+    lastName: str(rest.lastName) ?? str(rest.surname),
+    middleName: str(rest.middleName) ?? str(rest.middlename),
+  };
+  const cleanName = str(name);
+  const hasParts = !!(nameParts.firstName || nameParts.lastName || nameParts.middleName);
+  // Только name (старый вызов): «Имя Фамилия» разбираем на части, чтобы не оставить имя и фамилию рассогласованными.
+  const nameInput = hasParts
+    ? { ...nameParts, ...(cleanName && !nameParts.firstName ? { firstName: cleanName } : {}) }
+    : cleanName
+      ? (() => {
+          const sp = splitName(cleanName);
+          return sp.first || sp.last ? { firstName: sp.first ?? undefined, lastName: sp.last ?? undefined } : { name: cleanName };
+        })()
+      : null;
   const phoneDigits = phone ? normalizePhone(phone) : null;
 
   // Матчим строго по ключу, который сам был доказан для ЭТОГО устройства —
@@ -147,7 +171,22 @@ export async function POST(req: Request) {
     const patch: Record<string, string> = {};
     if (identity.matchedVia === "phone" && validEmail) patch.email = validEmail;
     if (identity.matchedVia === "email" && phoneDigits) patch.phone = phoneDigits;
-    if (cleanName) patch.name = cleanName;
+    let finalName: string | null = null;
+    if (nameInput) {
+      const { data: cur } = await admin.from("identities").select("name, first_name, last_name, middle_name").eq("id", identity.id).maybeSingle();
+      const np = namePatch(nameInput, cur ?? null);
+      const before: Record<string, unknown> = {};
+      const after: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(np)) {
+        const old = (cur as Record<string, unknown> | null)?.[k] ?? null;
+        if (v === old) continue;
+        patch[k] = v as string;
+        before[k] = old;
+        after[k] = v;
+      }
+      if (Object.keys(after).length) logFieldChanges(admin, projectId, identity.id, before, after);
+      finalName = (np.name as string | null | undefined) ?? cur?.name ?? null;
+    }
     if (extId) patch.insales_client_id = extId;
     // Часовой пояс — с устройства, которым матчились (наиболее «текущий»
     // источник); та же логика best-effort, что и у имени.
@@ -167,13 +206,13 @@ export async function POST(req: Request) {
     // подстановка {name} в тексте кампаний читает subscribers.attributes (на
     // уровне устройства) — поэтому дублируем его во ВСЕ устройства этой
     // identity, а не только в текущее.
-    if (cleanName) {
+    if (finalName) {
       const { data: links } = await admin.from("identity_devices").select("subscriber_id").eq("identity_id", identity.id);
       const subIds = [...new Set((links || []).map((l) => l.subscriber_id))];
       if (subIds.length) {
         const { data: subs } = await admin.from("subscribers").select("id, attributes").in("id", subIds);
         for (const s of subs || []) {
-          const attrs = { ...((s.attributes as Record<string, unknown> | null) || {}), name: cleanName };
+          const attrs = { ...((s.attributes as Record<string, unknown> | null) || {}), name: finalName };
           await admin.from("subscribers").update({ attributes: attrs }).eq("id", s.id);
         }
       }

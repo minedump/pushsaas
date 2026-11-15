@@ -83,7 +83,7 @@ function SenderaApiDocsModal({ onClose }: { onClose: () => void }) {
         </section>
 
         <section>
-          <div className="font-semibold text-ink mb-1">sendera.identify({"{ phone, email, name, insales_client_id }"})</div>
+          <div className="font-semibold text-ink mb-1">sendera.identify({"{ phone, email, name, surname, middlename, insales_client_id }"})</div>
           <p className="m-0">
             Довязывает известные данные покупателя (например, после входа в личный кабинет магазина) к уже подписанному устройству — не
             заводит новую привязку телефон/email сама по себе, только обогащает уже подтверждённую кодом.{" "}
