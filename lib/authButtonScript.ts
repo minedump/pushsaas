@@ -17,7 +17,9 @@
 // Обогащение профиля (вход включён): после входа через нашу форму магазин возвращает покупателя на
 // /client_account/session/new?from_oauth=true и тут же перекидывает дальше. Код ничего не требует от шаблона:
 //  - на странице возврата (в адресе from_oauth=true) запоминает это в sessionStorage и сразу пробует отправить данные;
-//  - на следующей странице (предыдущая — страница с from_oauth=true, либо метка в sessionStorage свежее 10 минут)
+//  - на следующей странице (предыдущая — страница с from_oauth=true, либо переход пришёл с нашей страницы входа:
+//    после цепочки редиректов браузер оставляет в referrer только адрес сайта-источника, то есть наш, либо метка в
+//    sessionStorage свежее 10 минут)
 //    один раз запрашивает объект клиента у магазина (ajaxAPI.shop.client.get) и вызывает identify: имя, фамилия,
 //    отчество, телефон, почта и id клиента попадают в контакт. Выключен вход — этого кода в скрипте нет.
 
@@ -27,10 +29,11 @@ export const AUTH_BUTTON_DEFAULT_SIZE: AuthButtonSize = "m";
 
 // Блок стоит ПОСЛЕ основного скрипта (вне его области видимости), поэтому берёт идентификатор проекта параметром,
 // а identify() — из window.sendera.
-function authEnrichBlock(projectId: string): string {
+function authEnrichBlock(projectId: string, appOrigin: string): string {
   return `(function(){
   var RETURN = /[?&]from_oauth=true(?:[&#]|$)/;
   var KEY = "pss_oauth_" + ${JSON.stringify(projectId)};
+  var APP = ${JSON.stringify(appOrigin)};
   var ss = null;
   try { ss = window.sessionStorage; } catch(e){}
   var landing = RETURN.test(location.search);
@@ -41,7 +44,8 @@ function authEnrichBlock(projectId: string): string {
   } else {
     var pending = false;
     if(ss){ try { var t = parseInt(ss.getItem(KEY) || "0", 10); pending = !!t && Date.now() - t < 600000; } catch(e){} }
-    if(RETURN.test(document.referrer || "") || pending){
+    var ref = document.referrer || "";
+    if(RETURN.test(ref) || (APP && ref.indexOf(APP) === 0) || pending){
       run = true;
       if(ss){ try { ss.removeItem(KEY); } catch(e){} }
     }
@@ -64,7 +68,7 @@ function authEnrichBlock(projectId: string): string {
 })();`;
 }
 
-export function authButtonBlock(opts: { enabled: boolean; color: string | null; size: AuthButtonSize | null; projectId: string }): string {
+export function authButtonBlock(opts: { enabled: boolean; color: string | null; size: AuthButtonSize | null; projectId: string; appOrigin: string }): string {
   if (!opts.enabled) {
     return `(function(){
   var st = document.createElement("style");
@@ -72,7 +76,7 @@ export function authButtonBlock(opts: { enabled: boolean; color: string | null; 
   (document.head || document.documentElement).appendChild(st);
 })();`;
   }
-  return `${authEnrichBlock(opts.projectId)}
+  return `${authEnrichBlock(opts.projectId, opts.appOrigin)}
 (function(){
   var COLOR = ${JSON.stringify(opts.color)};
   var SIZE = ${JSON.stringify(opts.size || AUTH_BUTTON_DEFAULT_SIZE)};
@@ -96,9 +100,9 @@ export function authButtonBlock(opts: { enabled: boolean; color: string | null; 
 }
 
 // Настройки кнопки из oidc_clients (вход включён + config) -> код для вставки
-export function authButtonBlockFromConfig(isEnabled: boolean, config: Record<string, unknown> | null | undefined, projectId: string): string {
+export function authButtonBlockFromConfig(isEnabled: boolean, config: Record<string, unknown> | null | undefined, projectId: string, appOrigin: string): string {
   const c = config || {};
   const color = typeof c.auth_button_color === "string" && /^#[0-9a-fA-F]{3,8}$/.test(c.auth_button_color.trim()) ? c.auth_button_color.trim() : null;
   const size = (AUTH_BUTTON_SIZES as readonly unknown[]).includes(c.auth_button_size) ? (c.auth_button_size as AuthButtonSize) : null;
-  return authButtonBlock({ enabled: isEnabled, color, size, projectId });
+  return authButtonBlock({ enabled: isEnabled, color, size, projectId, appOrigin });
 }

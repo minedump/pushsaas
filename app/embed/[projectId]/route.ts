@@ -82,7 +82,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ projectId: str
 
   // best-effort: статус и настройки входа (раздел «Авторизация»)
   const { data: oidcRow, error: oidcErr } = await admin.from("oidc_clients").select("is_enabled, config, client_id").eq("project_id", projectId).maybeSingle();
-  const authBlock = !oidcErr && oidcRow?.client_id ? authButtonBlockFromConfig(!!oidcRow.is_enabled, oidcRow.config, project.id) : "";
+  const authBlock = !oidcErr && oidcRow?.client_id ? authButtonBlockFromConfig(!!oidcRow.is_enabled, oidcRow.config, project.id, (() => { try { return new URL(api).origin; } catch { return ""; } })()) : "";
 
   const js = widget(project.id, project.vapid_public_key, api, attribution, ymCounterId, button, prompt, install, installVersion, project.is_active !== false, authBlock);
   return new Response(await minifyJs(js), {
