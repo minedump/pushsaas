@@ -14,29 +14,40 @@ const nextConfig = {
   // у script/style — вынужденно: OIDC-страницы входа (app/oidc/.../route.ts)
   // рендерят сырой HTML с инлайновыми <style>/<script> без nonce-инфраструктуры.
   async headers() {
+    const csp = (formAction) =>
+      [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob: https:",
+        "font-src 'self' data:",
+        "connect-src 'self'",
+        "frame-ancestors 'self'",
+        "base-uri 'self'",
+        formAction,
+      ].join("; ");
+    const common = [
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "X-Frame-Options", value: "SAMEORIGIN" },
+      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
+    ];
     return [
+      // все страницы, кроме входа покупателя (/oidc/...): формы отправляются только на этот же адрес
       {
-        source: "/:path*",
-        headers: [
-          { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "X-Frame-Options", value: "SAMEORIGIN" },
-          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
-          {
-            key: "Content-Security-Policy",
-            value: [
-              "default-src 'self'",
-              "script-src 'self' 'unsafe-inline'",
-              "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: blob: https:",
-              "font-src 'self' data:",
-              "connect-src 'self'",
-              "frame-ancestors 'self'",
-              "base-uri 'self'",
-              "form-action 'self'",
-            ].join("; "),
-          },
-        ],
+        source: "/:path((?!oidc(?:/|$)).*)",
+        headers: [...common, { key: "Content-Security-Policy", value: csp("form-action 'self'") }],
+      },
+      {
+        source: "/",
+        headers: [...common, { key: "Content-Security-Policy", value: csp("form-action 'self'") }],
+      },
+      // Страница входа покупателя: после ввода кода форма отправляется на наш адрес, а ответ — редирект обратно в магазин
+      // (другой домен). Браузер применяет form-action и к такому редиректу, поэтому при 'self' вход зависал на кнопке
+      // «Подтвердить и войти». Допускаем https: — домен возврата уже проверяется сервером по списку разрешённых.
+      {
+        source: "/oidc/:path*",
+        headers: [...common, { key: "Content-Security-Policy", value: csp("form-action 'self' https:") }],
       },
     ];
   },
