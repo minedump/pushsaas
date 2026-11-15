@@ -212,7 +212,10 @@ function codeForm(
   ctx: OidcContext,
   opts: { err?: string } = {}
 ): Response {
-  const resendChannels: OtpChannel[] = key === "email" ? ["push", "email"] : ["push", "telegram", "sms"];
+  // Выключенные в настройках каналы не предлагаем (иначе кнопка «в Telegram» при выключенном
+  // Telegram ведёт в тупик «магазин не настроил способы доставки»). Текущий канал оставляем всегда.
+  const keyChannels: OtpChannel[] = key === "email" ? ["push", "email"] : ["push", "telegram", "sms"];
+  const resendChannels: OtpChannel[] = keyChannels.filter((c) => c === channel || ctx.config?.channels?.[c] !== false);
   // Пока текущий код ещё не истёк — не показываем вообще ни одного
   // альтернативного канала (нельзя выслать код сразу несколькими способами).
   // Истекло время ожидания — показываем РОВНО один: следующий по каскаду.
@@ -774,12 +777,15 @@ export async function POST(req: Request, routeCtx: { params: Promise<{ projectId
   const otpKey: OtpKey = key === "phone" ? { phone: target } : { email: target };
 
   if (body.action === "resend") {
-    const allowed: OtpChannel[] = key === "phone" ? ["push", "telegram", "sms"] : ["push", "email"];
+    const allKeyChannels: OtpChannel[] = key === "phone" ? ["push", "telegram", "sms"] : ["push", "email"];
+    // выключенные каналы не берём ни по запросу, ни «по умолчанию последним»
+    const allowedEnabled = allKeyChannels.filter((c) => ctx.config?.channels?.[c] !== false);
+    const allowed: OtpChannel[] = allowedEnabled.length ? allowedEnabled : allKeyChannels;
     const requested = body.channel as OtpChannel;
     const channel = allowed.includes(requested) ? requested : allowed[allowed.length - 1];
     const sent = await sendOtp(projectId, otpKey, { forceChannel: channel });
     if (!sent.ok) {
-      const msg = sent.error === "rate_limited" ? "Слишком много отправок — подождите 10 минут" : describeNoChannel(sent.attempts);
+      const msg = sent.error === "rate_limited" ? "Слишком много попыток — подождите 10 минут" : describeNoChannel(sent.attempts);
       const prev = await channelOf(session.otp_id);
       return codeForm(action, session.id, sig, prev.channel, prev.provider, maskedTarget, key, prev.expiresAt, ctx, { err: msg });
     }
