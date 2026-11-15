@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { syncDeviceToIdentity } from "@/lib/identity";
-import { getOidcContext, issuerFor, signParam, verifyParam, oidcLog, type OidcContext } from "@/lib/oidc";
+import { getOidcContext, issuerFor, signParam, verifyParam, oidcLog, authFailedTarget, type OidcContext } from "@/lib/oidc";
 import { issueCodeAndRedirect } from "@/lib/oidc-flow";
 import { normalizePhone, maskPhone } from "@/lib/phone";
 import {
@@ -330,11 +330,13 @@ function resendForm(action: string, sid: string, sig: string, channel: string, l
 // же, откуда пришёл отскок, с меткой ?pss_auth_failed=1 — чтобы виджет её
 // узнал (и чтобы это отличалось от обычного возврата по ?pss_link=), а
 // InSales показал свою страницу входа заново вместо тупика на нашей форме.
-// Без домена проекта возвращать некуда — тогда null, и вызывающий код
-// остаётся на своей форме с текстовым сообщением.
+// Владелец проекта может указать свою страницу возврата (config.auth_failed_url,
+// например вход по паролю) — тогда уходим на неё; адрес проверяется заново
+// в authFailedTarget. Без домена проекта возвращать некуда — тогда null, и
+// вызывающий код остаётся на своей форме с текстовым сообщением.
 function authFailedRedirect(ctx: OidcContext): Response | null {
   if (!ctx.projectDomain) return null;
-  return Response.redirect(`https://${ctx.projectDomain}/client_account/session/new?pss_auth_failed=1`, 302);
+  return Response.redirect(authFailedTarget(ctx.projectDomain, ctx.config?.auth_failed_url), 302);
 }
 
 function redirectHostAllowed(ctx: OidcContext, redirectUri: string): boolean {

@@ -3,6 +3,7 @@ import { assertProjectAccess } from "@/lib/auth";
 import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveLoginStyle } from "@/lib/login-style";
+import { normalizeAuthFailedUrl } from "@/lib/oidc";
 import { SMS_PROVIDERS, TELEGRAM_PROVIDERS, EMAIL_PROVIDERS } from "@/lib/otp/providers";
 
 // Настройки входа по телефону: каналы каскада + их порядок, подпись SMS,
@@ -18,6 +19,7 @@ export async function POST(req: Request) {
     otpTemplates,
     authButtonColor,
     authButtonSize,
+    authFailedUrl,
     loginStyle,
     smsSender,
     emailFrom,
@@ -185,6 +187,13 @@ export async function POST(req: Request) {
   if (loginStyle !== undefined) config.login_style = resolveLoginStyle(loginStyle);
   if (smsSender !== undefined) config.sms_sender = smsSender || null;
   if (emailFrom !== undefined) config.email_from = emailFrom || null;
+  // Страница возврата при неудачном входе: только на сайте проекта (иначе открытое перенаправление)
+  if (authFailedUrl !== undefined) {
+    const { data: proj } = await admin.from("projects").select("domain").eq("id", projectId).maybeSingle();
+    const n = normalizeAuthFailedUrl(authFailedUrl, proj?.domain || null);
+    if (!n.ok) return NextResponse.json({ error: n.error }, { status: 400 });
+    config.auth_failed_url = n.value;
+  }
 
   const updates: Record<string, unknown> = { config };
   if (isEnabled !== undefined) updates.is_enabled = !!isEnabled;

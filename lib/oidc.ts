@@ -61,6 +61,8 @@ export type OidcContext = {
     auth_button_color?: string | null;
     auth_button_size?: "s" | "m" | "l" | "xl" | null;
     auth_button_rounded?: boolean;
+    // куда вернуть покупателя, если ни один способ получить код не сработал (адрес на сайте проекта или путь вида /page/x)
+    auth_failed_url?: string | null;
   };
   privateKeyPem: string;
   clientSecretHash: string;
@@ -68,6 +70,42 @@ export type OidcContext = {
   logoUrl: string | null;
   loginStyle: LoginStyleConfig;
 };
+
+// Адрес возврата при неудачном входе. Вернуть можно только на сайт самого проекта (его домен или поддомен):
+// иначе настройка стала бы открытым перенаправлением на чужие сайты.
+function hostOnProjectDomain(host: string, domain: string): boolean {
+  const h = host.toLowerCase();
+  const d = domain.toLowerCase();
+  return h === d || h.endsWith("." + d);
+}
+
+// Проверка и приведение введённого в настройках адреса. Пустое значение = стандартная страница входа магазина.
+export function normalizeAuthFailedUrl(raw: unknown, domain: string | null): { ok: true; value: string | null } | { ok: false; error: string } {
+  const s = typeof raw === "string" ? raw.trim() : "";
+  if (!s) return { ok: true, value: null };
+  if (!domain) return { ok: false, error: "Сначала укажите домен сайта в настройках проекта" };
+  // путь внутри сайта: /page/avtorizatsiya-po-parolyu
+  if (s.startsWith("/") && !s.startsWith("//") && !/[\s\\]/.test(s)) return { ok: true, value: s };
+  let u: URL;
+  try {
+    u = new URL(s);
+  } catch {
+    return { ok: false, error: "Введите полный адрес страницы, например https://" + domain + "/page/login" };
+  }
+  if (u.protocol !== "https:") return { ok: false, error: "Адрес должен начинаться с https://" };
+  if (u.username || u.password) return { ok: false, error: "Адрес не должен содержать логин и пароль" };
+  if (!hostOnProjectDomain(u.hostname, domain)) return { ok: false, error: `Страница должна быть на сайте проекта (${domain})` };
+  return { ok: true, value: u.toString() };
+}
+
+// Куда фактически вернуть покупателя. Домен мог смениться после сохранения настройки, поэтому адрес проверяем заново:
+// не прошёл проверку — стандартная страница входа магазина.
+export function authFailedTarget(domain: string, stored: string | null | undefined): string {
+  const fallback = `https://${domain}/client_account/session/new?pss_auth_failed=1`;
+  const n = normalizeAuthFailedUrl(stored, domain);
+  if (!n.ok || !n.value) return fallback;
+  return n.value.startsWith("/") ? `https://${domain}${n.value}` : n.value;
+}
 
 export async function getOidcContext(projectId: string): Promise<OidcContext | null> {
   const admin = createAdminClient();
