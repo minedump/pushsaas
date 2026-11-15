@@ -15,10 +15,8 @@ export async function POST(req: Request) {
     channelOrder,
     providers,
     otpTemplates,
-    authButtonIcon,
     authButtonColor,
     authButtonSize,
-    authButtonRounded,
     loginStyle,
     smsSender,
     emailFrom,
@@ -154,13 +152,11 @@ export async function POST(req: Request) {
     }
   }
   if (Array.isArray(channelOrder)) config.channel_order = channelOrder.filter((c: unknown) => typeof c === "string");
-  if (authButtonIcon !== undefined) config.auth_button_icon = (authButtonIcon || "").trim() || null;
   if (authButtonColor !== undefined) {
     const c = (authButtonColor || "").trim();
     config.auth_button_color = /^#[0-9a-fA-F]{3,8}$/.test(c) ? c : null;
   }
   if (authButtonSize !== undefined) config.auth_button_size = ["s", "m", "l", "xl"].includes(authButtonSize) ? authButtonSize : null;
-  if (authButtonRounded !== undefined) config.auth_button_rounded = !!authButtonRounded;
   if (loginStyle !== undefined) config.login_style = resolveLoginStyle(loginStyle);
   if (smsSender !== undefined) config.sms_sender = smsSender || null;
   if (emailFrom !== undefined) config.email_from = emailFrom || null;

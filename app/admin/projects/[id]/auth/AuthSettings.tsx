@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconRefresh, IconGripVertical } from "@tabler/icons-react";
-import { Button, Card, ColorField, CustomSelect, Input, Label, Textarea, Toggle, useDialogs } from "@/app/ui";
+import { Button, Card, ColorField, CustomSelect, Input, Label, Toggle, useDialogs } from "@/app/ui";
 import CopyBox from "../CopyBox";
 import { SMS_PROVIDERS, TELEGRAM_PROVIDERS, EMAIL_PROVIDERS } from "@/lib/otp/providers";
 import { DEFAULT_LOGIN_STYLE, LOGIN_SIZES, LOGIN_RADIUS_VALUES, type LoginStyleConfig, type LoginSize } from "@/lib/login-style";
@@ -12,7 +12,7 @@ import LoginStylePreview from "./LoginStylePreview";
 
 type ChannelKey = "push" | "email" | "telegram" | "sms";
 const DEFAULT_ORDER: ChannelKey[] = ["push", "email", "telegram", "sms"];
-const CHANNEL_TITLE: Record<ChannelKey, string> = { push: "Push-уведомление", email: "Email", telegram: "Telegram", sms: "SMS" };
+const CHANNEL_TITLE: Record<ChannelKey, string> = { push: "Push", email: "Email", telegram: "Telegram", sms: "SMS" };
 const BUTTON_SIZES = ["s", "m", "l", "xl"] as const;
 
 const LOGIN_SIZE_LABEL: Record<LoginSize, string> = { s: "Маленький", m: "Средний", l: "Большой" };
@@ -47,10 +47,8 @@ type Initial = {
   channelOrder: ChannelKey[];
   providers: Providers;
   otpTemplates: OtpTemplates;
-  authButtonIcon: string;
   authButtonColor: string;
   authButtonSize: string;
-  authButtonRounded: boolean;
   loginStyle: LoginStyleConfig;
   hasTelegram: boolean;
   hasBytehand: boolean;
@@ -84,10 +82,8 @@ export default function AuthSettings({
     const missing = DEFAULT_ORDER.filter((c) => !saved.includes(c));
     return [...saved, ...missing];
   });
-  const [authButtonIcon, setAuthButtonIcon] = useState(initial?.authButtonIcon || "");
   const [authButtonColor, setAuthButtonColor] = useState(initial?.authButtonColor || "");
   const [authButtonSize, setAuthButtonSize] = useState(initial?.authButtonSize || "");
-  const [authButtonRounded, setAuthButtonRounded] = useState(initial?.authButtonRounded ?? false);
   const [loginStyle, setLoginStyle] = useState<LoginStyleConfig>(initial?.loginStyle || DEFAULT_LOGIN_STYLE);
   const [busyLoginStyle, setBusyLoginStyle] = useState(false);
   const [providers, setProviders] = useState<Providers>(initial?.providers || {});
@@ -263,20 +259,28 @@ export default function AuthSettings({
     router.refresh();
   }
 
-  // Блок «Параметры входа»: шаблоны кода и внешний вид кнопки сохраняются вместе, статус входа — сразу рычагом
+  // Блок «Параметры входа»: сохраняются только шаблоны кода, статус входа переключается сразу рычагом
   async function saveSettingsForm() {
     setBusy(true);
     const res = await fetch("/api/admin/oidc/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        projectId,
-        otpTemplates,
-        authButtonIcon,
-        authButtonColor,
-        authButtonSize,
-        authButtonRounded,
-      }),
+      body: JSON.stringify({ projectId, otpTemplates }),
+    });
+    setBusy(false);
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) return toast(j.error || "Ошибка", "bad");
+    toast("Сохранено", "good");
+    router.refresh();
+  }
+
+  // Блок «Кнопка входа»: только цвет и размер
+  async function saveButtonAppearance() {
+    setBusy(true);
+    const res = await fetch("/api/admin/oidc/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, authButtonColor, authButtonSize }),
     });
     setBusy(false);
     const j = await res.json().catch(() => ({}));
@@ -443,16 +447,7 @@ export default function AuthSettings({
           <div className="flex flex-col gap-3">
             <div>
               <div className={labelCls}>Статус входа</div>
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-sm">
-                  {isEnabled ? "Вход включён — покупатели видят кнопку и могут войти" : "Вход выключен — кнопка входа на сайте скрыта, войти нельзя"}
-                </div>
-                <Toggle checked={isEnabled} onChange={saveEnabled} disabled={busy} label={isEnabled ? "Вкл" : "Выкл"} />
-              </div>
-              <p className={hintCls}>
-                Включайте, только когда выше настроен и включён хотя бы один канал с кодом (Email, Telegram или SMS): push один не
-                подойдёт, он работает только для уже узнанных устройств.
-              </p>
+              <Toggle checked={isEnabled} onChange={saveEnabled} disabled={busy} label={isEnabled ? "Вкл" : "Выкл"} />
             </div>
 
             {(["push", "sms", "email"] as const).map((key) => (
@@ -477,36 +472,42 @@ export default function AuthSettings({
             </p>
 
             <div>
-              <div className={labelCls}>Иконка (SVG-разметка)</div>
-              <Textarea
-                value={authButtonIcon}
-                onChange={(e) => setAuthButtonIcon(e.target.value)}
-                rows={3}
-                placeholder='<svg width="16" height="16" ...>...</svg>'
-                className="font-mono text-xs"
+              <Button size="md" disabled={busy} onClick={saveSettingsForm}>
+                Сохранить
+              </Button>
+            </div>
+          </div>
+        </Card>
+      </section>
+
+      <section className="mt-4 sm:mt-8">
+        <h2 className="text-lg font-semibold mb-1">Кнопка входа</h2>
+        <p className="text-[13px] text-ink-muted mt-0 mb-3">Как ссылка «Войти через …» выглядит на странице входа магазина.</p>
+
+        <Card>
+          <div className="text-base font-semibold mb-1">Внешний вид кнопки</div>
+          <p className="text-[13px] text-ink-muted mt-0 mb-3">
+            Ссылка получает стандартные классы кнопки InSales (<code className="font-mono">button</code> и размер), поэтому встаёт в дизайн
+            магазина: скругление и остальное задаёт сама тема. Цвет передаётся инлайн-стилем в переменных цвета кнопок темы. Пока вход
+            выключен, блок входа на сайте скрыт.
+          </p>
+          <div className="flex flex-col gap-3">
+            <div>
+              <div className={labelCls}>Цвет кнопки</div>
+              <ColorField value={authButtonColor} onChange={setAuthButtonColor} />
+              <p className={hintCls}>Пусто — цвет кнопок темы магазина.</p>
+            </div>
+            <div>
+              <div className={labelCls}>Размер</div>
+              <CustomSelect
+                value={authButtonSize || "m"}
+                onChange={setAuthButtonSize}
+                options={BUTTON_SIZES.map((s) => ({ value: s, label: s.toUpperCase() }))}
+                className="w-full"
               />
             </div>
-            <div className="flex gap-3">
-              <div className="flex-1">
-                <div className={labelCls}>Цвет кнопки</div>
-                <ColorField value={authButtonColor} onChange={setAuthButtonColor} />
-              </div>
-              <div className="w-32 shrink-0">
-                <div className={labelCls}>Размер</div>
-                <CustomSelect
-                  value={authButtonSize}
-                  onChange={setAuthButtonSize}
-                  options={[{ value: "", label: "Родной (m)" }, ...BUTTON_SIZES.map((s) => ({ value: s, label: s.toUpperCase() }))]}
-                  className="w-full"
-                />
-              </div>
-            </div>
             <div>
-              <Toggle checked={authButtonRounded} onChange={setAuthButtonRounded} label="Скруглить кнопку до пилюли" />
-            </div>
-
-            <div>
-              <Button size="md" disabled={busy} onClick={saveSettingsForm}>
+              <Button size="md" disabled={busy} onClick={saveButtonAppearance}>
                 Сохранить
               </Button>
             </div>
