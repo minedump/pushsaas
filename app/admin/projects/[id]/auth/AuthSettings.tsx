@@ -372,16 +372,6 @@ export default function AuthSettings({
 
   if (!initial) return null;
 
-  const embedSnippet = `(function waitForAjaxAPI(tries){
-  if (window.ajaxAPI && ajaxAPI.shop) {
-    ajaxAPI.shop.client.get().done(function(client){
-      sendera.identify({ phone: client.phone, email: client.email, name: client.name, surname: client.surname, middlename: client.middlename, insales_client_id: client.id });
-    });
-  } else if (tries > 0) {
-    setTimeout(function(){ waitForAjaxAPI(tries - 1); }, 200);
-  }
-})(25);`;
-
   const labelCls = "text-[13px] text-ink-muted block mb-1";
   const hintCls = "text-[12.5px] text-ink-faint mt-1.5 mb-0";
 
@@ -522,8 +512,6 @@ export default function AuthSettings({
             После входа через нашу форму скрипт сайта сам запрашивает у магазина данные клиента (имя, фамилия, отчество, телефон, почта) и
             записывает их в контакт. Вставлять ничего в шаблон не нужно.
           </p>
-          <div className={labelCls}>Вызвать вручную (для проверки)</div>
-          <CopyBox text={embedSnippet} />
         </Card>
       </section>
 
