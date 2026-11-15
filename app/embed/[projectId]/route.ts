@@ -4,6 +4,7 @@ import { buttonBlock, promptBlock } from "@/lib/widget-scripts";
 import { resolveInstallConfig, type InstallConfig } from "@/lib/install-guide";
 import { installBlock } from "@/lib/install-widget";
 import { minifyJs } from "@/lib/minify-js";
+import { authButtonBlockFromConfig } from "@/lib/authButtonScript";
 
 // Serves the per-project subscribe widget as JavaScript.
 // The client embeds ONE script tag:  <script src="https://APP/embed/PROJECT_ID.js" async></script>
@@ -14,8 +15,8 @@ import { minifyJs } from "@/lib/minify-js";
 // атрибуция кликов) — and the floating subscribe BUTTON + slide-in PROMPT
 // (см. lib/widget-scripts.ts), которые сервер добавляет к этому же ответу,
 // только если включены в «Виджеты» (иначе ни байта их кода в выдаче).
-// The native-login-button visibility control remains a separate, optional
-// script — see /embed/[projectId]/auth-button.js.
+// Кнопка входа InSales (раздел «Авторизация»): вход включён — ссылке добавляются классы кнопки темы (и цвет), вход выключен —
+// в выдачу попадает лишь короткий стиль, прячущий блок входа (см. lib/authButtonScript.ts).
 export async function GET(_req: Request, ctx: { params: Promise<{ projectId: string }> }) {
   const { projectId: raw } = await ctx.params;
   const projectId = raw.replace(/\.js$/, "");
@@ -79,7 +80,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ projectId: str
   // (иконка/название/цвет), чтобы сайты не держали старые картинки в кэше
   const installVersion = String((!widgetErr && (widgetRow?.manifest_config as { generated_at?: string } | null)?.generated_at) || "0").replace(/\D/g, "");
 
-  const js = widget(project.id, project.vapid_public_key, api, attribution, ymCounterId, button, prompt, install, installVersion, project.is_active !== false);
+  // best-effort: статус и настройки входа (раздел «Авторизация»)
+  const { data: oidcRow, error: oidcErr } = await admin.from("oidc_clients").select("is_enabled, config, client_id").eq("project_id", projectId).maybeSingle();
+  const authBlock = !oidcErr && oidcRow?.client_id ? authButtonBlockFromConfig(!!oidcRow.is_enabled, oidcRow.config) : "";
+
+  const js = widget(project.id, project.vapid_public_key, api, attribution, ymCounterId, button, prompt, install, installVersion, project.is_active !== false, authBlock);
   return new Response(await minifyJs(js), {
     headers: {
       "Content-Type": "application/javascript; charset=utf-8",
@@ -99,7 +104,8 @@ function widget(
   prompt: PromptConfig,
   install: InstallConfig,
   installVersion: string,
-  isActive: boolean
+  isActive: boolean,
+  authBlock: string
 ) {
   return `(function(){
   var PROJECT_ID = ${JSON.stringify(projectId)};
@@ -426,7 +432,8 @@ function widget(
 })();
 ${isActive && button.enabled ? buttonBlock(projectId, button) : ""}
 ${isActive && prompt.enabled ? promptBlock(projectId, prompt) : ""}
-${isActive && install.enabled ? installBlock(api, projectId, install, installVersion) : ""}`;
+${isActive && install.enabled ? installBlock(api, projectId, install, installVersion) : ""}
+${isActive ? authBlock : ""}`;
 }
 
 function attributionSnippet(cfg: { cookieName: string; windowDays: number } | null) {
