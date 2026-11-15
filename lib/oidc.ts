@@ -68,6 +68,8 @@ export type OidcContext = {
   clientSecretHash: string;
   projectDomain: string | null;
   logoUrl: string | null;
+  // иконки вкладки браузера: фавиконы проекта (manifest_config), без них — логотип проекта
+  favicons: { ico: string | null; png96: string | null; apple: string | null };
   loginStyle: LoginStyleConfig;
 };
 
@@ -116,7 +118,7 @@ export async function getOidcContext(projectId: string): Promise<OidcContext | n
       .select("oidc_private_key_pem, oidc_client_secret_hash")
       .eq("project_id", projectId)
       .maybeSingle(),
-    admin.from("projects").select("domain, is_active, logo_url").eq("id", projectId).maybeSingle(),
+    admin.from("projects").select("domain, is_active, logo_url, manifest_config").eq("id", projectId).maybeSingle(),
   ]);
   if (!client?.client_id || !client.kid || !secrets?.oidc_private_key_pem || !secrets?.oidc_client_secret_hash || !project?.is_active) return null;
   return {
@@ -129,6 +131,11 @@ export async function getOidcContext(projectId: string): Promise<OidcContext | n
     clientSecretHash: secrets.oidc_client_secret_hash,
     projectDomain: project.domain || null,
     logoUrl: project.logo_url || null,
+    favicons: {
+      ico: (project.manifest_config as { icons?: { ico?: string } } | null)?.icons?.ico || null,
+      png96: (project.manifest_config as { icons?: { f96?: string } } | null)?.icons?.f96 || null,
+      apple: (project.manifest_config as { icons?: { apple?: string } } | null)?.icons?.apple || null,
+    },
     loginStyle: resolveLoginStyle(client.config?.login_style),
   };
 }

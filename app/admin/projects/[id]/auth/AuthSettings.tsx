@@ -262,10 +262,11 @@ export default function AuthSettings({
     router.refresh();
   }
 
-  // Блок «Параметры входа»: сохраняются только шаблоны кода, статус входа переключается сразу рычагом
+  // Блок «Параметры входа»: шаблоны кода и страница возврата при неудачном входе, статус входа переключается сразу рычагом.
+  // Без домена проекта адрес не отправляем: поле заблокировано, а сервер такой адрес не примет.
   async function saveSettingsForm() {
     setBusy(true);
-    const res = await apiPost("/api/admin/oidc/settings", { projectId, otpTemplates });
+    const res = await apiPost("/api/admin/oidc/settings", { projectId, otpTemplates, ...(projectDomain ? { authFailedUrl } : {}) });
     setBusy(false);
     const j = await res.json().catch(() => ({}));
     if (!res.ok) return toast(j.error || "Ошибка", "bad");
@@ -277,17 +278,6 @@ export default function AuthSettings({
   async function saveButtonAppearance() {
     setBusy(true);
     const res = await apiPost("/api/admin/oidc/settings", { projectId, authButtonColor, authButtonSize });
-    setBusy(false);
-    const j = await res.json().catch(() => ({}));
-    if (!res.ok) return toast(j.error || "Ошибка", "bad");
-    toast("Сохранено", "good");
-    router.refresh();
-  }
-
-  // Блок «Если вход не получился»: страница возврата (пусто = стандартная страница входа магазина)
-  async function saveAuthFailedUrl() {
-    setBusy(true);
-    const res = await apiPost("/api/admin/oidc/settings", { projectId, authFailedUrl });
     setBusy(false);
     const j = await res.json().catch(() => ({}));
     if (!res.ok) return toast(j.error || "Ошибка", "bad");
@@ -479,43 +469,21 @@ export default function AuthSettings({
               </div>
             ))}
             <div>
-              <Button size="md" disabled={busy} onClick={saveSettingsForm}>
-                Сохранить
-              </Button>
-            </div>
-          </div>
-        </Card>
-      </section>
-
-      <section className="mt-4 sm:mt-8">
-        <h2 className="text-lg font-semibold mb-1">Если вход не получился</h2>
-        <p className="text-[13px] text-ink-muted mt-0 mb-3">Куда вернуть покупателя, когда код не удалось отправить ни одним способом.</p>
-
-        <Card>
-          <div className="text-base font-semibold mb-1">Страница возврата</div>
-          <p className="text-[13px] text-ink-muted mt-0 mb-3">
-            Например, страница входа по паролю: InSales отправляет пароль на почту при регистрации. Если поле пустое, покупатель вернётся на
-            стандартную страницу входа магазина.
-          </p>
-          <div className="flex flex-col gap-3">
-            <div>
-              <Label htmlFor="auth-failed-url">Адрес страницы</Label>
+              <Label htmlFor="auth-failed-url">Страница при неудачном входе</Label>
               <Input
                 id="auth-failed-url"
                 type="url"
                 inputMode="url"
                 value={authFailedUrl}
                 onChange={(e) => setAuthFailedUrl(e.target.value)}
-                placeholder={projectDomain ? `https://${projectDomain}/page/avtorizatsiya-po-parolyu` : "Сначала укажите домен сайта в настройках проекта"}
+                placeholder={projectDomain ? "https://site.ru/page/login" : "Укажите домен сайта в настройках проекта"}
                 disabled={!projectDomain}
                 className="w-full"
               />
-              <p className={hintCls}>
-                {projectDomain ? `Страница должна быть на вашем сайте (${projectDomain}). Можно указать и путь: /page/avtorizatsiya-po-parolyu.` : "Без домена сайта возвращать покупателя некуда."}
-              </p>
+              <p className={hintCls}>Страница вашего сайта. Пусто: стандартная страница входа магазина.</p>
             </div>
             <div>
-              <Button size="md" disabled={busy || !projectDomain} onClick={saveAuthFailedUrl}>
+              <Button size="md" disabled={busy} onClick={saveSettingsForm}>
                 Сохранить
               </Button>
             </div>

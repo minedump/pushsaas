@@ -95,8 +95,20 @@ function page(title: string, inner: string, ctx: OidcContext): Response {
   const buttonRadius = BUTTON_RADIUS_PX[style.buttonSize][style.borderRadius];
   const inputCss = INPUT_SIZE_CSS[style.inputSize];
   const buttonCss = BUTTON_SIZE_CSS[style.buttonSize];
+  // Иконка вкладки — фавикон самого проекта (как на его сайте), а не значок нашего приложения.
+  // У проектов, сгенерированных до появления фавиконов, берём логотип проекта.
+  const { favicons } = ctx;
+  const iconLinks = [
+    favicons.ico ? `<link rel="shortcut icon" href="${esc(favicons.ico)}" type="image/x-icon">` : "",
+    favicons.png96 ? `<link rel="icon" sizes="96x96" href="${esc(favicons.png96)}" type="image/png">` : "",
+    favicons.apple ? `<link rel="apple-touch-icon" sizes="180x180" href="${esc(favicons.apple)}">` : "",
+    !favicons.ico && !favicons.png96 && logoUrl ? `<link rel="icon" href="${esc(logoUrl)}">` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
   const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>
+${iconLinks}
 <style>
   body{font:16px/1.5 system-ui,-apple-system,sans-serif;max-width:420px;margin:8vh auto 0;padding:0 1.2rem;color:${style.textColor}}
   h2{font-size:20px;margin:0 0 1rem;text-align:center}
