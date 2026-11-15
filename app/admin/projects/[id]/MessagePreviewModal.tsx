@@ -19,8 +19,9 @@ const EMAIL_THEME_OPTIONS: { value: EmailTheme; label: string }[] = [
   { value: "invert", label: "Тёмная (авто)" },
 ];
 
-// Раскрывает блок @media (prefers-color-scheme: dark) { ... }: его правила начинают действовать всегда
-function unwrapDarkMedia(html: string): string {
+// Блок @media (prefers-color-scheme: dark) { ... }: apply=true — его правила начинают действовать всегда (раскрываем),
+// apply=false — убираем целиком. Иначе превью зависело бы от темы браузера самого администратора, а не от выбранного переключателя.
+function withDarkMedia(html: string, apply: boolean): string {
   const re = /@media\s*\(\s*prefers-color-scheme\s*:\s*dark\s*\)\s*\{/gi;
   let out = "";
   let last = 0;
@@ -34,7 +35,7 @@ function unwrapDarkMedia(html: string): string {
       else if (ch === "}") depth--;
       i++;
     }
-    out += html.slice(last, m.index) + html.slice(re.lastIndex, i - 1);
+    out += html.slice(last, m.index) + (apply ? html.slice(re.lastIndex, i - 1) : "");
     last = i;
     re.lastIndex = i;
   }
@@ -42,12 +43,15 @@ function unwrapDarkMedia(html: string): string {
 }
 
 function applyEmailTheme(html: string, theme: EmailTheme): string {
-  if (theme === "dark") return unwrapDarkMedia(html);
+  if (theme === "dark") return withDarkMedia(html, true);
+  // Светлые режимы не должны зависеть от темы браузера или бэкофиса: убираем стили тёмной темы и метки color-scheme,
+  // из-за которых браузер сам красил бы фон и элементы окна письма в тёмный
+  const light = withDarkMedia(html, false).replace(/<meta\s+name="(?:supported-)?color-schemes?"[^>]*>/gi, "");
   if (theme === "invert") {
     const style = "<style>html{background:#fff;filter:invert(1) hue-rotate(180deg)}img{filter:invert(1) hue-rotate(180deg)}</style>";
-    return html.includes("</head>") ? html.replace("</head>", style + "</head>") : style + html;
+    return light.includes("</head>") ? light.replace("</head>", style + "</head>") : style + light;
   }
-  return html;
+  return light;
 }
 
 export type PreviewContent = {
@@ -154,10 +158,6 @@ export function MessagePreviewModal({
             {rendered.subject && <div className="text-[12.5px] text-ink-muted mb-2">Тема: {rendered.subject}</div>}
             <SegmentedControl value={emailTheme} onChange={setEmailTheme} options={EMAIL_THEME_OPTIONS} className="mb-2 flex-wrap" />
             <iframe srcDoc={applyEmailTheme(rendered.html || "", emailTheme)} className="w-full h-96 border border-border rounded-lg bg-white" sandbox="" title="Превью письма" />
-            <p className="text-[12px] text-ink-faint mt-2 mb-0">
-              Условный вид: в настоящем почтовом клиенте может отличаться. «Тёмная» — стили самого письма для тёмной темы, «Тёмная (авто)» — как у
-              клиентов, которые сами инвертируют цвета.
-            </p>
           </div>
         )}
         {content.channel === "push" && <PushPreview content={rendered} />}
