@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconArrowRight, IconPlus, IconGripVertical, IconPencil, IconEye, IconX } from "@tabler/icons-react";
 import { createClient } from "@/lib/supabase/client";
@@ -204,15 +204,36 @@ export default function AutomationsManager({
     setCProvider(next);
     saveChannelConfig(cEnabled, next);
   }
+  const pOrderRef = useRef(pOrder);
+  pOrderRef.current = pOrder;
+  const dragCleanup = useRef<(() => void) | null>(null);
+
+  // Движение и отпускание ловим на window, а не на «ручке» с захватом указателя: когда строка меняется
+  // местами с соседней, React переставляет её в DOM, браузер снимает захват, и перетаскивание
+  // обрывается на полпути (порядок на экране менялся, а сохранения не было).
   function dragStart(e: React.PointerEvent, key: Channel) {
     e.preventDefault();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    dragCleanup.current?.();
     orderBeforeDrag.current = pOrder;
     setDragKey(key);
+    const move = (ev: PointerEvent) => dragMoveTo(key, ev.clientY);
+    const up = () => {
+      dragCleanup.current?.();
+      void dragEnd();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    dragCleanup.current = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      dragCleanup.current = null;
+    };
   }
-  function dragMove(e: React.PointerEvent, key: Channel) {
-    if (dragKey !== key) return;
-    const y = e.clientY;
+  useEffect(() => () => dragCleanup.current?.(), []);
+
+  function dragMoveTo(key: Channel, y: number) {
     setPOrder((o) => {
       const i = o.indexOf(key);
       const prev = o[i - 1];
@@ -238,10 +259,13 @@ export default function AutomationsManager({
   }
   async function dragEnd() {
     setDragKey(null);
+    // даём React применить последнее перемещение, прежде чем читать итоговый порядок
+    await new Promise((r) => setTimeout(r, 0));
+    const finalOrder = pOrderRef.current;
     const before = orderBeforeDrag.current;
     orderBeforeDrag.current = null;
-    if (!before || before.join() === pOrder.join()) return;
-    await savePriority(pOrder);
+    if (!before || before.join() === finalOrder.join()) return;
+    await savePriority(finalOrder);
   }
 
   // ---------- welcome (push/sms/email, template-based, несколько штук) ----------
@@ -1519,9 +1543,6 @@ export default function AutomationsManager({
                 >
                   <div
                     onPointerDown={(e) => dragStart(e, ch)}
-                    onPointerMove={(e) => dragMove(e, ch)}
-                    onPointerUp={dragEnd}
-                    onPointerCancel={dragEnd}
                     style={{ touchAction: "none" }}
                     className={`p-1 -m-1 text-ink-faint hover:text-ink ${dragKey === ch ? "cursor-grabbing text-ink" : "cursor-grab"}`}
                     aria-label="Перетащить для изменения приоритета"
