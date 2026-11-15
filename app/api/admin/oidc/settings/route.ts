@@ -3,6 +3,7 @@ import { assertProjectAccess } from "@/lib/auth";
 import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveLoginStyle } from "@/lib/login-style";
+import { SMS_PROVIDERS, TELEGRAM_PROVIDERS, EMAIL_PROVIDERS } from "@/lib/otp/providers";
 
 // Настройки входа по телефону: каналы каскада + их порядок, подпись SMS,
 // email-отправитель, видимость нативной кнопки InSales, токены каналов.
@@ -84,26 +85,42 @@ export async function POST(req: Request) {
 
   // какой провайдер будет активен на каждый канал ПОСЛЕ этого сохранения —
   // от этого зависит, каких именно ключей достаточно для willHave ниже.
-  const nextProviders = { ...(client.config?.providers || {}), ...(providers && typeof providers === "object" ? providers : {}) };
+  const nextProviders: Record<string, string> = { ...(client.config?.providers || {}), ...(providers && typeof providers === "object" ? providers : {}) };
   const willHaveSmsc =
     (smscLogin !== undefined ? !!smscLogin : !!secrets?.smsc_login) && (smscPassword !== undefined ? !!smscPassword : !!secrets?.smsc_password);
   const willHaveMts = mtsToken !== undefined ? !!mtsToken : !!secrets?.mts_token;
+  const willHaveBytehand = bytehandKey !== undefined ? !!bytehandKey : !!secrets?.bytehand_service_key;
+  const willHaveTelegramGateway = telegramToken !== undefined ? !!telegramToken : !!secrets?.telegram_gateway_token;
+  const willHaveHaskimail = haskimailToken !== undefined ? !!haskimailToken : !!secrets?.haskimail_server_token;
   const willHaveEmailFrom = !!(emailFrom !== undefined ? emailFrom : client.config?.email_from || "").toString().trim();
 
+  // Настроен ли провайдер (есть ли для него ключи) — та же истина, что показывает форма
+  const providerReady: Record<string, boolean> = {
+    bytehand: willHaveBytehand,
+    smsc: willHaveSmsc,
+    mts: willHaveMts,
+    telegram_gateway: willHaveTelegramGateway,
+    haskimail: willHaveHaskimail,
+  };
+
+  // Какой провайдер реально работает на канале: сохранённый выбор, если он ещё настроен, иначе первый настроенный
+  // (так же выбирает форма «Авторизация»). Раньше при несохранённом выборе сервер смотрел на ключ Bytehand и молча
+  // выключал канал, хотя в форме был показан и настроен, например, МТС Маркетолог.
+  function resolveProvider(ch: "sms" | "telegram" | "email"): string | undefined {
+    const list = ch === "sms" ? SMS_PROVIDERS : ch === "telegram" ? TELEGRAM_PROVIDERS : EMAIL_PROVIDERS;
+    const saved = nextProviders[ch];
+    if (saved && list.some((p) => p.id === saved) && providerReady[saved]) return saved;
+    return list.find((p) => providerReady[p.id])?.id;
+  }
+  const resolvedProvider = { sms: resolveProvider("sms"), telegram: resolveProvider("telegram"), email: resolveProvider("email") };
+
   const willHave = {
-    telegram: nextProviders.telegram === "smsc" ? willHaveSmsc : telegramToken !== undefined ? !!telegramToken : !!secrets?.telegram_gateway_token,
-    sms:
-      nextProviders.sms === "smsc"
-        ? willHaveSmsc
-        : nextProviders.sms === "mts"
-          ? willHaveMts
-          : bytehandKey !== undefined ? !!bytehandKey : !!secrets?.bytehand_service_key,
+    telegram: !!resolvedProvider.telegram,
+    sms: !!resolvedProvider.sms,
     // email-канал сверх токена ещё требует заполненного отправителя (From) —
     // без него сервис-провайдер либо отклонит письмо, либо, что хуже,
     // отправит с неверифицированного домена и уйдёт в спам.
-    email:
-      (nextProviders.email === "smsc" ? willHaveSmsc : haskimailToken !== undefined ? !!haskimailToken : !!secrets?.haskimail_server_token) &&
-      willHaveEmailFrom,
+    email: !!resolvedProvider.email && willHaveEmailFrom,
   };
 
   const config = { ...(client.config || {}) };
@@ -114,12 +131,20 @@ export async function POST(req: Request) {
   let effectiveChannels = savedChannels;
   if (channels && typeof channels === "object") {
     const nextChannels = { ...savedChannels, ...channels };
-    // сервер — последняя линия защиты: канал не включится без ключа/отправителя,
-    // даже если запрос пришёл не из нашей формы (которая уже блокирует это в UI).
+    // сервер — последняя линия защиты: канал не включится без ключа/отправителя, даже если запрос пришёл не из
+    // нашей формы (которая уже блокирует это в UI). Отказ возвращаем явной ошибкой, а не «успехом» с выключенным каналом.
     for (const ch of ["telegram", "sms", "email"] as const) {
-      if (nextChannels[ch] && !willHave[ch]) nextChannels[ch] = false;
+      if (channels[ch] === true && !willHave[ch]) {
+        return NextResponse.json(
+          { error: ch === "email" && !willHaveEmailFrom ? "Сначала укажите email-отправителя (From) в разделе «Подключения»" : "Сначала настройте интеграцию в разделе «Подключения»" },
+          { status: 400 }
+        );
+      }
+      // включаемому каналу фиксируем провайдера, которого показывает форма: отправка берёт его из настроек
+      if (channels[ch] === true && resolvedProvider[ch]) nextProviders[ch] = resolvedProvider[ch] as string;
     }
     config.channels = nextChannels;
+    config.providers = nextProviders;
     effectiveChannels = nextChannels;
   }
   if (providers && typeof providers === "object") {
