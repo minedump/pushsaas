@@ -2,11 +2,53 @@
 
 import { useEffect, useState } from "react";
 import { IconX, IconBellRinging } from "@tabler/icons-react";
-import { Badge, Modal } from "@/app/ui";
+import { Badge, Modal, SegmentedControl } from "@/app/ui";
 import { applyTemplate } from "@/lib/template";
 import { previewShortLinks } from "@/lib/linkPreview";
 
 export type PreviewChannel = "push" | "sms" | "email";
+
+// Тема письма в превью. Условный вид: настоящий почтовый клиент (в том числе Яндекс Почта) может показать письмо иначе.
+//  light  — как есть;
+//  dark   — применяются стили самого письма для тёмной темы (@media (prefers-color-scheme: dark)), как у клиентов, которые их понимают;
+//  invert — клиент сам инвертирует цвета письма (картинки возвращаются обратно), как делают клиенты без поддержки тёмной темы в письме.
+type EmailTheme = "light" | "dark" | "invert";
+const EMAIL_THEME_OPTIONS: { value: EmailTheme; label: string }[] = [
+  { value: "light", label: "Светлая" },
+  { value: "dark", label: "Тёмная" },
+  { value: "invert", label: "Тёмная (авто)" },
+];
+
+// Раскрывает блок @media (prefers-color-scheme: dark) { ... }: его правила начинают действовать всегда
+function unwrapDarkMedia(html: string): string {
+  const re = /@media\s*\(\s*prefers-color-scheme\s*:\s*dark\s*\)\s*\{/gi;
+  let out = "";
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    let depth = 1;
+    let i = re.lastIndex;
+    while (i < html.length && depth > 0) {
+      const ch = html[i];
+      if (ch === "{") depth++;
+      else if (ch === "}") depth--;
+      i++;
+    }
+    out += html.slice(last, m.index) + html.slice(re.lastIndex, i - 1);
+    last = i;
+    re.lastIndex = i;
+  }
+  return out + html.slice(last);
+}
+
+function applyEmailTheme(html: string, theme: EmailTheme): string {
+  if (theme === "dark") return unwrapDarkMedia(html);
+  if (theme === "invert") {
+    const style = "<style>html{background:#fff;filter:invert(1) hue-rotate(180deg)}img{filter:invert(1) hue-rotate(180deg)}</style>";
+    return html.includes("</head>") ? html.replace("</head>", style + "</head>") : style + html;
+  }
+  return html;
+}
 
 export type PreviewContent = {
   channel: PreviewChannel;
@@ -54,6 +96,7 @@ export function MessagePreviewModal({
   demoCode?: boolean;
   onClose: () => void;
 }) {
+  const [emailTheme, setEmailTheme] = useState<EmailTheme>("light");
   const [demoCodeValue] = useState(() => String(Math.floor(Math.random() * 1_000_000)).padStart(6, "0"));
   const [resolvedSampleData, setResolvedSampleData] = useState(sampleData);
   useEffect(() => {
@@ -109,7 +152,12 @@ export function MessagePreviewModal({
         {content.channel === "email" && (
           <div>
             {rendered.subject && <div className="text-[12.5px] text-ink-muted mb-2">Тема: {rendered.subject}</div>}
-            <iframe srcDoc={rendered.html || ""} className="w-full h-96 border border-border rounded-lg bg-white" sandbox="" title="Превью письма" />
+            <SegmentedControl value={emailTheme} onChange={setEmailTheme} options={EMAIL_THEME_OPTIONS} className="mb-2 flex-wrap" />
+            <iframe srcDoc={applyEmailTheme(rendered.html || "", emailTheme)} className="w-full h-96 border border-border rounded-lg bg-white" sandbox="" title="Превью письма" />
+            <p className="text-[12px] text-ink-faint mt-2 mb-0">
+              Условный вид: в настоящем почтовом клиенте может отличаться. «Тёмная» — стили самого письма для тёмной темы, «Тёмная (авто)» — как у
+              клиентов, которые сами инвертируют цвета.
+            </p>
           </div>
         )}
         {content.channel === "push" && <PushPreview content={rendered} />}

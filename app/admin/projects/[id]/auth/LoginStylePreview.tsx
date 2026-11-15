@@ -16,9 +16,8 @@ const LOGO_TEXT_PX: Record<keyof typeof LOGO_SIZE_PX, number> = { s: 16, m: 20, 
 // так же, как предпросмотр виджетов: рамка телефона или окно браузера с
 // переключателем. Страница входа открывается отдельной страницей (белый фон,
 // колонка до 420px), а не поверх витрины, поэтому заглушки сайта на фоне нет.
-// Сам логотип (файл) настраивается в общих настройках проекта — здесь
-// просто плейсхолдер-текст, чтобы не тянуть реальную загрузку файла в превью.
-export default function LoginStylePreview({ config }: { config: LoginStyleConfig }) {
+// Логотип берётся из общих настроек проекта, как на настоящей странице входа; пока он не загружен — плейсхолдер «ЛОГО».
+export default function LoginStylePreview({ config, logoUrl }: { config: LoginStyleConfig; logoUrl?: string | null }) {
   const [device, setDevice] = useState<PreviewDevice>("phone");
   const inputRadius = INPUT_RADIUS_PX[config.inputSize][config.borderRadius];
   const buttonRadius = BUTTON_RADIUS_PX[config.buttonSize][config.borderRadius];
@@ -37,9 +36,18 @@ export default function LoginStylePreview({ config }: { config: LoginStyleConfig
       <DeviceStage device={device} skeleton={false}>
         <div className="absolute inset-0 bg-white flex justify-center overflow-hidden">
           <div className="w-full max-w-[320px] px-5 pt-[10%]" style={{ color: config.textColor }}>
-            <div className="text-center mb-4 font-bold" style={{ fontSize: LOGO_TEXT_PX[config.logoSize], color: config.textColor }}>
-              ЛОГО
-            </div>
+            {logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={logoUrl}
+                alt=""
+                style={{ display: "block", margin: "0 auto 1.2rem", maxWidth: LOGO_SIZE_PX[config.logoSize], maxHeight: LOGO_SIZE_PX[config.logoSize] }}
+              />
+            ) : (
+              <div className="text-center mb-4 font-bold" style={{ fontSize: LOGO_TEXT_PX[config.logoSize], color: config.textColor }}>
+                ЛОГО
+              </div>
+            )}
             <div className="text-center font-semibold mb-4" style={{ fontSize: 20 }}>
               Вход по номеру телефона
             </div>

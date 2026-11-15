@@ -13,7 +13,7 @@ export default async function AuthPage({ params }: { params: Promise<{ id: strin
   // RLS: вернёт проект только владельцу/админу
   const { data: project } = await supabase
     .from("projects")
-    .select("id, name, domain, is_active")
+    .select("id, name, domain, is_active, logo_url")
     .eq("id", id)
     .maybeSingle();
   if (!project) notFound();
@@ -82,6 +82,7 @@ export default async function AuthPage({ params }: { params: Promise<{ id: strin
       <AuthSettings
         projectId={id}
         projectDomain={project.domain}
+        logoUrl={project.logo_url || null}
         issuer={issuerFor(id)}
         templates={templates ?? []}
         initial={

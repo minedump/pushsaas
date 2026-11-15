@@ -61,12 +61,14 @@ type Initial = {
 export default function AuthSettings({
   projectId,
   projectDomain,
+  logoUrl,
   issuer,
   templates,
   initial,
 }: {
   projectId: string;
   projectDomain: string | null;
+  logoUrl: string | null;
   issuer: string;
   templates: Template[];
   initial: Initial | null;
@@ -605,7 +607,7 @@ export default function AuthSettings({
             </div>
           </Card>
 
-          <LoginStylePreview config={loginStyle} />
+          <LoginStylePreview config={loginStyle} logoUrl={logoUrl} />
         </div>
       </section>
 
