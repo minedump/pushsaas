@@ -320,6 +320,7 @@ export default function EditTemplateForm({
           content={previewContent}
           sampleData={{ template: contextData || {} }}
           projectId={projectId}
+          demoCode
           onClose={() => setPreviewOpen(false)}
         />
       )}

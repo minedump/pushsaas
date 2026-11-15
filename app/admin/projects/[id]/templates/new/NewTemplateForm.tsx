@@ -268,6 +268,7 @@ export default function NewTemplateForm({
           content={previewContent}
           sampleData={{ template: contextData || {} }}
           projectId={projectId}
+          demoCode
           onClose={() => setPreviewOpen(false)}
         />
       )}

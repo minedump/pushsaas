@@ -545,6 +545,7 @@ export default function TemplatesManager({
           }}
           sampleData={{ template: previewTemplate.context || {} }}
           projectId={projectId}
+          demoCode
           onClose={() => setPreviewId(null)}
         />
       )}

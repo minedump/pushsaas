@@ -38,6 +38,7 @@ export function MessagePreviewModal({
   content,
   sampleData,
   projectId,
+  demoCode = false,
   onClose,
 }: {
   label: string;
@@ -48,8 +49,12 @@ export function MessagePreviewModal({
   // (см. app/api/admin/preview-context) — так превью показывает реальные
   // название/цену/картинку, а не голый {"id": "..."}, как при отправке.
   projectId?: string;
+  // В превью шаблонов: там, где стоит {{ code }}, показываем случайный демо-код, как у ссылок в SMS показывается условная
+  // короткая ссылка. Реальный код подставляется при входе; свой code в контексте шаблона перекрывает демо-значение.
+  demoCode?: boolean;
   onClose: () => void;
 }) {
+  const [demoCodeValue] = useState(() => String(Math.floor(Math.random() * 1_000_000)).padStart(6, "0"));
   const [resolvedSampleData, setResolvedSampleData] = useState(sampleData);
   useEffect(() => {
     if (!projectId || !sampleData) {
@@ -73,7 +78,7 @@ export function MessagePreviewModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, JSON.stringify(sampleData)]);
 
-  const data = resolvedSampleData || {};
+  const data = { ...(demoCode ? { code: demoCodeValue } : {}), ...(resolvedSampleData || {}) };
   const rendered: PreviewContent = {
     ...content,
     title: applyTemplate(content.title, data),

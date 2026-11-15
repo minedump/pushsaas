@@ -439,14 +439,13 @@ export default function AuthSettings({
 
 
       <section className="mt-4 sm:mt-8">
-        <h2 className="text-lg font-semibold mb-1">Настройки входа</h2>
-        <p className="text-[13px] text-ink-muted mt-0 mb-3">Статус входа, шаблоны кода и внешний вид кнопки входа на сайте.</p>
+        <h2 className="text-lg font-semibold mb-3">Настройки входа</h2>
 
         <Card>
           <div className="text-base font-semibold mb-3">Параметры входа</div>
           <div className="flex flex-col gap-3">
-            <div>
-              <div className={labelCls}>Статус входа</div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-[13px] text-ink-muted">Статус входа</div>
               <Toggle checked={isEnabled} onChange={saveEnabled} disabled={busy} label={isEnabled ? "Вкл" : "Выкл"} />
             </div>
 
@@ -465,12 +464,6 @@ export default function AuthSettings({
                 />
               </div>
             ))}
-            <p className={hintCls + " -mt-1.5"}>
-              Шаблоны необязательны, берутся из общего списка «Шаблоны». В тексте доступна переменная{" "}
-              <code className="font-mono">{"{{ code }}"}</code> (одноразовый код). Если ничего не выбрано, уходит короткий встроенный
-              текст. Telegram без выбора: Gateway API может нести только код.
-            </p>
-
             <div>
               <Button size="md" disabled={busy} onClick={saveSettingsForm}>
                 Сохранить
