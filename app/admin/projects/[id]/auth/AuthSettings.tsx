@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconRefresh, IconGripVertical } from "@tabler/icons-react";
 import { Button, Card, ColorField, CustomSelect, Input, Label, Toggle, useDialogs } from "@/app/ui";
@@ -299,16 +299,37 @@ export default function AuthSettings({
   const rowRefs = useRef<Partial<Record<ChannelKey, HTMLDivElement | null>>>({});
   const orderBeforeDrag = useRef<ChannelKey[] | null>(null);
 
+  const orderRef = useRef(order);
+  orderRef.current = order;
+  const dragCleanup = useRef<(() => void) | null>(null);
+
+  // Слушаем движение и отпускание на window, а не на «ручке» с захватом указателя: когда строка
+  // меняется местами с соседней, React переставляет её в DOM, и браузер снимает захват —
+  // перетаскивание обрывалось на полпути (порядок на экране менялся, а сохранения не происходило).
   function dragStart(e: React.PointerEvent, key: ChannelKey) {
     e.preventDefault();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    dragCleanup.current?.();
     orderBeforeDrag.current = order;
     setDragKey(key);
+    const move = (ev: PointerEvent) => dragMoveTo(key, ev.clientY);
+    const up = () => {
+      dragCleanup.current?.();
+      void dragEnd();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    dragCleanup.current = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      dragCleanup.current = null;
+    };
   }
 
-  function dragMove(e: React.PointerEvent, key: ChannelKey) {
-    if (dragKey !== key) return;
-    const y = e.clientY;
+  useEffect(() => () => dragCleanup.current?.(), []);
+
+  function dragMoveTo(key: ChannelKey, y: number) {
     setOrder((o) => {
       const i = o.indexOf(key);
       const prev = o[i - 1];
@@ -335,10 +356,13 @@ export default function AuthSettings({
 
   async function dragEnd() {
     setDragKey(null);
+    // даём React применить последнее перемещение, прежде чем читать итоговый порядок
+    await new Promise((r) => setTimeout(r, 0));
+    const finalOrder = orderRef.current;
     const before = orderBeforeDrag.current;
     orderBeforeDrag.current = null;
-    if (!before || before.join() === order.join()) return; // порядок не менялся — нечего сохранять
-    const ok = await persistCascade({ order });
+    if (!before || before.join() === finalOrder.join()) return; // порядок не менялся — нечего сохранять
+    const ok = await persistCascade({ order: finalOrder });
     if (!ok) {
       setOrder(before);
       return;
@@ -417,8 +441,6 @@ export default function AuthSettings({
             dragging={dragKey === key}
             rowRef={(el) => (rowRefs.current[key] = el)}
             onDragStart={(e) => dragStart(e, key)}
-            onDragMove={(e) => dragMove(e, key)}
-            onDragEnd={dragEnd}
             providerOptions={configuredOptionsFor(key)}
             provider={resolvedProvider(key)}
             onProviderChange={(p) => handleProviderChange(key, p)}
@@ -611,8 +633,6 @@ function ChannelRow({
   dragging,
   rowRef,
   onDragStart,
-  onDragMove,
-  onDragEnd,
   providerOptions,
   provider,
   onProviderChange,
@@ -624,8 +644,6 @@ function ChannelRow({
   dragging: boolean;
   rowRef: (el: HTMLDivElement | null) => void;
   onDragStart: (e: React.PointerEvent) => void;
-  onDragMove: (e: React.PointerEvent) => void;
-  onDragEnd: () => void;
   providerOptions?: { id: string; label: string }[];
   provider?: string;
   onProviderChange?: (id: string) => void;
@@ -639,9 +657,6 @@ function ChannelRow({
     >
       <div
         onPointerDown={onDragStart}
-        onPointerMove={onDragMove}
-        onPointerUp={onDragEnd}
-        onPointerCancel={onDragEnd}
         style={{ touchAction: "none" }}
         className={`p-1 -m-1 text-ink-faint hover:text-ink ${dragging ? "cursor-grabbing text-ink" : "cursor-grab"}`}
         aria-label="Перетащить для изменения приоритета"
