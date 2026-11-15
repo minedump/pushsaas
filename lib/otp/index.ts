@@ -405,6 +405,8 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
     channel,
     provider: usedProvider,
     provider_message_id: providerMessageId || null,
+    delivery_status: "sent",
+    delivery_updated_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + OTP_TTL_MS).toISOString(),
   });
 

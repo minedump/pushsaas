@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyParam } from "@/lib/oidc";
-import { checkSmsDelivery } from "@/lib/otp/sms";
-import { checkSmscDelivery } from "@/lib/otp/smsc";
-import { checkMtsDelivery } from "@/lib/otp/mts";
 import { needsDeliveryPoll } from "@/lib/otp/providers";
+import { loadDeliverySecrets, refreshOtpDelivery } from "@/lib/otp/delivery";
 
 // Опрашивается со страницы кода (см. codeForm в ../auth/route.ts) для любого
 // (channel, provider), которому это реально нужно (см. needsDeliveryPoll) —
@@ -44,21 +42,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ projectId: str
   const target = otp.phone || otp.email;
   if (!target) return NextResponse.json({ status: "unknown" });
 
-  let state: "pending" | "delivered" | "failed";
-  if (otp.provider === "smsc") {
-    const { data: secrets } = await admin.from("project_secrets").select("smsc_login, smsc_password").eq("project_id", projectId).maybeSingle();
-    if (!secrets?.smsc_login || !secrets?.smsc_password) return NextResponse.json({ status: "unknown" });
-    state = await checkSmscDelivery(secrets.smsc_login, secrets.smsc_password, otp.provider_message_id, target, channel === "telegram");
-  } else if (otp.provider === "mts") {
-    const { data: secrets } = await admin.from("project_secrets").select("mts_token").eq("project_id", projectId).maybeSingle();
-    if (!secrets?.mts_token) return NextResponse.json({ status: "unknown" });
-    state = await checkMtsDelivery(secrets.mts_token, otp.provider_message_id);
-  } else {
-    // последний из провайдеров, которым нужен поллинг, — Bytehand (sms)
-    const { data: secrets } = await admin.from("project_secrets").select("bytehand_service_key").eq("project_id", projectId).maybeSingle();
-    if (!secrets?.bytehand_service_key) return NextResponse.json({ status: "unknown" });
-    state = await checkSmsDelivery(secrets.bytehand_service_key, otp.provider_message_id);
-  }
+  // проверка + сохранение статуса в otp_requests (виден в «Журнал → Входы»)
+  const secrets = await loadDeliverySecrets(admin, projectId);
+  const state = await refreshOtpDelivery(admin, secrets, { ...otp, id: otp.id });
+  if (!state) return NextResponse.json({ status: "unknown" });
 
   if (state !== "failed") return NextResponse.json({ status: state });
 

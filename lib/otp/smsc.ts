@@ -71,21 +71,43 @@ export async function sendEmailSmsc(login: string, password: string, email: stri
 }
 
 export type SmscDeliveryState = "pending" | "delivered" | "failed";
+export type SmscDeliveryCheck = { state: SmscDeliveryState; detail: string | null };
+
+// Коды статусов SMSC (документация: «Статусы сообщений → Коды статусов»):
+//   -3 не найдено, -2 остановлено, -1 ожидает отправки, 0 передано оператору,
+//   1 доставлено, 2 прочитано (только e-mail), 3 просрочено, 4 нажата ссылка,
+//   20 невозможно доставить, 22 неверный номер, 23 запрещено (антиспам/дубли/
+//   чёрный список), 24 недостаточно средств, 25 недоступный номер.
+// Доставлено — 1, 2, 4; в пути — -3, -1, 0; остальное — не доставлено.
+// Раньше «>= 1» считалось доставкой и 3/20/22–25 ошибочно проходили как успех.
+const SMSC_STATUS_LABEL: Record<number, string> = {
+  [-3]: "Сообщение не найдено",
+  [-2]: "Остановлено",
+  [-1]: "Ожидает отправки",
+  0: "Передано оператору",
+  1: "Доставлено",
+  2: "Прочитано",
+  3: "Не доставлено: истёк срок",
+  4: "Доставлено, ссылка нажата",
+  20: "Не доставлено: невозможно доставить",
+  22: "Неверный номер",
+  23: "Запрещено антиспам-фильтром",
+  24: "Недостаточно средств на счёте",
+  25: "Номер не принимает сообщения",
+};
 
 // GET /sys/status.php — статус конкретного id. target — исходный получатель
 // (номер телефона или email), обязателен у SMSC. isTelegram добавляет
 // bot=1, как того требует проверка статуса Telegram-сообщений.
-//
-// status: -3/-1/0 — ещё в процессе (очередь/у оператора/отправлено на
-// канал), >=1 — подтверждённая доставка (получено/прочитано), всё
-// остальное (явный код провала, немодерированное сообщение и т.п.) — провал.
+// Ограничения SMSC: статус можно спрашивать в течение суток после отправки,
+// не чаще 5 одинаковых запросов в минуту.
 export async function checkSmscDelivery(
   login: string,
   password: string,
   messageId: string,
   target: string,
   isTelegram = false
-): Promise<SmscDeliveryState> {
+): Promise<SmscDeliveryCheck> {
   try {
     const url = new URL(`${BASE}/status.php`);
     url.searchParams.set("login", login);
@@ -95,14 +117,15 @@ export async function checkSmscDelivery(
     url.searchParams.set("fmt", "3");
     if (isTelegram) url.searchParams.set("bot", "1");
     const res = await fetch(url.toString());
-    if (!res.ok) return "pending"; // сбой самой проверки — не топим доставку из-за этого
+    if (!res.ok) return { state: "pending", detail: null }; // сбой самой проверки — не топим доставку из-за этого
     const data = await res.json().catch(() => null);
     const status = typeof data?.status === "number" ? data.status : undefined;
-    if (status === undefined) return "pending";
-    if (status >= 1) return "delivered";
-    if (status === -3 || status === -1 || status === 0) return "pending";
-    return "failed";
+    if (status === undefined) return { state: "pending", detail: null };
+    const detail = SMSC_STATUS_LABEL[status] || `Статус ${status}`;
+    if (status === 1 || status === 2 || status === 4) return { state: "delivered", detail };
+    if (status === -3 || status === -1 || status === 0) return { state: "pending", detail };
+    return { state: "failed", detail };
   } catch {
-    return "pending";
+    return { state: "pending", detail: null };
   }
 }

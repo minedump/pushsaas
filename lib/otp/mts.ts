@@ -89,20 +89,28 @@ export function classifyMtsStatus(status: unknown): MtsDeliveryState {
 
 // GET /mcom/messageManagement/messages/{messageID}/status — в data лежит
 // история статусов (Sending, затем Delivered), а не один статус.
-export async function checkMtsDelivery(token: string, messageId: string): Promise<MtsDeliveryState> {
+export type MtsDeliveryCheck = { state: MtsDeliveryState; detail: string | null };
+const MTS_DETAIL: Record<MtsDeliveryState, string> = {
+  pending: "Отправляется",
+  delivered: "Доставлено",
+  failed: "Не доставлено",
+};
+
+export async function checkMtsDelivery(token: string, messageId: string): Promise<MtsDeliveryCheck> {
+  const res = (state: MtsDeliveryState): MtsDeliveryCheck => ({ state, detail: MTS_DETAIL[state] });
   try {
-    const res = await fetch(`${BASE}/mcom/messageManagement/messages/${encodeURIComponent(messageId)}/status`, { headers: headers(token) });
-    if (!res.ok) return "pending"; // сбой самой проверки — не топим доставку из-за этого
-    const data = (await res.json().catch(() => null)) as { data?: { statuses?: { status?: string; date?: string }[] }[] } | null;
+    const r = await fetch(`${BASE}/mcom/messageManagement/messages/${encodeURIComponent(messageId)}/status`, { headers: headers(token) });
+    if (!r.ok) return { state: "pending", detail: null }; // сбой самой проверки — не топим доставку из-за этого
+    const data = (await r.json().catch(() => null)) as { data?: { statuses?: { status?: string; date?: string }[] }[] } | null;
     const history = (data?.data || []).filter((h) => h.statuses?.length);
-    if (!history.length) return "pending";
+    if (!history.length) return res("pending");
     // провал в любой записи истории — провал; иначе смотрим последнюю запись по дате
-    if (history.some((h) => h.statuses!.some((s) => classifyMtsStatus(s.status) === "failed"))) return "failed";
+    if (history.some((h) => h.statuses!.some((s) => classifyMtsStatus(s.status) === "failed"))) return res("failed");
     const at = (h: (typeof history)[number]) => Math.max(...h.statuses!.map((s) => Date.parse(s.date || "") || 0));
     const latest = history.reduce((x, y) => (at(y) >= at(x) ? y : x));
     // сообщение из нескольких частей: нужны все «доставлено»
-    return latest.statuses!.every((s) => classifyMtsStatus(s.status) === "delivered") ? "delivered" : "pending";
+    return res(latest.statuses!.every((s) => classifyMtsStatus(s.status) === "delivered") ? "delivered" : "pending");
   } catch {
-    return "pending";
+    return { state: "pending", detail: null };
   }
 }

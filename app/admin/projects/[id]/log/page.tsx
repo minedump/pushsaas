@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ensureProjectAccessible } from "@/lib/guards";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { refreshPendingOtpDelivery } from "@/lib/otp/delivery";
 import LogTabs from "./LogTabs";
 
 // Журнал — диагностика, а не список отправленных сообщений (это уже есть в
@@ -11,7 +13,14 @@ import LogTabs from "./LogTabs";
 // см. lib/otp/index.ts MAX_ATTEMPTS — тот же порог, чтобы "исчерпаны
 // попытки" в журнале совпадало с реальным поведением верификации.
 const MAX_OTP_ATTEMPTS = 5;
-function loginStatus(consumedAt: string | null, attempts: number, expiresAt: string): "verified" | "locked" | "expired" | "pending" {
+function loginStatus(
+  consumedAt: string | null,
+  attempts: number,
+  expiresAt: string,
+  deliveryStatus: string | null
+): "verified" | "locked" | "expired" | "pending" | "undelivered" {
+  // при подтверждённом провале доставки код гасится (consumed_at) — это не «код введён»
+  if (deliveryStatus === "failed") return "undelivered";
   if (consumedAt) return "verified";
   if (attempts >= MAX_OTP_ATTEMPTS) return "locked";
   if (new Date(expiresAt) < new Date()) return "expired";
@@ -42,7 +51,7 @@ export default async function LogPage({ params }: { params: Promise<{ id: string
       .limit(300),
     supabase
       .from("otp_requests")
-      .select("id, channel, provider, phone, email, attempts, expires_at, consumed_at, created_at")
+      .select("id, channel, provider, provider_message_id, phone, email, attempts, expires_at, consumed_at, created_at, delivery_status, delivery_detail, delivery_updated_at")
       .eq("project_id", id)
       .order("created_at", { ascending: false })
       .limit(300),
@@ -94,14 +103,24 @@ export default async function LogPage({ params }: { params: Promise<{ id: string
     changes: r.changes as Record<string, { old?: unknown; new?: unknown }> | null,
   }));
 
-  const loginRows = (otpAll ?? []).map((r) => ({
-    id: r.id,
-    channel: r.channel,
-    provider: r.provider,
-    contact: r.channel === "email" ? r.email : r.phone,
-    status: loginStatus(r.consumed_at, r.attempts, r.expires_at),
-    created_at: r.created_at,
-  }));
+  // Итог доставки у недавних кодов, по которым он ещё «отправлено», добираем
+  // у провайдера (SMS/Telegram/Email через SMSC, Bytehand, МТС) и сохраняем.
+  const freshDelivery = await refreshPendingOtpDelivery(createAdminClient(), id, otpAll ?? []).catch(() => new Map<string, { status: string; detail: string | null }>());
+
+  const loginRows = (otpAll ?? []).map((r) => {
+    const fresh = freshDelivery.get(r.id);
+    const deliveryStatus = (fresh?.status ?? r.delivery_status ?? null) as "sent" | "delivered" | "failed" | null;
+    return {
+      id: r.id,
+      channel: r.channel,
+      provider: r.provider,
+      contact: r.channel === "email" ? r.email : r.phone,
+      status: loginStatus(r.consumed_at, r.attempts, r.expires_at, deliveryStatus),
+      deliveryStatus,
+      deliveryDetail: fresh ? fresh.detail : (r.delivery_detail as string | null),
+      created_at: r.created_at,
+    };
+  });
 
   // «Ошибки отправки» — формат колонок таблицы «Рассылки» (см.
   // CampaignsTable) без статистики доставки (у провалившихся/пропущенных

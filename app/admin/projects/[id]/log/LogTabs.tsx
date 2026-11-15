@@ -31,7 +31,9 @@ type LoginRow = {
   channel: string;
   provider: string | null;
   contact: string | null;
-  status: "verified" | "locked" | "expired" | "pending";
+  status: "verified" | "locked" | "expired" | "pending" | "undelivered";
+  deliveryStatus: "sent" | "delivered" | "failed" | null;
+  deliveryDetail: string | null;
   created_at: string;
 };
 
@@ -59,7 +61,9 @@ const INITIATOR_LABEL: Record<string, string> = {
   automation: "Автоматизация",
   auth: "Авторизация",
 };
-const LOGIN_STATUS_LABEL: Record<string, string> = { verified: "код введён", locked: "попытки исчерпаны", expired: "код не введён", pending: "ожидает" };
+const LOGIN_STATUS_LABEL: Record<string, string> = { verified: "код введён", locked: "попытки исчерпаны", expired: "код не введён", pending: "ожидает", undelivered: "не доставлен" };
+const DELIVERY_LABEL: Record<string, string> = { sent: "Отправлен", delivered: "Доставлен", failed: "Не доставлен" };
+const deliveryTone = (s: string) => (s === "delivered" ? "good" : s === "failed" ? "bad" : "neutral");
 const ENDPOINT_LABEL: Record<string, string> = {
   attribute: "/api/v1/attribute",
   contacts: "/api/v1/client",
@@ -68,7 +72,7 @@ const ENDPOINT_LABEL: Record<string, string> = {
   campaigns: "/api/v1/campaigns",
   automations: "/api/v1/automations",
 };
-const loginStatusTone = (s: string) => (s === "verified" ? "good" : s === "locked" ? "bad" : "warn");
+const loginStatusTone = (s: string) => (s === "verified" ? "good" : s === "locked" || s === "undelivered" ? "bad" : "warn");
 const errorStatusTone = (s: string) => (s === "failed" ? "bad" : "warn");
 
 export default function LogTabs({
@@ -169,13 +173,14 @@ function LoginsTab({ rows }: { rows: LoginRow[] }) {
   return (
     <div>
       <div className="border border-border rounded-xl overflow-x-auto pretty-scroll">
-        <table className="w-full border-collapse text-[13.5px] min-w-[600px]">
+        <table className="w-full border-collapse text-[13.5px] min-w-[720px]">
           <thead>
             <tr className="bg-surface-2 text-left">
               <Th>Канал</Th>
               <Th>Куда</Th>
               <Th>Провайдер</Th>
-              <Th>Статус</Th>
+              <Th>Доставка</Th>
+              <Th>Вход</Th>
               <Th>Дата</Th>
             </tr>
           </thead>
@@ -187,6 +192,18 @@ function LoginsTab({ rows }: { rows: LoginRow[] }) {
                 </Td>
                 <Td className="text-ink-muted font-mono">{r.contact || "—"}</Td>
                 <Td className="text-ink-muted">{r.provider || "—"}</Td>
+                <Td>
+                  {r.deliveryStatus ? (
+                    <span title={r.deliveryDetail || undefined}>
+                      <Badge tone={deliveryTone(r.deliveryStatus)} dot>
+                        {DELIVERY_LABEL[r.deliveryStatus]}
+                      </Badge>
+                    </span>
+                  ) : (
+                    <span className="text-ink-muted">—</span>
+                  )}
+                  {r.deliveryDetail && r.deliveryStatus !== "delivered" ? <div className="text-[12px] text-ink-muted mt-1">{r.deliveryDetail}</div> : null}
+                </Td>
                 <Td>
                   <Badge tone={loginStatusTone(r.status)} dot>
                     {LOGIN_STATUS_LABEL[r.status] || r.status}
