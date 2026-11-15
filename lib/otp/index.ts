@@ -492,7 +492,12 @@ export async function verifyOtp(otpId: string, code: string): Promise<VerifyOtpR
 
   if (hashCode(otpId, code) !== otp.code_hash) return otp.attempts + 1 >= MAX_ATTEMPTS ? "too_many" : "wrong";
 
-  await admin.from("otp_requests").update({ consumed_at: new Date().toISOString() }).eq("id", otpId);
+  // Код ввели верно — значит, он дошёл: по недоставленному коду войти нельзя.
+  const now = new Date().toISOString();
+  await admin
+    .from("otp_requests")
+    .update({ consumed_at: now, delivery_status: "delivered", delivery_detail: "Код введён", delivery_updated_at: now })
+    .eq("id", otpId);
   return "ok";
 }
 

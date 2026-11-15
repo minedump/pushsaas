@@ -62,6 +62,16 @@ const INITIATOR_LABEL: Record<string, string> = {
   auth: "Авторизация",
 };
 const LOGIN_STATUS_LABEL: Record<string, string> = { verified: "код введён", locked: "попытки исчерпаны", expired: "код не введён", pending: "ожидает", undelivered: "не доставлен" };
+// Провайдеры кодов входа: в базе id, в журнале понятные названия. Push уходит через саму платформу.
+const PROVIDER_LABEL: Record<string, string> = {
+  bytehand: "Bytehand",
+  smsc: "SMSC.ru",
+  mts: "МТС Маркетолог",
+  haskimail: "Haskimail",
+  telegram_gateway: "Telegram Gateway",
+};
+const providerLabel = (provider: string | null, channel: string) =>
+  provider ? PROVIDER_LABEL[provider] || provider : channel === "push" ? "SENDERA" : "—";
 const DELIVERY_LABEL: Record<string, string> = { sent: "Отправлен", delivered: "Доставлен", failed: "Не доставлен" };
 const deliveryTone = (s: string) => (s === "delivered" ? "good" : s === "failed" ? "bad" : "neutral");
 const ENDPOINT_LABEL: Record<string, string> = {
@@ -191,7 +201,7 @@ function LoginsTab({ rows }: { rows: LoginRow[] }) {
                   <Badge tone="accent">{CHANNEL_LABEL[r.channel] || r.channel}</Badge>
                 </Td>
                 <Td className="text-ink-muted font-mono">{r.contact || "—"}</Td>
-                <Td className="text-ink-muted">{r.provider || "—"}</Td>
+                <Td className="text-ink-muted">{providerLabel(r.provider, r.channel)}</Td>
                 <Td>
                   {r.deliveryStatus ? (
                     <span title={r.deliveryDetail || undefined}>

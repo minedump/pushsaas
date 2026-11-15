@@ -109,12 +109,15 @@ export default async function LogPage({ params }: { params: Promise<{ id: string
 
   const loginRows = (otpAll ?? []).map((r) => {
     const fresh = freshDelivery.get(r.id);
-    const deliveryStatus = (fresh?.status ?? r.delivery_status ?? null) as "sent" | "delivered" | "failed" | null;
+    let deliveryStatus = (fresh?.status ?? r.delivery_status ?? null) as "sent" | "delivered" | "failed" | null;
+    // Код введён — значит, доставлен (у старых записей статус не сохранялся).
+    if (r.consumed_at && deliveryStatus !== "failed") deliveryStatus = "delivered";
     return {
       id: r.id,
       channel: r.channel,
       provider: r.provider,
-      contact: r.channel === "email" ? r.email : r.phone,
+      // что указал покупатель при входе — телефон или почта (у push-кода тоже заполнен ключ входа)
+      contact: r.phone || r.email,
       status: loginStatus(r.consumed_at, r.attempts, r.expires_at, deliveryStatus),
       deliveryStatus,
       deliveryDetail: fresh ? fresh.detail : (r.delivery_detail as string | null),
