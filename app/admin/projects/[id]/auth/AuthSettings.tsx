@@ -476,21 +476,14 @@ export default function AuthSettings({
       </section>
 
       <section className="mt-4 sm:mt-8">
-        <h2 className="text-lg font-semibold mb-1">Кнопка входа</h2>
-        <p className="text-[13px] text-ink-muted mt-0 mb-3">Как ссылка «Войти через …» выглядит на странице входа магазина.</p>
+        <h2 className="text-lg font-semibold mb-3">Кнопка входа</h2>
 
         <Card>
-          <div className="text-base font-semibold mb-1">Внешний вид кнопки</div>
-          <p className="text-[13px] text-ink-muted mt-0 mb-3">
-            Ссылка получает стандартные классы кнопки InSales (<code className="font-mono">button</code> и размер), поэтому встаёт в дизайн
-            магазина: скругление и остальное задаёт сама тема. Цвет передаётся инлайн-стилем в переменных цвета кнопок темы. Пока вход
-            выключен, блок входа на сайте скрыт.
-          </p>
+          <div className="text-base font-semibold mb-3">Внешний вид кнопки</div>
           <div className="flex flex-col gap-3">
             <div>
               <div className={labelCls}>Цвет кнопки</div>
               <ColorField value={authButtonColor} onChange={setAuthButtonColor} />
-              <p className={hintCls}>Пусто — цвет кнопок темы магазина.</p>
             </div>
             <div>
               <div className={labelCls}>Размер</div>
