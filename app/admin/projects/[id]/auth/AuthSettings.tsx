@@ -58,6 +58,17 @@ type Initial = {
   hasEmailFrom: boolean;
 };
 
+// POST в API настроек. При сбое сети fetch бросает исключение — без перехвата тумблер
+// оставался бы в новом положении, а кнопка «занята»; здесь сбой превращается в обычный
+// ответ с ошибкой, и вызывающий код откатывает изменение и показывает сообщение.
+async function apiPost(url: string, payload: unknown): Promise<Response> {
+  try {
+    return await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+  } catch {
+    return new Response(JSON.stringify({ error: "Нет соединения. Изменения не сохранены, попробуйте ещё раз." }), { status: 503 });
+  }
+}
+
 export default function AuthSettings({
   projectId,
   projectDomain,
@@ -145,17 +156,13 @@ export default function AuthSettings({
   // то, что реально изменилось (см. /api/admin/oidc/settings).
   async function persistCascade(next: { channels?: typeof channels; order?: ChannelKey[]; providers?: Providers; otpTemplates?: OtpTemplates }) {
     setBusy(true);
-    const res = await fetch("/api/admin/oidc/settings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const res = await apiPost("/api/admin/oidc/settings", {
         projectId,
         channels: next.channels ?? channels,
         channelOrder: next.order ?? order,
         providers: next.providers ?? providers,
         otpTemplates: next.otpTemplates,
-      }),
-    });
+      });
     const json = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) {
@@ -222,11 +229,7 @@ export default function AuthSettings({
     }
     setIsEnabled(next);
     setBusy(true);
-    const res = await fetch("/api/admin/oidc/settings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, isEnabled: next }),
-    });
+    const res = await apiPost("/api/admin/oidc/settings", { projectId, isEnabled: next });
     setBusy(false);
     if (!res.ok) {
       setIsEnabled(!next);
@@ -249,11 +252,7 @@ export default function AuthSettings({
       if (!ok) return;
     }
     setBusy(true);
-    const res = await fetch("/api/admin/oidc/setup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, regenerate }),
-    });
+    const res = await apiPost("/api/admin/oidc/setup", { projectId, regenerate });
     const json = await res.json();
     setBusy(false);
     if (!res.ok) return toast(json.error || "Ошибка", "bad");
@@ -264,11 +263,7 @@ export default function AuthSettings({
   // Блок «Параметры входа»: сохраняются только шаблоны кода, статус входа переключается сразу рычагом
   async function saveSettingsForm() {
     setBusy(true);
-    const res = await fetch("/api/admin/oidc/settings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, otpTemplates }),
-    });
+    const res = await apiPost("/api/admin/oidc/settings", { projectId, otpTemplates });
     setBusy(false);
     const j = await res.json().catch(() => ({}));
     if (!res.ok) return toast(j.error || "Ошибка", "bad");
@@ -279,11 +274,7 @@ export default function AuthSettings({
   // Блок «Кнопка входа»: только цвет и размер
   async function saveButtonAppearance() {
     setBusy(true);
-    const res = await fetch("/api/admin/oidc/settings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, authButtonColor, authButtonSize }),
-    });
+    const res = await apiPost("/api/admin/oidc/settings", { projectId, authButtonColor, authButtonSize });
     setBusy(false);
     const j = await res.json().catch(() => ({}));
     if (!res.ok) return toast(j.error || "Ошибка", "bad");
@@ -293,11 +284,7 @@ export default function AuthSettings({
 
   async function saveLoginStyle() {
     setBusyLoginStyle(true);
-    const res = await fetch("/api/admin/oidc/settings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, loginStyle }),
-    });
+    const res = await apiPost("/api/admin/oidc/settings", { projectId, loginStyle });
     setBusyLoginStyle(false);
     const j = await res.json().catch(() => ({}));
     if (!res.ok) return toast(j.error || "Ошибка", "bad");
