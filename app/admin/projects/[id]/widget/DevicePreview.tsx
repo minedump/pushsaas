@@ -53,17 +53,18 @@ function SiteSkeleton() {
   );
 }
 
-export function DeviceStage({ device, children }: { device: PreviewDevice; children: ReactNode }) {
+// skeleton=false — без заглушки витрины на фоне (например, страница входа: это отдельная страница, а не виджет поверх сайта)
+export function DeviceStage({ device, children, skeleton = true }: { device: PreviewDevice; children: ReactNode; skeleton?: boolean }) {
   return (
     <div className="mt-3 flex justify-center rounded-xl border border-border bg-surface-2 px-3 py-5">
       {device === "phone" ? (
         <div className="relative w-full max-w-[290px] aspect-[9/19.5] rounded-[36px] border-[7px] border-ink bg-surface overflow-hidden">
-          <SiteSkeleton />
+          {skeleton && <SiteSkeleton />}
           {children}
         </div>
       ) : (
         <div className="relative w-full h-[340px] rounded-[10px] border border-border-strong bg-surface overflow-hidden">
-          <SiteSkeleton />
+          {skeleton && <SiteSkeleton />}
           {children}
         </div>
       )}

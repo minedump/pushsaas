@@ -2,10 +2,9 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { IconRefresh, IconGripVertical, IconCopy, IconCheck } from "@tabler/icons-react";
-import { Button, Card, ColorField, CustomSelect, Input, Label, Textarea, Toggle, useCopy, useDialogs } from "@/app/ui";
+import { IconRefresh, IconGripVertical } from "@tabler/icons-react";
+import { Button, Card, ColorField, CustomSelect, Input, Label, Textarea, Toggle, useDialogs } from "@/app/ui";
 import CopyBox from "../CopyBox";
-import IntegrationCard from "../IntegrationCard";
 import { SMS_PROVIDERS, TELEGRAM_PROVIDERS, EMAIL_PROVIDERS } from "@/lib/otp/providers";
 import { DEFAULT_LOGIN_STYLE, LOGIN_SIZES, LOGIN_RADIUS_VALUES, type LoginStyleConfig, type LoginSize } from "@/lib/login-style";
 import type { CornerRadius } from "@/lib/widget-config";
@@ -202,20 +201,6 @@ export default function AuthSettings({
     toast("Провайдер обновлён", "good");
   }
 
-  // Шаблон кода входа на канал (push/sms/email — telegram без выбора, см.
-  // lib/otp/index.ts) — пусто значит «простой текст по умолчанию».
-  async function handleOtpTemplateChange(key: "push" | "sms" | "email", templateId: string) {
-    const prev = otpTemplates;
-    const next = { ...otpTemplates, [key]: templateId || null };
-    setOtpTemplates(next);
-    const ok = await persistCascade({ otpTemplates: next });
-    if (!ok) {
-      setOtpTemplates(prev);
-      return;
-    }
-    toast(templateId ? "Шаблон назначен" : "Сброшено на простой текст", "good");
-  }
-
   // Push сам по себе никого не онбордит — работает только на уже узнанных
   // устройствах (см. tryRecognizeDevice), поэтому не считается «настроенным
   // каналом» для целей этой проверки. Нужен хотя бы один канал с кодом,
@@ -280,13 +265,15 @@ export default function AuthSettings({
     router.refresh();
   }
 
-  async function saveButtonAppearance() {
+  // Блок «Параметры входа»: шаблоны кода и внешний вид кнопки сохраняются вместе, статус входа — сразу рычагом
+  async function saveSettingsForm() {
     setBusy(true);
     const res = await fetch("/api/admin/oidc/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         projectId,
+        otpTemplates,
         authButtonText,
         authButtonIcon,
         authButtonColor,
@@ -381,36 +368,54 @@ export default function AuthSettings({
   }
 })(25);`;
 
+  const labelCls = "text-[13px] text-ink-muted block mb-1";
+  const hintCls = "text-[12.5px] text-ink-faint mt-1.5 mb-0";
+
   return (
     <div className={busy ? "opacity-60" : ""}>
-      <h2 className="text-base font-semibold mt-4 sm:mt-8">Приложение для InSales</h2>
-      <Card className="mt-3">
-        <p className="text-sm text-ink-muted mt-0">
-          Значения для админки InSales: Магазин → Настройки → Авторизация покупателя → «Авторизация через OpenID Connect» →
-          добавить приложение.
-        </p>
-        <p className="text-sm text-ink-muted">
-          В InSales обязательно задайте <b>«Имя приложения»</b> — оно станет текстом кнопки входа на сайте (например, «Войти по телефону»).
-        </p>
-        <CopyRow label="ID приложения" value={initial.clientId} />
-        {initial.clientSecret ? (
-          <CopyRow label="API токен приложения" value={initial.clientSecret} />
-        ) : (
-          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 py-1.5">
-            <div className="w-56 shrink-0 text-[13px] text-ink-muted">API токен приложения</div>
-            <div className="text-[13px] text-ink-muted">Токен не выпущен или выпущен до этого обновления и не может быть показан. Нажмите «Выпустить токен».</div>
+      <section className="mt-4 sm:mt-8">
+        <h2 className="text-lg font-semibold mb-1">Приложение для InSales</h2>
+        <p className="text-[13px] text-ink-muted mt-0 mb-3">Значения, которые нужно вписать в настройках авторизации магазина.</p>
+
+        <Card>
+          <div className="text-base font-semibold mb-1">Данные приложения</div>
+          <p className="text-[13px] text-ink-muted mt-0 mb-3">
+            Добавьте их в InSales: Магазин → Настройки → Авторизация покупателя → «Авторизация через OpenID Connect» → добавить
+            приложение. В InSales обязательно задайте «Имя приложения» — оно станет текстом кнопки входа на сайте, например «Войти по
+            телефону».
+          </p>
+          <div className="flex flex-col gap-3">
+            <div>
+              <div className={labelCls}>ID приложения</div>
+              <CopyBox text={initial.clientId} />
+            </div>
+            <div>
+              <div className={labelCls}>API токен приложения</div>
+              {initial.clientSecret ? (
+                <CopyBox text={initial.clientSecret} />
+              ) : (
+                <p className="text-[13px] text-ink-muted mt-1 mb-0">
+                  Токен не выпущен или выпущен до этого обновления и не может быть показан. Нажмите «Выпустить токен».
+                </p>
+              )}
+            </div>
+            <div>
+              <div className={labelCls}>Issuer</div>
+              <CopyBox text={issuer.replace(/^https:\/\//, "")} />
+              <p className={hintCls}>
+                В поле Issuer у InSales уже подставлено «https://»: вводите адрес <b>без</b> протокола, иначе вход упадёт с ошибкой 500
+                (проверено).
+              </p>
+            </div>
+            <div>
+              <Button size="md" disabled={busy} onClick={() => setup(!!initial.clientSecret)}>
+                <IconRefresh size={16} stroke={1.8} />
+                {initial.clientSecret ? "Перевыпустить токен" : "Выпустить токен"}
+              </Button>
+            </div>
           </div>
-        )}
-        <CopyRow label="Issuer" value={issuer.replace(/^https:\/\//, "")} />
-        <p className="text-[12.5px] text-ink-faint mt-2 mb-0">
-          ⚠️ В поле Issuer у InSales уже подставлено «https://» — вводите адрес <b>без</b> протокола, иначе вход
-          упадёт с ошибкой 500 (проверено).
-        </p>
-        <Button variant="secondary" size="sm" className="mt-3" disabled={busy} onClick={() => setup(!!initial.clientSecret)}>
-          <IconRefresh size={15} stroke={1.8} />
-          {initial.clientSecret ? "Перевыпустить токен" : "Выпустить токен"}
-        </Button>
-      </Card>
+        </Card>
+      </section>
 
       <h2 className="text-base font-semibold mt-4 sm:mt-8">Каскад отправки кода</h2>
       <div className="mt-3 flex flex-col gap-1.5">
@@ -433,69 +438,60 @@ export default function AuthSettings({
         ))}
       </div>
 
-      <h2 className="text-base font-semibold mt-4 sm:mt-8">Настройки</h2>
 
-      <IntegrationCard title="Статус входа" configured={isEnabled}>
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-sm">
-            {isEnabled
-              ? "Вход включён — покупатели видят кнопку и могут войти"
-              : "Вход выключен — кнопка входа на сайте скрыта, войти нельзя"}
-          </div>
-          <Toggle checked={isEnabled} onChange={saveEnabled} disabled={busy} label={isEnabled ? "Вкл" : "Выкл"} />
-        </div>
-        <p className="text-[12px] text-ink-faint mt-2 mb-0">
-          Включайте, только когда выше настроен и включён хотя бы один канал с кодом (Email, Telegram или SMS) —
-          push один не подойдёт, он работает только для уже узнанных устройств.
-        </p>
+      <section className="mt-4 sm:mt-8">
+        <h2 className="text-lg font-semibold mb-1">Настройки входа</h2>
+        <p className="text-[13px] text-ink-muted mt-0 mb-3">Статус входа, шаблоны кода и внешний вид кнопки входа на сайте.</p>
 
-      </IntegrationCard>
-
-      <IntegrationCard title="Шаблоны кода входа" configured={Object.values(otpTemplates).some(Boolean)}>
-        <p className="text-sm text-ink-muted mt-0">
-          Необязательно, из общего списка «Шаблоны» — только по каналам с кодом. В тексте доступна переменная{" "}
-          <code className="font-mono">{"{{ code }}"}</code> (сам одноразовый код). Если для канала ничего не выбрано,
-          уходит короткий встроенный текст («Код подтверждения: {"{{ code }}"}» и т.п.). Telegram без выбора — Gateway
-          API не может нести произвольный текст, только код.
-        </p>
-        <div className="flex flex-col gap-2 mt-3">
-          {(["push", "sms", "email"] as const).map((key) => (
-            <div key={key} className="flex items-center justify-between gap-3">
-              <div className="text-sm">{CHANNEL_TITLE[key]}</div>
-              <CustomSelect
-                value={otpTemplates[key] || ""}
-                onChange={(v) => handleOtpTemplateChange(key, v)}
-                options={[
-                  { value: "", label: "— простой текст —" },
-                  ...templates.filter((t) => t.channel === key).map((t) => ({ value: t.id, label: t.name })),
-                ]}
-                className="w-56"
-                ariaLabel={`Шаблон кода входа — ${CHANNEL_TITLE[key]}`}
-              />
-            </div>
-          ))}
-        </div>
-      </IntegrationCard>
-
-      <IntegrationCard
-        title="Кнопка входа InSales"
-        configured={!!authButtonText || !!authButtonColor || !!authButtonIcon || authButtonRounded}
-      >
-        <p className="text-sm text-ink-muted mt-0">
-          Отдельный скрипт (<code className="font-mono">/embed/{"{projectId}"}/auth-button.js</code>), не влияет на
-          основной виджет. Управляет нативной ссылкой «Войти через {"{"}приложение{"}"}» на странице входа: можно
-          задать свой текст, иконку, цвет и размер — тогда ссылка получает класс{" "}
-          <code className="font-mono">.button</code> темы магазина и выглядит как родная кнопка. Пока вход выключен (переключатель «Статус входа»), кнопка
-          скрыта автоматически.
-        </p>
-        {(
-          <>
+        <Card>
+          <div className="text-base font-semibold mb-3">Параметры входа</div>
+          <div className="flex flex-col gap-3">
             <div>
-              <Label>Текст на кнопке</Label>
-              <Input value={authButtonText} onChange={(e) => setAuthButtonText(e.target.value)} placeholder="оставьте пустым — родной текст InSales" />
+              <div className={labelCls}>Статус входа</div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm">
+                  {isEnabled ? "Вход включён — покупатели видят кнопку и могут войти" : "Вход выключен — кнопка входа на сайте скрыта, войти нельзя"}
+                </div>
+                <Toggle checked={isEnabled} onChange={saveEnabled} disabled={busy} label={isEnabled ? "Вкл" : "Выкл"} />
+              </div>
+              <p className={hintCls}>
+                Включайте, только когда выше настроен и включён хотя бы один канал с кодом (Email, Telegram или SMS): push один не
+                подойдёт, он работает только для уже узнанных устройств.
+              </p>
             </div>
-            <div className="mt-3">
-              <Label>Иконка (SVG-разметка)</Label>
+
+            {(["push", "sms", "email"] as const).map((key) => (
+              <div key={key}>
+                <div className={labelCls}>Шаблон кода: {CHANNEL_TITLE[key]}</div>
+                <CustomSelect
+                  value={otpTemplates[key] || ""}
+                  onChange={(v) => setOtpTemplates({ ...otpTemplates, [key]: v || null })}
+                  options={[
+                    { value: "", label: "— простой текст —" },
+                    ...templates.filter((t) => t.channel === key).map((t) => ({ value: t.id, label: t.name })),
+                  ]}
+                  ariaLabel={`Шаблон кода входа — ${CHANNEL_TITLE[key]}`}
+                  className="w-full"
+                />
+              </div>
+            ))}
+            <p className={hintCls + " -mt-1.5"}>
+              Шаблоны необязательны, берутся из общего списка «Шаблоны». В тексте доступна переменная{" "}
+              <code className="font-mono">{"{{ code }}"}</code> (одноразовый код). Если ничего не выбрано, уходит короткий встроенный
+              текст. Telegram без выбора: Gateway API может нести только код.
+            </p>
+
+            <div>
+              <div className={labelCls}>Текст на кнопке</div>
+              <Input value={authButtonText} onChange={(e) => setAuthButtonText(e.target.value)} placeholder="оставьте пустым — родной текст InSales" />
+              <p className={hintCls}>
+                Кнопку на странице входа магазина ведёт отдельный скрипт (<code className="font-mono">/embed/{"{projectId}"}/auth-button.js</code>
+                ). Со своим текстом, иконкой, цветом или размером ссылка получает класс <code className="font-mono">.button</code> темы магазина
+                и выглядит как родная кнопка. Пока вход выключен, кнопка скрыта.
+              </p>
+            </div>
+            <div>
+              <div className={labelCls}>Иконка (SVG-разметка)</div>
               <Textarea
                 value={authButtonIcon}
                 onChange={(e) => setAuthButtonIcon(e.target.value)}
@@ -504,13 +500,13 @@ export default function AuthSettings({
                 className="font-mono text-xs"
               />
             </div>
-            <div className="flex gap-3 mt-3">
+            <div className="flex gap-3">
               <div className="flex-1">
-                <Label>Цвет кнопки</Label>
+                <div className={labelCls}>Цвет кнопки</div>
                 <ColorField value={authButtonColor} onChange={setAuthButtonColor} />
               </div>
               <div className="w-32 shrink-0">
-                <Label>Размер</Label>
+                <div className={labelCls}>Размер</div>
                 <CustomSelect
                   value={authButtonSize}
                   onChange={setAuthButtonSize}
@@ -519,30 +515,40 @@ export default function AuthSettings({
                 />
               </div>
             </div>
-            <div className="flex justify-between items-center gap-3 mt-3">
-              <div className="text-sm">Скруглить до пилюли</div>
-              <Toggle checked={authButtonRounded} onChange={setAuthButtonRounded} label={authButtonRounded ? "Вкл" : "Выкл"} />
+            <div>
+              <Toggle checked={authButtonRounded} onChange={setAuthButtonRounded} label="Скруглить кнопку до пилюли" />
             </div>
-            <div className="mt-3">
-              <Button size="sm" disabled={busy} onClick={saveButtonAppearance}>
-                Сохранить внешний вид
+
+            <div>
+              <Button size="md" disabled={busy} onClick={saveSettingsForm}>
+                Сохранить
               </Button>
             </div>
-          </>
-        )}
-      </IntegrationCard>
+          </div>
+        </Card>
+      </section>
 
-      <IntegrationCard title="Обогащение профиля для авторизованных клиентов" configured>
-        <p className="text-sm text-ink-muted mt-0">
-          На странице, где покупатель уже авторизован в InSales, можно вызвать после подключения нашего сниппета:
-        </p>
-        <CopyBox text={embedSnippet} />
-      </IntegrationCard>
+      <section className="mt-4 sm:mt-8">
+        <h2 className="text-lg font-semibold mb-1">Обогащение профиля</h2>
+        <p className="text-[13px] text-ink-muted mt-0 mb-3">Данные об авторизованных в InSales клиентах, которые попадают в контакты.</p>
 
-      <h2 className="text-base font-semibold mt-4 sm:mt-8">Оформление страницы входа</h2>
-      <p className="text-sm text-ink-muted mt-1">Внешний вид кнопки и поля ввода на странице входа (телефон/почта/код).</p>
-      <div className="mt-3 flex flex-col gap-4">
-        <Card className={`flex flex-col gap-3 ${busyLoginStyle ? "opacity-60" : ""}`}>
+        <Card>
+          <div className="text-base font-semibold mb-1">Сниппет для страницы магазина</div>
+          <p className="text-[13px] text-ink-muted mt-0 mb-3">
+            На странице, где покупатель уже авторизован в InSales, после подключения нашего сниппета можно вызвать этот код.
+          </p>
+          <CopyBox text={embedSnippet} />
+        </Card>
+      </section>
+
+      <section className="mt-4 sm:mt-8">
+        <h2 className="text-lg font-semibold mb-1">Оформление страницы входа</h2>
+        <p className="text-[13px] text-ink-muted mt-0 mb-3">Внешний вид кнопки и поля ввода на странице входа (телефон, почта, код).</p>
+
+        <div className="flex flex-col gap-4">
+          <Card className={busyLoginStyle ? "opacity-60" : ""}>
+            <div className="text-base font-semibold mb-3">Внешний вид</div>
+            <div className="flex flex-col gap-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label>Размер кнопки</Label>
@@ -610,18 +616,18 @@ export default function AuthSettings({
             </div>
           </div>
 
-          <div>
-            <Button size="md" disabled={busyLoginStyle} onClick={saveLoginStyle}>
-              Сохранить оформление
-            </Button>
-          </div>
-        </Card>
 
-        <div>
-          <div className="text-sm font-semibold text-ink mb-2">Предпросмотр</div>
+              <div>
+                <Button size="md" disabled={busyLoginStyle} onClick={saveLoginStyle}>
+                  Сохранить оформление
+                </Button>
+              </div>
+            </div>
+          </Card>
+
           <LoginStylePreview config={loginStyle} />
         </div>
-      </div>
+      </section>
 
       {!projectDomain && (
         <Card className="mt-4 sm:mt-8 border-warn bg-warn-tint">
@@ -631,32 +637,6 @@ export default function AuthSettings({
           </p>
         </Card>
       )}
-    </div>
-  );
-}
-
-// Строка «название — значение» с кнопкой копирования: значения для админки InSales
-function CopyRow({ label, value }: { label: string; value: string }) {
-  const copy = useCopy();
-  const [copied, setCopied] = useState(false);
-  return (
-    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 py-1.5">
-      <div className="w-56 shrink-0 text-[13px] text-ink-muted">{label}</div>
-      <div className="flex-1 min-w-0 flex items-center gap-2">
-        <code className="min-w-0 flex-1 text-[13px] font-mono break-all">{value}</code>
-        <button
-          type="button"
-          onClick={async () => {
-            if (!(await copy(value))) return;
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          }}
-          className="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-2 transition-colors cursor-pointer"
-          title="Копировать"
-        >
-          {copied ? <IconCheck size={15} stroke={2} /> : <IconCopy size={15} stroke={1.8} />}
-        </button>
-      </div>
     </div>
   );
 }
