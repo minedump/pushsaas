@@ -94,7 +94,6 @@ const INITIATOR_OPTIONS: ComboOption[] = [
   { value: "event", label: "Событийная" },
   { value: "trigger", label: "Триггерная" },
   { value: "recurring", label: "Повторяющаяся" },
-  { value: "auth", label: "Авторизация" },
 ];
 
 export default function CampaignsTable({ rows, projectId }: { rows: Row[]; projectId: string }) {

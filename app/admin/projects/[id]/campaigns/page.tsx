@@ -184,37 +184,8 @@ export default async function CampaignsPage({ params }: { params: Promise<{ id: 
     templateName: null as string | null,
   }));
 
-  // Вход по коду — всегда транзакционные, никогда не создают campaigns-строку.
-  const { data: otpRows } = await supabase
-    .from("otp_requests")
-    .select("id, channel, created_at")
-    .eq("project_id", id)
-    .order("created_at", { ascending: false })
-    .limit(300);
-  const CHANNEL_TITLE: Record<string, string> = { push: "Push", email: "Email", telegram: "Telegram", sms: "SMS" };
-  const authRows = (otpRows ?? []).map((r) => ({
-    id: `otp-${r.id}`,
-    campaignId: null as string | null,
-    title: `Вход — код (${CHANNEL_TITLE[r.channel] || r.channel})`,
-    internal_title: null as string | null,
-    channel: r.channel === "telegram" ? "sms" : r.channel,
-    type: "transactional" as const,
-    initiator: "auth" as const,
-    status: "sent",
-    sent_count: 1,
-    delivered_count: 1,
-    clicked_count: 0,
-    unsubscribed_count: 0,
-    revenue: 0,
-    orders: 0,
-    paid: 0,
-    paidOrders: 0,
-    created_at: r.created_at,
-    templateId: null as string | null,
-    templateName: null as string | null,
-  }));
-
-  const rows = [...campaignRows, ...automationRows, ...authRows].sort(
+  // Коды входа сюда не попадают: они видны в «Журнал» → «Входы».
+  const rows = [...campaignRows, ...automationRows].sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   );
 

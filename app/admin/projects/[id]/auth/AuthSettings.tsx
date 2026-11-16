@@ -520,19 +520,6 @@ export default function AuthSettings({
       </section>
 
       <section className="mt-4 sm:mt-8">
-        <h2 className="text-lg font-semibold mb-1">Обогащение профиля</h2>
-        <p className="text-[13px] text-ink-muted mt-0 mb-3">Данные об авторизованных в InSales клиентах, которые попадают в контакты.</p>
-
-        <Card>
-          <div className="text-base font-semibold mb-1">Подтягивается автоматически</div>
-          <p className="text-[13px] text-ink-muted mt-0 mb-3">
-            После входа через нашу форму скрипт сайта сам запрашивает у магазина данные клиента (имя, фамилия, отчество, телефон, почта) и
-            записывает их в контакт. Вставлять ничего в шаблон не нужно.
-          </p>
-        </Card>
-      </section>
-
-      <section className="mt-4 sm:mt-8">
         <h2 className="text-lg font-semibold mb-1">Оформление страницы входа</h2>
         <p className="text-[13px] text-ink-muted mt-0 mb-3">Внешний вид кнопки и поля ввода на странице входа (телефон, почта, код).</p>
 

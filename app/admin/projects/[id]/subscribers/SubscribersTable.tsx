@@ -22,6 +22,7 @@ import { CustomSelect, type ComboOption } from "@/app/ui/CustomSelect";
 import { cn } from "@/app/ui/cn";
 import { useProjectTz } from "../ProjectTimeProvider";
 import { formatDateTime } from "@/lib/datetime";
+import { phoneSearchDigits } from "@/lib/phone";
 
 const PAGE_SIZE = 25;
 
@@ -267,6 +268,7 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const phoneQ = phoneSearchDigits(query);
     let list = rows;
     // «С устройствами» — только с настоящей push-подпиской; устройства без неё (жёлтая метка) не считаем
     if (deviceFilter === "none") list = list.filter((r) => !r.devices.some((d) => !d.no_push));
@@ -275,6 +277,7 @@ export default function SubscribersTable({ projectId, initial }: { projectId: st
       list = list.filter(
         (r) =>
           (r.phone || "").includes(q) ||
+          (phoneQ !== null && (r.phone || "").replace(/\D/g, "").includes(phoneQ)) ||
           (r.email || "").toLowerCase().includes(q) ||
           (r.name || "").toLowerCase().includes(q) ||
           (r.insalesClientId || "").toLowerCase().includes(q) ||
