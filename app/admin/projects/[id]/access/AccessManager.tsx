@@ -86,7 +86,7 @@ export default function AccessManager({
     if (busy) return;
     const ok = await confirm({
       title: "Передать проект?",
-      message: `${m.name || m.email} станет владельцем проекта. Прежний владелец останется Админом. Тариф и привязанная карта остаются в проекте.`,
+      message: `${m.name || m.email} станет владельцем проекта. Прежний владелец останется Админом.`,
       confirmText: "Передать проект",
       danger: true,
     });

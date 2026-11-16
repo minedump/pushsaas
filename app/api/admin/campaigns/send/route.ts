@@ -110,7 +110,7 @@ export async function POST(req: Request) {
   if (!proj?.is_active) {
     const { data: profile } = await admin.from("profiles").select("role").eq("id", access.user!.id).maybeSingle();
     if (profile?.role !== "admin") {
-      return NextResponse.json({ error: "Проект заблокирован — пополните баланс" }, { status: 402 });
+      return NextResponse.json({ error: "Проект заблокирован — обратитесь в поддержку" }, { status: 402 });
     }
   }
 

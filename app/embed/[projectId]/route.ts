@@ -166,7 +166,7 @@ function widget(
   // устройство. Ничего не знает о кнопке/разметке — визуальный отклик после
   // подписки (если он нужен) обязанность вызывающего кода, см. widgets.js.
   async function subscribe(){
-    if(BLOCKED){ console.error("[sendera] проект заблокирован (биллинг) — подписка недоступна"); return; }
+    if(BLOCKED){ console.error("[sendera] проект заблокирован — подписка недоступна"); return; }
     if(!supported()){ alert("Ваш браузер не поддерживает push. На iPhone: добавьте сайт на экран «Домой» и откройте оттуда."); return; }
     var reg = await navigator.serviceWorker.register("/service-worker.js");
     await navigator.serviceWorker.ready;

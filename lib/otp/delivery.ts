@@ -51,7 +51,7 @@ export async function refreshOtpDelivery(
   let check: { state: OtpDeliveryState; detail: string | null };
   if (otp.provider === "smsc") {
     if (!secrets.smsc_login || !secrets.smsc_password) return null;
-    check = await checkSmscDelivery(secrets.smsc_login, secrets.smsc_password, otp.provider_message_id, target, otp.channel === "telegram");
+    check = await checkSmscDelivery(secrets.smsc_login, secrets.smsc_password, otp.provider_message_id, target);
   } else if (otp.provider === "mts") {
     if (!secrets.mts_token) return null;
     check = await checkMtsDelivery(secrets.mts_token, otp.provider_message_id);

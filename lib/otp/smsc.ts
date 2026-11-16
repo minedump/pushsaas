@@ -9,13 +9,12 @@
 // остальное — провал, чтобы не держать покупателя перед кодом, который не придёт.
 //
 // Живые тесты (аккаунт yulia_wave):
-// - Telegram (tg=1) — отправка принимается, а статус (status.php) навсегда
-//   зависает на -3 (в очереди) и никогда не переходит в "доставлено". Но код
-//   РЕАЛЬНО доходит и вход работает (подтверждено живым пользователем) — это
-//   квирк именно статус-API SMSC для Telegram, не провал доставки. Не ломает
-//   флоу: /oidc/{projectId}/otp-status реагирует только на явный "failed" от
-//   checkSmscDelivery, вечный "pending" ни на что не влияет — код принимается
-//   формой ввода независимо от статуса опроса (см. otp-status/route.ts).
+// - Telegram (tg=1) — код-подтверждение на номер. Статус спрашивается обычным
+//   status.php (phone + id), как у SMS: живьём вернул 2 (прочитано). Флаг bot=1
+//   из документации относится к ДРУГОЙ функции — сообщениям в чат-бот Telegram;
+//   с ним по нашему id всегда приходит -3 «не найдено» (раньше это ошибочно
+//   принимали за особенность SMSC). Что вернётся для номера без Telegram,
+//   живьём ещё не проверено (ожидаем 20/25/3 — все они у нас считаются провалом).
 // - Email (mail=1) — отправка отклонялась на приёме (error_code 6, "message
 //   is denied") с отправителем не с этого аккаунта; заработала сразу же
 //   после смены sender/email_from на подтверждённый у SMSC адрес — модерация
@@ -98,16 +97,15 @@ const SMSC_STATUS_LABEL: Record<number, string> = {
 };
 
 // GET /sys/status.php — статус конкретного id. target — исходный получатель
-// (номер телефона или email), обязателен у SMSC. isTelegram добавляет
-// bot=1, как того требует проверка статуса Telegram-сообщений.
+// (номер телефона или email), обязателен у SMSC. Для Telegram-кода (tg=1)
+// запрос тот же, без bot=1 (он только для чат-ботов Telegram).
 // Ограничения SMSC: статус можно спрашивать в течение суток после отправки,
 // не чаще 5 одинаковых запросов в минуту.
 export async function checkSmscDelivery(
   login: string,
   password: string,
   messageId: string,
-  target: string,
-  isTelegram = false
+  target: string
 ): Promise<SmscDeliveryCheck> {
   try {
     const url = new URL(`${BASE}/status.php`);
@@ -116,7 +114,6 @@ export async function checkSmscDelivery(
     url.searchParams.set("phone", target);
     url.searchParams.set("id", messageId);
     url.searchParams.set("fmt", "3");
-    if (isTelegram) url.searchParams.set("bot", "1");
     const res = await fetch(url.toString());
     if (!res.ok) return { state: "pending", detail: null }; // сбой самой проверки — не топим доставку из-за этого
     const data = await res.json().catch(() => null);
