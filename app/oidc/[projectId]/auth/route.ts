@@ -165,10 +165,13 @@ function phoneForm(
      }</p>
      <script>(function(){
        // Маска ввода: живьём форматируем в "+7 999 123-45-67", пока печатают.
-       // Реальная нормализация (в том числе 8ХХХ -> 7ХХХ) всё равно происходит
-       // на сервере (lib/phone.ts normalizePhone) — маска только для глаз.
+       // Поле пустое, пока ничего не введено. Первая 8, 7 или +7 — это код
+       // страны (показываем "+7"), первая 9 — начало номера, код страны
+       // подставляется сам. Реальная нормализация (8ХХХ -> 7ХХХ) всё равно
+       // происходит на сервере (lib/phone.ts normalizePhone) — маска только для глаз.
        var input = document.getElementById("phone");
        function format(digits){
+         if (!digits) return "";
          if (digits[0] === "7" || digits[0] === "8") digits = digits.slice(1);
          digits = digits.slice(0, 10);
          var out = "+7";
@@ -180,9 +183,6 @@ function phoneForm(
        }
        input.addEventListener("input", function(){
          input.value = format(input.value.replace(/\\D/g, ""));
-       });
-       input.addEventListener("focus", function(){
-         if (!input.value) input.value = "+7 ";
        });
      })();</script>`,
     ctx

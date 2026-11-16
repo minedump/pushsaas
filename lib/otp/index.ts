@@ -263,6 +263,9 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
   let providerMessageId: string | undefined;
 
   for (const ch of tryOrder) {
+    // Любой сбой канала (сеть, таймаут, провайдер не ответил) — это «канал не сработал», а не ошибка
+    // страницы входа: идём к следующему каналу каскада, покупатель не должен видеть 500.
+    try {
     if (channelCapped(ch)) {
       attempts.push({ channel: ch, ok: false, reason: "channel_rate_limited" });
       continue;
@@ -342,7 +345,8 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
         attempts.push({ channel: ch, ok: false, reason: "not_configured" });
         continue;
       }
-      const reqId = await checkSendAbility(secrets.telegram_gateway_token, key.phone);
+      // Gateway с части хостингов недоступен напрямую (таймаут TCP 10 с) — не заставляем покупателя ждать дольше 5 с
+      const reqId = await withTimeout(checkSendAbility(secrets.telegram_gateway_token, key.phone), 5000);
       if (!reqId) {
         attempts.push({ channel: ch, ok: false, reason: "provider_error" });
         continue;
@@ -391,6 +395,10 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
       attempts.push({ channel: ch, ok: sent.ok, reason: sent.ok ? undefined : "provider_error" });
       if (sent.ok) { channel = ch; usedProvider = "bytehand"; providerMessageId = sent.messageId; break; }
       continue;
+    }
+    } catch (err) {
+      console.error(`[otp] канал ${ch} не сработал:`, err instanceof Error ? `${err.name}: ${err.message}` : err);
+      attempts.push({ channel: ch, ok: false, reason: "provider_error" });
     }
   }
 
