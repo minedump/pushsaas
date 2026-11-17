@@ -61,7 +61,7 @@ const INITIATOR_LABEL: Record<string, string> = {
   automation: "Автоматизация",
   auth: "Авторизация",
 };
-const LOGIN_STATUS_LABEL: Record<string, string> = { verified: "код введён", locked: "попытки исчерпаны", expired: "код не введён", pending: "ожидает", undelivered: "не доставлен" };
+const LOGIN_STATUS_LABEL: Record<string, string> = { verified: "код введён", locked: "попытки исчерпаны", expired: "код не введён", pending: "ожидает", undelivered: "ошибка" };
 // Провайдеры кодов входа: в базе id, в журнале понятные названия. Push уходит через саму платформу.
 const PROVIDER_LABEL: Record<string, string> = {
   bytehand: "Bytehand",
@@ -72,7 +72,7 @@ const PROVIDER_LABEL: Record<string, string> = {
 };
 const providerLabel = (provider: string | null, channel: string) =>
   provider ? PROVIDER_LABEL[provider] || provider : channel === "push" ? "SENDERA" : "—";
-const DELIVERY_LABEL: Record<string, string> = { sent: "Отправлен", delivered: "Доставлен", failed: "Не доставлен" };
+const DELIVERY_LABEL: Record<string, string> = { sent: "Отправлен", delivered: "Доставлен", failed: "Ошибка" };
 const deliveryTone = (s: string) => (s === "delivered" ? "good" : s === "failed" ? "bad" : "neutral");
 const ENDPOINT_LABEL: Record<string, string> = {
   attribute: "/api/v1/attribute",
@@ -204,15 +204,12 @@ function LoginsTab({ rows }: { rows: LoginRow[] }) {
                 <Td className="text-ink-muted">{providerLabel(r.provider, r.channel)}</Td>
                 <Td>
                   {r.deliveryStatus ? (
-                    <span title={r.deliveryDetail || undefined}>
-                      <Badge tone={deliveryTone(r.deliveryStatus)} dot>
-                        {DELIVERY_LABEL[r.deliveryStatus]}
-                      </Badge>
-                    </span>
+                    <Badge tone={deliveryTone(r.deliveryStatus)} dot>
+                      {DELIVERY_LABEL[r.deliveryStatus]}
+                    </Badge>
                   ) : (
                     <span className="text-ink-muted">—</span>
                   )}
-                  {r.deliveryDetail && r.deliveryStatus !== "delivered" ? <div className="text-[12px] text-ink-muted mt-1">{r.deliveryDetail}</div> : null}
                 </Td>
                 <Td>
                   <Badge tone={loginStatusTone(r.status)} dot>
