@@ -233,7 +233,12 @@ function codeForm(
   // Истекло время ожидания — показываем РОВНО один: следующий по каскаду.
   // Не подошёл и он — тот же приём повторится уже для его собственного кода
   // (resend/send_email сами перерисовывают этот же экран с новым expiresAt).
-  const nextChannel = resendChannels.filter((c) => c !== channel)[0];
+  // «Следующий» — по порядку каскада проекта (channel_order): первый включённый канал после текущего,
+  // а если текущий последний — первый из остальных (по кругу). Раньше брался фиксированный список push, Telegram, SMS.
+  const cascade = resolveOrder(ctx.config?.channel_order).filter((c) => resendChannels.includes(c));
+  const at = cascade.indexOf(channel);
+  const others = cascade.filter((c) => c !== channel);
+  const nextChannel = (at >= 0 ? cascade.slice(at + 1).find((c) => c !== channel) : undefined) ?? others[0];
   const altBlock = nextChannel ? resendForm(action, sid, sig, nextChannel, RESEND_LABEL[nextChannel]) : "";
   // Истёк отсчёт — код почти наверняка уже нерабочий (тот же таймер, что и
   // реальный TTL кода, см. OTP_TTL_MS), так что кнопка формы переквалифицируется
