@@ -15,6 +15,7 @@ import { ContextDocs } from "../../templates/ContextDocs";
 import { smsSegments } from "@/lib/smsSegments";
 import { withShortenedLinks } from "@/lib/linkPreview";
 import { hasUnsubscribeTag } from "@/lib/unsubscribeTag";
+import { formatDateTime, wallTimeToUtc } from "@/lib/datetime";
 
 type Channel = "push" | "sms" | "email";
 const CUSTOM_HTML = "__custom__";
@@ -186,7 +187,7 @@ export default function NewCampaignForm({
       emails: emails.length ? emails : undefined,
       type: transactional ? "transactional" : "marketing",
       data: contextData,
-      scheduledAt: schedule && scheduleDate && scheduleTime ? new Date(`${scheduleDate}T${scheduleTime}`).toISOString() : null,
+      scheduledAt: schedule && scheduleDate && scheduleTime ? wallTimeToUtc(`${scheduleDate}T${scheduleTime}:00`, projectTimezone)?.toISOString() ?? null : null,
       sendWindowEnabled: sendWindow.sendWindowEnabled,
       sendDays: sendWindow.sendDays,
       sendTimeFrom: sendWindow.sendTimeFrom,
@@ -285,7 +286,7 @@ export default function NewCampaignForm({
       return;
     }
     if (json.scheduled) {
-      toast(`Запланировано на ${new Date(json.at).toLocaleString("ru-RU")}`, "good");
+      toast(`Запланировано на ${formatDateTime(json.at, projectTimezone)}`, "good");
     } else {
       toast(`Отправлено ${json.delivered} из ${json.total}, ошибок ${json.failed}`, "good");
     }

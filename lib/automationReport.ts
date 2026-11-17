@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { AUTOMATION_SELECT } from "@/lib/automations";
+import { DEFAULT_TZ } from "@/lib/datetime";
 
 // Генератор презентации-отчёта по автоматизациям проекта (кнопка «Скачать
 // отчёт» в разделе «Автоматизации» — см. app/api/admin/automation-report/route.ts).
@@ -53,18 +54,35 @@ function esc(v: unknown): string {
 // ---------- форматирование ----------
 const MONTHS_GEN = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
 
+// Часовой пояс проекта: все даты в отчёте показываются по нему, а не по поясу сервера (UTC). Выставляется в
+// generateAutomationReportHtml сразу перед сборкой слайдов; сборка синхронная, так что параллельные отчёты не пересекаются.
+let reportTz = DEFAULT_TZ;
+
+function tzParts(d: Date): { day: number; month: number; year: number; hm: string } {
+  const fmt = (tz: string) =>
+    new Intl.DateTimeFormat("en-GB", { timeZone: tz, day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(d);
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = fmt(reportTz);
+  } catch {
+    parts = fmt(DEFAULT_TZ);
+  }
+  const n = (t: string) => Number(parts.find((p) => p.type === t)?.value || 0);
+  return { day: n("day"), month: n("month") - 1, year: n("year"), hm: `${String(n("hour")).padStart(2, "0")}:${String(n("minute")).padStart(2, "0")}` };
+}
+
 function fmtDateRu(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getDate()} ${MONTHS_GEN[d.getMonth()]} ${d.getFullYear()}`;
+  const p = tzParts(new Date(iso));
+  return `${p.day} ${MONTHS_GEN[p.month]} ${p.year}`;
 }
 
 function fmtDateTimeRu(iso: string, now: Date): string {
-  const d = new Date(iso);
-  const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  const sameDay = d.toDateString() === now.toDateString();
-  if (sameDay) return `сегодня, ${hm}`;
-  const sameYear = d.getFullYear() === now.getFullYear();
-  return sameYear ? `${d.getDate()} ${MONTHS_GEN[d.getMonth()]}, ${hm}` : `${d.getDate()} ${MONTHS_GEN[d.getMonth()]} ${d.getFullYear()}, ${hm}`;
+  const p = tzParts(new Date(iso));
+  const n = tzParts(now);
+  if (p.day === n.day && p.month === n.month && p.year === n.year) return `сегодня, ${p.hm}`;
+  return p.year === n.year
+    ? `${p.day} ${MONTHS_GEN[p.month]}, ${p.hm}`
+    : `${p.day} ${MONTHS_GEN[p.month]} ${p.year}, ${p.hm}`;
 }
 
 function fmtDelay(mins: number): string {
@@ -628,7 +646,7 @@ export async function generateAutomationReportHtml(projectId: string): Promise<s
   const now = new Date();
 
   const [{ data: project }, { data: automationsRaw }, { data: templatesRaw }] = await Promise.all([
-    admin.from("projects").select("name").eq("id", projectId).maybeSingle(),
+    admin.from("projects").select("name, timezone").eq("id", projectId).maybeSingle(),
     admin.from("automations").select(AUTOMATION_SELECT).eq("project_id", projectId).order("created_at", { ascending: true }),
     admin.from("templates").select("id, name").eq("project_id", projectId),
   ]);
@@ -680,7 +698,9 @@ export async function generateAutomationReportHtml(projectId: string): Promise<s
   const byType: Record<RawAutomation["type"], RawAutomation[]> = { welcome: [], event: [], custom: [], recurring: [] };
   for (const a of automations) byType[a.type]?.push(a);
 
-  const todayLabel = `${now.getDate()} ${["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"][now.getMonth()]} ${now.getFullYear()}`;
+  reportTz = (project as { timezone?: string | null } | null)?.timezone || DEFAULT_TZ;
+  const nowParts = tzParts(now);
+  const todayLabel = `${nowParts.day} ${["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"][nowParts.month]} ${nowParts.year}`;
 
   const slides: string[] = [coverSlide(project?.name || "Проект", todayLabel), welcomeOverviewSlide()];
   for (const [i, a] of byType.welcome.entries()) {

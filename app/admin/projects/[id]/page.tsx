@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ensureProjectAccessible } from "@/lib/guards";
 import DashboardOverview from "./DashboardOverview";
+import { DEFAULT_TZ, todayInTz, wallTimeToUtc } from "@/lib/datetime";
 import { loadCampaignStats, loadExcludedIdentityIds, topByCtr, type TopCampaign } from "@/lib/campaignStats";
 
 // Сводка отправок по всем каналам (push/sms/email), не только push.
@@ -27,13 +28,14 @@ export default async function DashboardPage({ params }: { params: Promise<{ id: 
   const { id } = await params;
   const supabase = await createClient();
 
-  const { data: project } = await supabase.from("projects").select("id, name, is_active").eq("id", id).maybeSingle();
+  const { data: project } = await supabase.from("projects").select("id, name, is_active, timezone").eq("id", id).maybeSingle();
   if (!project) notFound();
   await ensureProjectAccessible(project.id, project.is_active);
 
   const now = new Date();
-  const startOfToday = new Date(now);
-  startOfToday.setUTCHours(0, 0, 0, 0);
+  // «Сегодня» — с начала суток в часовом поясе проекта, а не по UTC (иначе до 03:00 по Москве шёл бы ещё вчерашний день)
+  const projectTz = project.timezone || DEFAULT_TZ;
+  const startOfToday = wallTimeToUtc(`${todayInTz(projectTz)}T00:00:00.000`, projectTz) ?? new Date(now.getTime() - (now.getTime() % 86_400_000));
   const startOfWeek = new Date(now.getTime() - 7 * 86_400_000);
   const startOfMonth = new Date(now.getTime() - MONTH_DAYS * 86_400_000);
 

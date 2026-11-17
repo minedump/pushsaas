@@ -6,21 +6,23 @@ import AnalyticsPeriodSwitcher from "./AnalyticsPeriodSwitcher";
 import SendTimeControls from "./SendTimeControls";
 import { loadCampaignStats, loadExcludedIdentityIds } from "@/lib/campaignStats";
 import { computeBestSendTimes, parseSettings, MIN_SAMPLE, type Channel, type ChannelResult, type RecipientRow } from "@/lib/sendTimeAnalytics";
-import { DEFAULT_TZ, todayInTz, wallTimeToUtc } from "@/lib/datetime";
+import { DEFAULT_TZ, dayKeyInTz, todayInTz, wallTimeToUtc } from "@/lib/datetime";
 
 const channelLabel: Record<string, string> = { push: "Push", sms: "SMS", email: "Email" };
 
 type Period = "day" | "week" | "month" | "custom";
 
-function toISODate(d: Date): string {
-  return d.toISOString().slice(0, 10);
+// Календарный день в часовом поясе проекта (а не по UTC): иначе ночные события попадают во вчерашний день.
+function toISODate(d: Date, tz: string): string {
+  return dayKeyInTz(d, tz);
 }
 
 // Подпись даты для подсказок при наведении на графики — короткий формат
 // вроде "28 авг", вместо сырого ISO.
-function formatDayLabel(iso: string): string {
-  const d = new Date(iso.length <= 10 ? `${iso}T00:00:00` : iso);
-  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+// Дата без времени ("2026-11-17") — сам календарный день, пояс не нужен; момент времени показываем по поясу проекта.
+function formatDayLabel(iso: string, tz: string): string {
+  if (iso.length <= 10) return new Date(`${iso}T12:00:00Z`).toLocaleDateString("ru-RU", { day: "numeric", month: "short", timeZone: "UTC" });
+  return new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "short", timeZone: tz });
 }
 
 // Единый диапазон дат на всю страницу — раньше «за последние 30 дней» было
@@ -144,16 +146,16 @@ export default async function AnalyticsPage({
   const dayCount = Math.max(1, Math.round((until.getTime() - since.getTime()) / 86_400_000) + 1);
   const days: { date: string; push: number; sms: number; email: number }[] = [];
   for (let i = dayCount - 1; i >= 0; i--) {
-    days.push({ date: toISODate(new Date(until.getTime() - i * 86_400_000)), push: 0, sms: 0, email: 0 });
+    days.push({ date: toISODate(new Date(until.getTime() - i * 86_400_000), projectTimezone), push: 0, sms: 0, email: 0 });
   }
   const byDay = new Map(days.map((d) => [d.date, d]));
   for (const r of subRows) {
-    const day = r.created_at?.slice(0, 10);
+    const day = r.created_at ? dayKeyInTz(r.created_at, projectTimezone) : undefined;
     const bucket = day ? byDay.get(day) : undefined;
     if (bucket) bucket.push++;
   }
   for (const e of channelGrowth ?? []) {
-    const day = e.created_at?.slice(0, 10);
+    const day = e.created_at ? dayKeyInTz(e.created_at, projectTimezone) : undefined;
     const bucket = day ? byDay.get(day) : undefined;
     const ch = e.channel as "sms" | "email";
     if (bucket && (ch === "sms" || ch === "email")) bucket[ch]++;
@@ -199,7 +201,7 @@ export default async function AnalyticsPage({
     <main className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-semibold">Аналитика</h1>
 
-      <AnalyticsPeriodSwitcher period={period} defaultFrom={toISODate(since)} defaultTo={toISODate(until)} />
+      <AnalyticsPeriodSwitcher period={period} defaultFrom={toISODate(since, projectTimezone)} defaultTo={toISODate(until, projectTimezone)} />
 
       {/* top tiles */}
       <div className="flex gap-3 mt-4 sm:mt-8 flex-wrap">
@@ -238,14 +240,14 @@ export default async function AnalyticsPage({
       {chart.length > 0 && (
         <Card className="mt-4 sm:mt-8">
           <div className="text-[13px] text-ink-muted mb-3">Отправки и клики по последним рассылкам</div>
-          <BarChart data={chart} max={maxChartVal} />
+          <BarChart data={chart} max={maxChartVal} tz={projectTimezone} />
         </Card>
       )}
 
       {/* growth chart */}
       <Card className="mt-4 sm:mt-8">
         <div className="text-[13px] text-ink-muted mb-3">Рост подписчиков по каналам — новые за день</div>
-        <GrowthChart data={days} max={maxDay} />
+        <GrowthChart data={days} max={maxDay} tz={projectTimezone} />
       </Card>
 
       {/* best send time */}
@@ -341,9 +343,11 @@ function computeWidgetStats(rows: { name: string }[]): { button: WidgetStat; pro
 function BarChart({
   data,
   max,
+  tz,
 }: {
   data: { id: string; title: string; sent_at: string | null; delivered_count: number; clicked_count: number }[];
   max: number;
+  tz: string;
 }) {
   const W = 620, H = 160, pad = 24, gap = 10;
   const bw = (W - pad * 2 - gap * (data.length - 1)) / data.length;
@@ -357,7 +361,7 @@ function BarChart({
           const dh = (delivered / max) * (H - pad * 2);
           const ch = (clicked / max) * (H - pad * 2);
           const ctr = delivered ? Math.round((clicked / delivered) * 100) : 0;
-          const dateLabel = c.sent_at ? formatDayLabel(c.sent_at) : "";
+          const dateLabel = c.sent_at ? formatDayLabel(c.sent_at, tz) : "";
           return (
             <g key={c.id} className="cursor-default">
               <title>{`${c.title}${dateLabel ? ` — ${dateLabel}` : ""}\nДоставлено: ${delivered}\nПереходов: ${clicked} (CTR ${ctr}%)`}</title>
@@ -385,7 +389,7 @@ function BarChart({
 
 const growthColors = { push: "var(--accent)", sms: "var(--good)", email: "var(--warn)" } as const;
 
-function GrowthChart({ data, max }: { data: { date: string; push: number; sms: number; email: number }[]; max: number }) {
+function GrowthChart({ data, max, tz }: { data: { date: string; push: number; sms: number; email: number }[]; max: number; tz: string }) {
   const W = 640, H = 140, pad = 20;
   const bw = (W - pad * 2) / data.length;
   const scale = (H - pad * 2) / max;
@@ -396,7 +400,7 @@ function GrowthChart({ data, max }: { data: { date: string; push: number; sms: n
           const x = pad + i * bw;
           let y = H - pad;
           const total = d.push + d.sms + d.email;
-          const tooltip = `${formatDayLabel(d.date)}\nВсего: ${total}\nPush: ${d.push}\nSMS: ${d.sms}\nEmail: ${d.email}`;
+          const tooltip = `${formatDayLabel(d.date, tz)}\nВсего: ${total}\nPush: ${d.push}\nSMS: ${d.sms}\nEmail: ${d.email}`;
           return (
             <g key={d.date} className="cursor-default">
               <title>{tooltip}</title>

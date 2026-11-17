@@ -129,7 +129,12 @@ export async function POST(req: Request) {
   // запись магазина с тем же человеком (например, гостевой клиент при оформлении заказа).
   // Такие данные только дополняют контакт: имя и id не перезаписываем, пустые поля не стираем,
   // согласия только включаем.
-  const differentAccount = !!identity && !!identity.insales_client_id && !!insalesId && identity.insales_client_id !== insalesId;
+  // Исключение — зарегистрированный клиент (registered: true): это настоящая учётная запись, а не гость.
+  // Например, человек удалил аккаунт и зарегистрировался заново: id в контакте заменяется на новый,
+  // а данные и согласия обновляются как обычно.
+  const isRegistered = client.registered === true;
+  const differentAccount =
+    !!identity && !!identity.insales_client_id && !!insalesId && identity.insales_client_id !== insalesId && !isRegistered;
 
   let created = false;
   let identityId: string;

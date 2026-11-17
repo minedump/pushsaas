@@ -18,7 +18,7 @@ import { TriggerWebhookDocs } from "./TriggerWebhookDocs";
 import { hasUnsubscribeTag } from "@/lib/unsubscribeTag";
 import { computeNextFireAt, type RecurringSchedule } from "@/lib/recurring";
 import { useProjectTz } from "../ProjectTimeProvider";
-import { formatDateTime } from "@/lib/datetime";
+import { formatDateTime, todayInTz } from "@/lib/datetime";
 
 type Channel = "push" | "sms" | "email";
 const channelLabel: Record<Channel, string> = { push: "Push", sms: "SMS", email: "Email" };
@@ -1194,7 +1194,7 @@ export default function AutomationsManager({
     scheduleKind: "weekly" as "weekly" | "monthly_from_date" | "monthly_nth_weekday",
     scheduleWeekday: 5,
     scheduleWeekOfMonth: 1,
-    scheduleStartDate: new Date().toISOString().slice(0, 10),
+    scheduleStartDate: todayInTz(tz),
     scheduleIntervalMonths: 1,
     scheduleTime: "09:00",
   };
@@ -1313,7 +1313,7 @@ export default function AutomationsManager({
       scheduleKind: schedule?.kind || "weekly",
       scheduleWeekday: schedule && "weekday" in schedule ? schedule.weekday : 5,
       scheduleWeekOfMonth: schedule?.kind === "monthly_nth_weekday" ? schedule.weekOfMonth : 1,
-      scheduleStartDate: schedule?.kind === "monthly_from_date" ? schedule.startDate : new Date().toISOString().slice(0, 10),
+      scheduleStartDate: schedule?.kind === "monthly_from_date" ? schedule.startDate : todayInTz(tz),
       scheduleIntervalMonths: schedule && "intervalMonths" in schedule ? schedule.intervalMonths : 1,
       scheduleTime: schedule?.time || "09:00",
     });

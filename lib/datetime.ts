@@ -18,6 +18,17 @@ export function formatDateTime(d: string | number | Date, tz?: string | null): s
   return new Date(d).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short", timeZone: safeTz(tz) });
 }
 
+// Календарный день момента времени в часовом поясе проекта: "2026-11-17". Для разбивки по дням (аналитика):
+// без пояса день определялся бы по UTC, и ночные события МСК попадали бы во вчерашний день.
+export function dayKeyInTz(d: string | number | Date, tz?: string | null): string {
+  return new Date(d).toLocaleDateString("en-CA", { timeZone: safeTz(tz) });
+}
+
+// Время в поле «ЧЧ:ММ» по часовому поясу проекта (для форм расписания).
+export function timeInTz(d: string | number | Date, tz?: string | null): string {
+  return new Date(d).toLocaleTimeString("en-GB", { timeZone: safeTz(tz), hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+}
+
 export function formatDate(d: string | number | Date, tz?: string | null): string {
   return new Date(d).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: safeTz(tz) });
 }

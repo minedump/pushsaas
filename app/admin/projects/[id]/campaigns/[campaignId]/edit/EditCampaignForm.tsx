@@ -8,7 +8,7 @@ import { CustomSelect, type ComboOption } from "@/app/ui/CustomSelect";
 import { SearchSelect } from "@/app/ui/SearchSelect";
 import { friendlyError } from "@/lib/errors";
 import { createClient } from "@/lib/supabase/client";
-import { formatDateTime } from "@/lib/datetime";
+import { dayKeyInTz, formatDateTime, timeInTz, wallTimeToUtc } from "@/lib/datetime";
 import { MessagePreviewModal, type PreviewContent } from "../../../MessagePreviewModal";
 import { SegmentTagsInput } from "../../../SegmentTagsInput";
 import { PlatformFilter, PLATFORM_VALUES } from "../../../PlatformFilter";
@@ -68,17 +68,12 @@ type Campaign = {
 const STATUS_LABEL: Record<string, string> = { draft: "черновик", scheduled: "запланирована", sending: "отправляется", sent: "отправлена", failed: "ошибка отправки", canceled: "отменена" };
 const INITIATOR_LABEL: Record<string, string> = { manual: "Ручная", api: "API", automation: "Автоматизация" };
 
-function toLocalDateValue(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+// Дата и время запланированной отправки показываются и вводятся по часовому поясу проекта, а не браузера.
+function toLocalDateValue(iso: string | null, tz: string): string {
+  return iso ? dayKeyInTz(iso, tz) : "";
 }
-function toLocalTimeValue(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+function toLocalTimeValue(iso: string | null, tz: string): string {
+  return iso ? timeInTz(iso, tz) : "";
 }
 
 type Template = {
@@ -142,8 +137,8 @@ export default function EditCampaignForm({
   const [badge, setBadge] = useState(campaign.badge_url || "");
   const [actions, setActions] = useState<{ title: string; url: string }[]>(campaign.actions || []);
   const [schedule, setSchedule] = useState(campaign.status === "scheduled");
-  const [scheduleDate, setScheduleDate] = useState(toLocalDateValue(campaign.scheduled_at));
-  const [scheduleTime, setScheduleTime] = useState(toLocalTimeValue(campaign.scheduled_at));
+  const [scheduleDate, setScheduleDate] = useState(toLocalDateValue(campaign.scheduled_at, projectTimezone));
+  const [scheduleTime, setScheduleTime] = useState(toLocalTimeValue(campaign.scheduled_at, projectTimezone));
 
   // sms
   const [smsText, setSmsText] = useState(campaign.body);
@@ -259,7 +254,7 @@ export default function EditCampaignForm({
       template_data: Object.keys(templateData).length ? templateData : null,
       contacts: contactList,
       status: schedule ? "scheduled" : "draft",
-      scheduled_at: schedule && scheduleDate && scheduleTime ? new Date(`${scheduleDate}T${scheduleTime}`).toISOString() : null,
+      scheduled_at: schedule && scheduleDate && scheduleTime ? wallTimeToUtc(`${scheduleDate}T${scheduleTime}:00`, projectTimezone)?.toISOString() ?? null : null,
       send_window_enabled: sendWindow.sendWindowEnabled,
       send_days: sendWindow.sendWindowEnabled && sendWindow.sendDays.length ? sendWindow.sendDays : null,
       send_time_from: sendWindow.sendWindowEnabled ? sendWindow.sendTimeFrom : null,
