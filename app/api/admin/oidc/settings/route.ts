@@ -3,7 +3,7 @@ import { assertProjectAccess } from "@/lib/auth";
 import { auditAs } from "@/lib/auditContext";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveLoginStyle } from "@/lib/login-style";
-import { normalizeAuthFailedUrl } from "@/lib/oidc";
+import { normalizeAuthFailedUrl, RESEND_AFTER_DEFAULT, RESEND_AFTER_MIN } from "@/lib/oidc";
 import { SMS_PROVIDERS, TELEGRAM_PROVIDERS, EMAIL_PROVIDERS } from "@/lib/otp/providers";
 
 // Настройки входа по телефону: каналы каскада + их порядок, подпись SMS,
@@ -20,6 +20,7 @@ export async function POST(req: Request) {
     authButtonColor,
     authButtonSize,
     authFailedUrl,
+    resendAfterSeconds,
     loginStyle,
     smsSender,
     emailFrom,
@@ -193,6 +194,15 @@ export async function POST(req: Request) {
     const n = normalizeAuthFailedUrl(authFailedUrl, proj?.domain || null);
     if (!n.ok) return NextResponse.json({ error: n.error }, { status: 400 });
     config.auth_failed_url = n.value;
+  }
+
+  // Через сколько секунд предлагать новый код или другой способ: от 30 секунд до 5 минут (срок жизни кода)
+  if (resendAfterSeconds !== undefined) {
+    const n = Number(resendAfterSeconds);
+    if (!Number.isFinite(n) || n < RESEND_AFTER_MIN || n > RESEND_AFTER_DEFAULT) {
+      return NextResponse.json({ error: "Время ожидания: от 30 секунд до 5 минут" }, { status: 400 });
+    }
+    config.resend_after_seconds = Math.round(n);
   }
 
   const updates: Record<string, unknown> = { config };

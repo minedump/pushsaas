@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { syncDeviceToIdentity } from "@/lib/identity";
-import { getOidcContext, issuerFor, signParam, verifyParam, oidcLog, authFailedTarget, type OidcContext } from "@/lib/oidc";
+import { getOidcContext, issuerFor, signParam, verifyParam, oidcLog, authFailedTarget, resolveResendAfter, type OidcContext } from "@/lib/oidc";
 import { issueCodeAndRedirect } from "@/lib/oidc-flow";
 import { normalizePhone, maskPhone } from "@/lib/phone";
 import {
@@ -15,6 +15,7 @@ import {
   type ChannelAttempt,
 } from "@/lib/otp";
 import { needsDeliveryPoll } from "@/lib/otp/providers";
+import { allowCodeSend, allowSessionStart } from "@/lib/oidcGuard";
 import { BUTTON_SIZE_CSS, INPUT_SIZE_CSS, BUTTON_RADIUS_PX, INPUT_RADIUS_PX, LOGO_SIZE_PX } from "@/lib/login-style";
 
 // Страница входа по телефону/почте (authorization endpoint).
@@ -239,7 +240,14 @@ function codeForm(
   const at = cascade.indexOf(channel);
   const others = cascade.filter((c) => c !== channel);
   const nextChannel = (at >= 0 ? cascade.slice(at + 1).find((c) => c !== channel) : undefined) ?? others[0];
-  const altBlock = nextChannel ? resendForm(action, sid, sig, nextChannel, RESEND_LABEL[nextChannel]) : "";
+  // Когда показывать повтор и другой способ: через resend_after_seconds после отправки (по умолчанию 5 минут, как срок жизни
+  // кода). Если раньше срока жизни, код ещё действует: рядом с другим способом появляется «Отправить ещё раз» тем же каналом,
+  // а основная кнопка остаётся «Подтвердить» до истечения кода.
+  const resendAfterMs = resolveResendAfter(ctx.config?.resend_after_seconds) * 1000;
+  const resendAtMs = new Date(expiresAt).getTime() - OTP_TTL_MS + resendAfterMs;
+  const earlyResend = resendAfterMs < OTP_TTL_MS;
+  const sameChannelBlock = earlyResend ? `<div id="pss-alt-same">${resendForm(action, sid, sig, channel, "Отправить ещё раз")}</div>` : "";
+  const altBlock = sameChannelBlock + (nextChannel ? resendForm(action, sid, sig, nextChannel, RESEND_LABEL[nextChannel]) : "");
   // Истёк отсчёт — код почти наверняка уже нерабочий (тот же таймер, что и
   // реальный TTL кода, см. OTP_TTL_MS), так что кнопка формы переквалифицируется
   // из «Подтвердить» в «Отправить ещё раз» на ТОТ ЖЕ канал (сам код мог просто
@@ -247,6 +255,7 @@ function codeForm(
   // явный клик на альтернативный вариант ниже делает это осознанно).
   const countdownScript = `<script>(function(){
   var deadline = new Date(${JSON.stringify(expiresAt)}).getTime();
+  var altAt = ${JSON.stringify(resendAtMs)};
   var timer = document.getElementById("pss-timer");
   var timerVal = document.getElementById("pss-timer-val");
   var alt = document.getElementById("pss-alt");
@@ -254,9 +263,12 @@ function codeForm(
   var submitBtn = document.getElementById("pss-submit");
   var codeInput = document.getElementById("code");
   var sameChannel = ${JSON.stringify(channel)};
+  function revealAlt(){ if(alt) alt.style.display = "block"; }
   function reveal(){
     if(timer) timer.style.display = "none";
-    if(alt) alt.style.display = "block";
+    revealAlt();
+    var same = document.getElementById("pss-alt-same");
+    if(same) same.style.display = "none";
     if(form && submitBtn){
       form.querySelector("input[name=action]").value = "resend";
       var chInput = document.createElement("input");
@@ -268,6 +280,7 @@ function codeForm(
   }
   function tick(){
     var left = Math.round((deadline - Date.now()) / 1000);
+    if (Date.now() >= altAt) revealAlt();
     if (left <= 0) { reveal(); return; }
     var m = Math.floor(left / 60), s = left % 60;
     if (timerVal) timerVal.textContent = m + ":" + (s < 10 ? "0" : "") + s;
@@ -578,6 +591,16 @@ export async function GET(req: Request, routeCtx: { params: Promise<{ projectId:
     oidcLog("auth:start", { projectId, redirectHost, outcome: "redirect_not_allowed" });
     return new Response("redirect_uri not allowed", { status: 400 });
   }
+  // InSales всегда присылает state (он нужен, чтобы вернуть покупателя в нужную сессию магазина). Запрос без него
+  // собран вручную, и сессию под него не заводим.
+  if (!rp.state) {
+    oidcLog("auth:start", { projectId, redirectHost, outcome: "no_state" });
+    return new Response("state required", { status: 400 });
+  }
+  if (!(await allowSessionStart(req, projectId))) {
+    oidcLog("auth:start", { projectId, redirectHost, outcome: "rate_limited" });
+    return new Response("Слишком много попыток — подождите 10 минут", { status: 429 });
+  }
 
   // Быстрый путь: устройство уже узнано заранее (кука от /api/public/recognize,
   // выставленная на предыдущих загрузках страницы магазина) — сессия сразу
@@ -688,6 +711,7 @@ export async function POST(req: Request, routeCtx: { params: Promise<{ projectId
   if (body.action === "send") {
     const phone = normalizePhone(body.phone || "");
     if (!phone) return phoneForm(action, session.id, sig, ctx, { err: "Проверьте номер телефона" });
+    if (!(await allowCodeSend(req, projectId, session.id, phone))) return phoneForm(action, session.id, sig, ctx, { err: "Слишком много попыток — подождите 10 минут" });
     await admin.from("oidc_auth_sessions").update({ phone }).eq("id", session.id);
 
     const r = await attemptSend(admin, projectId, session, { phone });
@@ -718,6 +742,9 @@ export async function POST(req: Request, routeCtx: { params: Promise<{ projectId
     const email = normalizeEmail(body.email || "");
     if (!isValidEmail(email)) {
       return emailForm(action, session.id, sig, ctx, { err: "Проверьте адрес почты", viaFallback: !!session.phone });
+    }
+    if (!(await allowCodeSend(req, projectId, session.id, email))) {
+      return emailForm(action, session.id, sig, ctx, { err: "Слишком много попыток — подождите 10 минут", viaFallback: !!session.phone });
     }
 
     const r = await attemptSend(admin, projectId, session, { email });
@@ -802,6 +829,10 @@ export async function POST(req: Request, routeCtx: { params: Promise<{ projectId
     const allowed: OtpChannel[] = allowedEnabled.length ? allowedEnabled : allKeyChannels;
     const requested = body.channel as OtpChannel;
     const channel = allowed.includes(requested) ? requested : allowed[allowed.length - 1];
+    if (!(await allowCodeSend(req, projectId, session.id, target))) {
+      const prevLimited = await channelOf(session.otp_id);
+      return codeForm(action, session.id, sig, prevLimited.channel, prevLimited.provider, maskedTarget, key, prevLimited.expiresAt, ctx, { err: "Слишком много попыток — подождите 10 минут" });
+    }
     const sent = await sendOtp(projectId, otpKey, { forceChannel: channel });
     if (!sent.ok) {
       const msg = sent.error === "rate_limited" ? "Слишком много попыток — подождите 10 минут" : describeNoChannel(sent.attempts);

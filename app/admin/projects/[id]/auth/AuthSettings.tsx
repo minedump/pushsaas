@@ -50,6 +50,7 @@ type Initial = {
   authButtonColor: string;
   authButtonSize: string;
   authFailedUrl: string;
+  resendAfterSeconds: number;
   loginStyle: LoginStyleConfig;
   hasTelegram: boolean;
   hasBytehand: boolean;
@@ -99,6 +100,7 @@ export default function AuthSettings({
   const [authButtonColor, setAuthButtonColor] = useState(initial?.authButtonColor || "");
   const [authButtonSize, setAuthButtonSize] = useState(initial?.authButtonSize || "");
   const [authFailedUrl, setAuthFailedUrl] = useState(initial?.authFailedUrl || "");
+  const [resendAfter, setResendAfter] = useState(String(initial?.resendAfterSeconds ?? 300));
   const [loginStyle, setLoginStyle] = useState<LoginStyleConfig>(initial?.loginStyle || DEFAULT_LOGIN_STYLE);
   const [busyLoginStyle, setBusyLoginStyle] = useState(false);
   const [providers, setProviders] = useState<Providers>(initial?.providers || {});
@@ -266,7 +268,7 @@ export default function AuthSettings({
   // Без домена проекта адрес не отправляем: поле заблокировано, а сервер такой адрес не примет.
   async function saveSettingsForm() {
     setBusy(true);
-    const res = await apiPost("/api/admin/oidc/settings", { projectId, otpTemplates, ...(projectDomain ? { authFailedUrl } : {}) });
+    const res = await apiPost("/api/admin/oidc/settings", { projectId, otpTemplates, resendAfterSeconds: Number(resendAfter), ...(projectDomain ? { authFailedUrl } : {}) });
     setBusy(false);
     const j = await res.json().catch(() => ({}));
     if (!res.ok) return toast(j.error || "Ошибка", "bad");
@@ -468,6 +470,23 @@ export default function AuthSettings({
                 />
               </div>
             ))}
+            <div>
+              <div className={labelCls}>Предлагать другой способ через</div>
+              <CustomSelect
+                value={resendAfter}
+                onChange={setResendAfter}
+                options={[
+                  { value: "30", label: "30 секунд" },
+                  { value: "60", label: "1 минуту" },
+                  { value: "120", label: "2 минуты" },
+                  { value: "180", label: "3 минуты" },
+                  { value: "300", label: "5 минут" },
+                ]}
+                ariaLabel="Через сколько предлагать другой способ"
+                className="w-full"
+              />
+              <p className={hintCls}>Столько покупатель ждёт, прежде чем ему предложат отправить код заново или другим способом. Сам код действует 5 минут.</p>
+            </div>
             <div>
               <Label htmlFor="auth-failed-url">Страница при неудачном входе</Label>
               <Input

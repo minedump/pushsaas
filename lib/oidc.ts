@@ -63,6 +63,8 @@ export type OidcContext = {
     auth_button_rounded?: boolean;
     // куда вернуть покупателя, если ни один способ получить код не сработал (адрес на сайте проекта или путь вида /page/x)
     auth_failed_url?: string | null;
+    // через сколько секунд после отправки кода экран предлагает отправить его заново или другим способом (по умолчанию 300)
+    resend_after_seconds?: number | null;
   };
   privateKeyPem: string;
   clientSecretHash: string;
@@ -82,6 +84,15 @@ function hostOnProjectDomain(host: string, domain: string): boolean {
 }
 
 // Проверка и приведение введённого в настройках адреса. Пустое значение = стандартная страница входа магазина.
+// Сколько секунд ждать, прежде чем предложить новый код или другой способ. Сам код живёт 5 минут и от этой настройки не зависит.
+export const RESEND_AFTER_DEFAULT = 300;
+export const RESEND_AFTER_MIN = 30;
+export function resolveResendAfter(raw: unknown): number {
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(n)) return RESEND_AFTER_DEFAULT;
+  return Math.min(RESEND_AFTER_DEFAULT, Math.max(RESEND_AFTER_MIN, Math.round(n)));
+}
+
 export function normalizeAuthFailedUrl(raw: unknown, domain: string | null): { ok: true; value: string | null } | { ok: false; error: string } {
   const s = typeof raw === "string" ? raw.trim() : "";
   if (!s) return { ok: true, value: null };

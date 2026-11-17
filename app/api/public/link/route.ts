@@ -27,6 +27,24 @@ export async function POST(req: Request) {
   if (!projectId || !ticket) return NextResponse.json({ error: "bad payload" }, { status: 400, headers: CORS });
 
   const admin = createAdminClient();
+
+  // Вызов должен идти из браузера со страницы магазина: браузер сам подставляет Origin (его не подменить из скрипта на
+  // другом сайте), и он обязан быть доменом проекта (или его поддоменом) либо техническим доменом InSales. Вызов без
+  // Origin (curl, серверный скрипт) или с чужого сайта отклоняем. Если у проекта домен не задан, проверку пропускаем.
+  const { data: proj } = await admin.from("projects").select("domain").eq("id", projectId).maybeSingle();
+  const domain = (proj?.domain || "").toLowerCase().split("://").pop()!.split("/")[0].trim();
+  if (domain) {
+    const origin = req.headers.get("origin") || "";
+    let host = "";
+    try {
+      host = new URL(origin).hostname.toLowerCase();
+    } catch {
+      host = "";
+    }
+    const allowed = !!host && (host === domain || host.endsWith("." + domain) || host.endsWith(".myinsales.ru"));
+    if (!allowed) return NextResponse.json({ error: "forbidden origin" }, { status: 403, headers: CORS });
+  }
+
   // Одним atomic update...returning: читаем и сразу помечаем потреблённым.
   // Совпадёт только НЕ потреблённый и НЕ истёкший тикет — это же условие
   // закрывает гонку двойного использования (раньше select и update шли

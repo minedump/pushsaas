@@ -42,6 +42,9 @@ const MAX_ATTEMPTS = 5;
 const RATE_WINDOW_MS = 10 * 60 * 1000;
 const RATE_MAX_SENDS = 9;
 const RATE_MAX_SENDS_PER_CHANNEL = 3;
+// Потолок платных отправок (SMS и Telegram) на проект за час. Страховка от слива бюджета, если защиту формы обошли:
+// после потолка платные каналы пропускаются, а бесплатные (почта, push) продолжают работать.
+const PROJECT_PAID_SENDS_PER_HOUR = 200;
 
 export type OtpChannel = "push" | "email" | "telegram" | "sms";
 export type OtpKey = { phone: string } | { email: string };
@@ -52,7 +55,8 @@ export type ChannelSkipReason =
   | "provider_error" // sms/telegram: внешний сервис отказал/ошибся
   | "send_failed" // попытка была, доставка не подтвердилась
   | "country_not_allowed" // sms/telegram: номер не РФ/СНГ — не шлём вовсе
-  | "channel_rate_limited"; // 3 отправки этим каналом за 10 минут уже исчерпаны — каскад идёт дальше
+  | "channel_rate_limited" // 3 отправки этим каналом за 10 минут уже исчерпаны — каскад идёт дальше
+  | "project_limit"; // платные отправки проекта за час исчерпаны — SMS и Telegram пропускаются
 
 export type ChannelAttempt = { channel: OtpChannel; ok: boolean; reason?: ChannelSkipReason };
 
@@ -257,6 +261,21 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
   // свои 3 отправки за 10 минут — тем же каналом больше не шлём никого, даже
   // по явной просьбе: вместо него идём по всему каскаду заново (капнутые
   // каналы просто пропускаются ниже) — это и есть принудительный переход.
+  // Потолок платных отправок на проект за час.
+  let paidLocked = false;
+  {
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { count: paidCount } = await admin
+      .from("otp_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("project_id", projectId)
+      .in("channel", ["sms", "telegram"])
+      .gte("created_at", hourAgo);
+    if ((paidCount || 0) >= PROJECT_PAID_SENDS_PER_HOUR) {
+      paidLocked = true;
+      console.error(`[otp] проект ${projectId}: исчерпан потолок платных отправок за час (${PROJECT_PAID_SENDS_PER_HOUR})`);
+    }
+  }
   const tryOrder: OtpChannel[] = opts.forceChannel && !channelCapped(opts.forceChannel) ? [opts.forceChannel] : configuredOrder;
   let channel: OtpChannel | null = null;
   let usedProvider: string | null = null;
@@ -268,6 +287,10 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
     try {
     if (channelCapped(ch)) {
       attempts.push({ channel: ch, ok: false, reason: "channel_rate_limited" });
+      continue;
+    }
+    if (paidLocked && (ch === "sms" || ch === "telegram")) {
+      attempts.push({ channel: ch, ok: false, reason: "project_limit" });
       continue;
     }
     if (ch === "push") {
@@ -519,6 +542,7 @@ export function describeNoChannel(attempts: ChannelAttempt[]): string {
     "provider_error",
     "send_failed",
     "channel_rate_limited",
+    "project_limit",
     "no_subscription",
     "country_not_allowed",
     "not_configured",
@@ -536,6 +560,8 @@ export function describeNoChannel(attempts: ChannelAttempt[]): string {
         return "SMS и Telegram-код доступны только для номеров России и СНГ. Попробуйте войти по почте.";
       case "not_configured":
         return "Вход временно недоступен — магазин ещё не настроил ни один способ доставки кода.";
+      case "project_limit":
+        return "Вход по коду временно недоступен — попробуйте позже или войдите другим способом.";
       case "channel_rate_limited":
         return "Слишком много отправок каждым доступным способом — подождите 10 минут.";
     }

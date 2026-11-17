@@ -98,6 +98,7 @@ export default async function AuthPage({ params }: { params: Promise<{ id: strin
                 authButtonColor: oidc.config?.auth_button_color || "",
                 authButtonSize: oidc.config?.auth_button_size || "",
                 authFailedUrl: oidc.config?.auth_failed_url || "",
+                resendAfterSeconds: oidc.config?.resend_after_seconds ?? 300,
                 loginStyle: resolveLoginStyle(oidc.config?.login_style),
                 hasTelegram,
                 hasBytehand,
