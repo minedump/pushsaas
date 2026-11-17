@@ -61,7 +61,7 @@ const INITIATOR_LABEL: Record<string, string> = {
   automation: "Автоматизация",
   auth: "Авторизация",
 };
-const LOGIN_STATUS_LABEL: Record<string, string> = { verified: "код введён", locked: "попытки исчерпаны", expired: "код не введён", pending: "ожидает", undelivered: "ошибка" };
+const LOGIN_STATUS_LABEL: Record<string, string> = { verified: "код введён", locked: "попытки исчерпаны", expired: "код не введён", pending: "ожидает", undelivered: "код не доставлен" };
 // Провайдеры кодов входа: в базе id, в журнале понятные названия. Push уходит через саму платформу.
 const PROVIDER_LABEL: Record<string, string> = {
   bytehand: "Bytehand",
@@ -98,12 +98,12 @@ export default function LogTabs({
   apiCallRows: ApiCallRow[];
   actionRows: ActionRow[];
 }) {
-  const [tab, setTab] = useState<"actions" | "errors" | "logins" | "api">("actions");
+  const [tab, setTab] = useState<"actions" | "errors" | "logins" | "api">("logins");
 
   const tabOptions: { value: typeof tab; label: string }[] = [
+    { value: "logins", label: "Входы" },
     { value: "actions", label: "Действия" },
     { value: "errors", label: "Ошибки отправки" },
-    { value: "logins", label: "Входы" },
     { value: "api", label: "API" },
   ];
 
