@@ -415,8 +415,36 @@ async function resolvePushCampaignAudience(campaign: CampaignAudienceQuery, subs
   return subs || [];
 }
 
+// Сколько контактов подразумевалось в рассылке — выбранная аудитория (сегмент, список или все) ДО проверки согласия
+// и прочих отсечений, первая ступень воронки «контактов → отправлено → доставлено» (campaigns.audience_total).
+// Адресная SMS/Email-рассылка считается по тому, сколько контактов вписали, даже если части нет в базе.
+// Best-effort: сбой подсчёта не должен мешать отправке.
+async function saveAudienceTotal(
+  admin: ReturnType<typeof createAdminClient>,
+  campaign: { id: string; project_id: string; contacts?: string[] | null; segment_tags?: string[] | null; platforms?: string[] | null },
+  channel: "push" | "sms" | "email",
+  explicitCount?: number
+): Promise<void> {
+  try {
+    const contacts = (campaign.contacts || []).filter(Boolean);
+    const segmentTags = (campaign.segment_tags || []).filter(Boolean);
+    let total: number;
+    if (explicitCount != null) {
+      total = explicitCount;
+    } else if (channel !== "push" && contacts.length && !segmentTags.length) {
+      total = new Set(contacts.map((c) => (c.includes("@") ? c.trim().toLowerCase() : normalizePhone(c) ?? c.trim()))).size;
+    } else {
+      total = await countAudience(campaign.project_id, channel, { contacts, segmentTags, platforms: campaign.platforms || [], bypassConsent: true });
+    }
+    await admin.from("campaigns").update({ audience_total: total }).eq("id", campaign.id);
+  } catch {
+    // воронка без первой ступени лучше, чем сорванная рассылка
+  }
+}
+
 export async function dispatchCampaign(campaign: CampaignRow, subscriberIds?: string[]): Promise<DispatchResult> {
   const admin = createAdminClient();
+  await saveAudienceTotal(admin, campaign, "push", subscriberIds?.length);
   const subs = await resolvePushCampaignAudience(campaign, subscriberIds);
 
   if (!subs?.length) {
@@ -561,6 +589,7 @@ type WindowedCampaign = {
 export async function enqueueWindowedCampaign(campaign: WindowedCampaign, subscriberIds?: string[]): Promise<{ ok: boolean; enqueued: number }> {
   const admin = createAdminClient();
   const channel = campaign.channel || "push";
+  await saveAudienceTotal(admin, campaign, channel, channel === "push" ? subscriberIds?.length : undefined);
   const { data: project } = await admin.from("projects").select("timezone").eq("id", campaign.project_id).maybeSingle();
   const projectTimezone = project?.timezone || "Europe/Moscow";
   const win: SendWindow = {
@@ -2147,6 +2176,7 @@ export async function resolveChannelProvider(
 
 export async function dispatchSmsCampaign(campaign: SmsEmailCampaignRow, contacts?: string[]): Promise<DispatchResult> {
   const admin = createAdminClient();
+  await saveAudienceTotal(admin, { ...campaign, contacts: contacts ?? campaign.contacts }, "sms");
   const audience = await resolveSmsEmailAudience(admin, campaign.project_id, "phone", {
     contacts: contacts ?? campaign.contacts ?? undefined,
     segmentTags: campaign.segment_tags,
@@ -2224,6 +2254,7 @@ export async function dispatchSmsCampaign(campaign: SmsEmailCampaignRow, contact
 
 export async function dispatchEmailCampaign(campaign: SmsEmailCampaignRow, contacts?: string[]): Promise<DispatchResult> {
   const admin = createAdminClient();
+  await saveAudienceTotal(admin, { ...campaign, contacts: contacts ?? campaign.contacts }, "email");
   const audience = await resolveSmsEmailAudience(admin, campaign.project_id, "email", {
     contacts: contacts ?? campaign.contacts ?? undefined,
     segmentTags: campaign.segment_tags,

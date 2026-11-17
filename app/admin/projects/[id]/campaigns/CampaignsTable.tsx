@@ -23,6 +23,8 @@ type Row = {
   templateName: string | null;
   type: "transactional" | "marketing";
   initiator: "manual" | "api" | "welcome" | "event" | "trigger" | "recurring" | "automation" | "auth";
+  // сколько контактов подразумевалось в рассылке (аудитория до проверки согласия); у ушедших раньше — пусто
+  audience_total?: number | null;
   sent_count: number;
   delivered_count: number;
   // подтверждено оператором (только SMS, МТС): колонка «Доставлено»
@@ -43,6 +45,7 @@ type SortKey =
   | "type"
   | "initiator"
   | "status"
+  | "audience_total"
   | "delivered_count"
   | "clicked_count"
   | "ctr"
@@ -192,6 +195,8 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
       const dir = sortDir === "asc" ? 1 : -1;
       list = [...list].sort((a, b) => {
         switch (sortKey) {
+          case "audience_total":
+            return ((a.audience_total ?? -1) - (b.audience_total ?? -1)) * dir;
           case "delivered_count":
           case "clicked_count":
           case "unsubscribed_count":
@@ -264,6 +269,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
               <SortableTh label="Тип" sortKey="type" active={sortKey === "type"} dir={sortDir} onClick={onSortClick} />
               <SortableTh label="Инициатор" sortKey="initiator" active={sortKey === "initiator"} dir={sortDir} onClick={onSortClick} />
               <SortableTh label="Статус" sortKey="status" active={sortKey === "status"} dir={sortDir} onClick={onSortClick} />
+              <SortableTh label="Контактов" tip="Сколько контактов подразумевалось в рассылке: вся выбранная аудитория до проверки согласия. У рассылок, ушедших раньше, не показывается." sortKey="audience_total" active={sortKey === "audience_total"} dir={sortDir} onClick={onSortClick} right />
               <SortableTh label="Отправлено" sortKey="delivered_count" active={sortKey === "delivered_count"} dir={sortDir} onClick={onSortClick} right />
               <Th right>Доставлено</Th>
               <SortableTh label="Переходы" tip="Сколько получателей перешли по ссылке. Повторные переходы одного человека не считаются." sortKey="clicked_count" active={sortKey === "clicked_count"} dir={sortDir} onClick={onSortClick} right />
@@ -364,6 +370,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
                       {STATUS_LABEL[c.status] || c.status}
                     </Badge>
                   </Td>
+                  <Td right>{hasStats && c.audience_total != null ? c.audience_total : "—"}</Td>
                   <Td right>{hasStats ? c.delivered_count : "—"}</Td>
                   <Td right>{hasStats && c.channel === "sms" ? c.confirmed_count ?? 0 : "—"}</Td>
                   <Td right>{hasStats ? c.clicked_count : "—"}</Td>
@@ -440,7 +447,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={16} className="px-3.5 py-6 text-center text-ink-muted">
+                <td colSpan={17} className="px-3.5 py-6 text-center text-ink-muted">
                   Ничего не найдено
                 </td>
               </tr>

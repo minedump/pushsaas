@@ -34,6 +34,10 @@ export default async function CampaignsPage({ params }: { params: Promise<{ id: 
     : { data: null };
   const campaigns = campaignsFull ?? campaignsBasic;
 
+  // «Контактов» — отдельным запросом: пока колонка (миграция 0128) не накатана, ошибка не должна ронять весь список
+  const { data: audienceRows } = await supabase.from("campaigns").select("id, audience_total").eq("project_id", id).limit(500);
+  const audienceById = new Map((audienceRows ?? []).map((r) => [r.id as string, (r as { audience_total: number | null }).audience_total]));
+
   const list = (campaigns ?? []).map((c) => ({
     channel: "push" as string,
     type: "marketing" as string,
@@ -130,6 +134,7 @@ export default async function CampaignsPage({ params }: { params: Promise<{ id: 
       type: (c.type === "transactional" ? "transactional" : "marketing") as "transactional" | "marketing",
       initiator,
       status: c.status,
+      audience_total: audienceById.get(c.id) ?? null,
       sent_count: c.sent_count,
       delivered_count: c.delivered_count,
       confirmed_count: (c as { confirmed_count?: number }).confirmed_count || 0,
