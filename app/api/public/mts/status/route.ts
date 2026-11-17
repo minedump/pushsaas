@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { classifyMtsStatus } from "@/lib/otp/mts";
+import { classifyMtsStatus, describeMtsErrors } from "@/lib/otp/mts";
 
 // Статусы доставки SMS от МТС Маркетолога (обратный запрос). Адрес с секретным
 // ключом показывается в «Подключениях» → «МТС Маркетолог»; его нужно указать в
@@ -17,7 +17,7 @@ import { classifyMtsStatus } from "@/lib/otp/mts";
 // подтверждённая доставка фиксируется отдельно (delivered_at, confirmed_count — 0110).
 export const maxDuration = 30;
 
-type Item = { message_id?: string | number; status?: string | number };
+type Item = { message_id?: string | number; status?: string | number; internal_errors?: unknown };
 
 export async function POST(req: Request) {
   const key = new URL(req.url).searchParams.get("key");
@@ -39,6 +39,15 @@ export async function POST(req: Request) {
       p_final_failed: classifyMtsStatus(item.status) === "failed",
       p_delivered: classifyMtsStatus(item.status) === "delivered",
     });
+    // Причина отказа (internal_errors) приходит только здесь — сохраняем её у получателя, чтобы было видно, почему не дошло.
+    const reason = classifyMtsStatus(item.status) === "failed" ? describeMtsErrors(item.internal_errors) : null;
+    if (reason) {
+      await admin
+        .from("campaign_recipients")
+        .update({ provider_error: reason })
+        .eq("project_id", owner.project_id)
+        .eq("provider_message_id", String(item.message_id));
+    }
   };
 
   const CONCURRENCY = 10;

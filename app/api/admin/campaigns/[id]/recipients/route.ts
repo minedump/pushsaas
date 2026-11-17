@@ -38,7 +38,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
   const { data: rows } = await admin
     .from("campaign_recipients")
-    .select("channel, contact, status, clicked_at, opened_at, unsubscribed_at, created_at, delivered_at, provider_status")
+    .select("channel, contact, status, clicked_at, opened_at, unsubscribed_at, created_at, delivered_at, provider_status, provider_error")
     .eq("campaign_id", campaignId)
     .order("created_at", { ascending: true });
 
@@ -80,7 +80,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     campaign.channel === "email"
       ? ["channel", "contact", "status", "clicked", "opened", "unsubscribed", "created_at"]
       : campaign.channel === "sms"
-      ? ["channel", "contact", "status", "delivered_by_operator", "operator_status", "clicked", "created_at"]
+      ? ["channel", "contact", "status", "delivered_by_operator", "operator_status", "failure_reason", "clicked", "created_at"]
       : ["channel", "contact", "status", "clicked", "created_at"];
   const lines = [...summary, header.join(";")];
   for (const r of rows ?? []) {
@@ -88,7 +88,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       campaign.channel === "email"
         ? [r.channel, r.contact, r.status, r.clicked_at ? "да" : "нет", r.opened_at ? "да" : "нет", r.unsubscribed_at ? "да" : "нет", r.created_at]
         : campaign.channel === "sms"
-        ? [r.channel, r.contact, r.status, r.delivered_at ? "да" : "нет", r.provider_status || "", r.clicked_at ? "да" : "нет", r.created_at]
+        ? [r.channel, r.contact, r.status, r.delivered_at ? "да" : "нет", r.provider_status || "", (r as { provider_error?: string | null }).provider_error || "", r.clicked_at ? "да" : "нет", r.created_at]
         : [r.channel, r.contact, r.status, r.clicked_at ? "да" : "нет", r.created_at];
     lines.push(row.map(csvEscape).join(";"));
   }
