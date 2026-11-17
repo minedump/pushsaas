@@ -49,5 +49,8 @@ export function formatPhone(digits: string): string {
 // Для UI: "+7 925 ***-**-88"
 export function maskPhone(digits: string): string {
   if (digits.length < 6) return "+" + digits;
+  // Россия и Казахстан: +7 925 ***-**-81 (код страны одна цифра, затем три цифры оператора)
+  if (digits.length === 11 && digits.startsWith("7")) return `+7 ${digits.slice(1, 4)} ***-**-${digits.slice(-2)}`;
+  // остальные страны: код страны не фиксированной длины, показываем как раньше
   return `+${digits.slice(0, digits.length - 9)} ${digits.slice(-9, -6)} ***-**-${digits.slice(-2)}`;
 }

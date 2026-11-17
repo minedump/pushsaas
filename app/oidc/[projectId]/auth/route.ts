@@ -240,14 +240,11 @@ function codeForm(
   const at = cascade.indexOf(channel);
   const others = cascade.filter((c) => c !== channel);
   const nextChannel = (at >= 0 ? cascade.slice(at + 1).find((c) => c !== channel) : undefined) ?? others[0];
-  // Когда показывать повтор и другой способ: через resend_after_seconds после отправки (по умолчанию 5 минут, как срок жизни
-  // кода). Если раньше срока жизни, код ещё действует: рядом с другим способом появляется «Отправить ещё раз» тем же каналом,
-  // а основная кнопка остаётся «Подтвердить» до истечения кода.
+  // Когда предлагать другой способ: через resend_after_seconds после отправки (по умолчанию 5 минут, как срок жизни кода).
+  // Повтор тем же каналом отдельной ссылкой не показываем: когда код истекает, основная кнопка сама меняется на «Отправить ещё раз».
   const resendAfterMs = resolveResendAfter(ctx.config?.resend_after_seconds) * 1000;
   const resendAtMs = new Date(expiresAt).getTime() - OTP_TTL_MS + resendAfterMs;
-  const earlyResend = resendAfterMs < OTP_TTL_MS;
-  const sameChannelBlock = earlyResend ? `<div id="pss-alt-same">${resendForm(action, sid, sig, channel, "Отправить ещё раз")}</div>` : "";
-  const altBlock = sameChannelBlock + (nextChannel ? resendForm(action, sid, sig, nextChannel, RESEND_LABEL[nextChannel]) : "");
+  const altBlock = nextChannel ? resendForm(action, sid, sig, nextChannel, RESEND_LABEL[nextChannel]) : "";
   // Истёк отсчёт — код почти наверняка уже нерабочий (тот же таймер, что и
   // реальный TTL кода, см. OTP_TTL_MS), так что кнопка формы переквалифицируется
   // из «Подтвердить» в «Отправить ещё раз» на ТОТ ЖЕ канал (сам код мог просто
@@ -267,8 +264,6 @@ function codeForm(
   function reveal(){
     if(timer) timer.style.display = "none";
     revealAlt();
-    var same = document.getElementById("pss-alt-same");
-    if(same) same.style.display = "none";
     if(form && submitBtn){
       form.querySelector("input[name=action]").value = "resend";
       var chInput = document.createElement("input");
