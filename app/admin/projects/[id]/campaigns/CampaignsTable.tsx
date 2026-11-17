@@ -23,7 +23,7 @@ type Row = {
   templateName: string | null;
   type: "transactional" | "marketing";
   initiator: "manual" | "api" | "welcome" | "event" | "trigger" | "recurring" | "automation" | "auth";
-  // сколько контактов подразумевалось в рассылке (аудитория до проверки согласия); у ушедших раньше — пусто
+  // сколько получателей выбрано для рассылки (аудитория до проверки согласия); у автоматизаций без рассылки — пусто
   audience_total?: number | null;
   sent_count: number;
   delivered_count: number;
@@ -269,7 +269,7 @@ export default function CampaignsTable({ rows, projectId }: { rows: Row[]; proje
               <SortableTh label="Тип" sortKey="type" active={sortKey === "type"} dir={sortDir} onClick={onSortClick} />
               <SortableTh label="Инициатор" sortKey="initiator" active={sortKey === "initiator"} dir={sortDir} onClick={onSortClick} />
               <SortableTh label="Статус" sortKey="status" active={sortKey === "status"} dir={sortDir} onClick={onSortClick} />
-              <SortableTh label="Контактов" tip="Сколько контактов подразумевалось в рассылке: вся выбранная аудитория до проверки согласия. У рассылок, ушедших раньше, не показывается." sortKey="audience_total" active={sortKey === "audience_total"} dir={sortDir} onClick={onSortClick} right />
+              <SortableTh label="Получателей" tip="Сколько получателей выбрано для рассылки: вся аудитория сегмента или списка на момент запуска, до проверки согласия." sortKey="audience_total" active={sortKey === "audience_total"} dir={sortDir} onClick={onSortClick} right />
               <SortableTh label="Отправлено" sortKey="delivered_count" active={sortKey === "delivered_count"} dir={sortDir} onClick={onSortClick} right />
               <Th right>Доставлено</Th>
               <SortableTh label="Переходы" tip="Сколько получателей перешли по ссылке. Повторные переходы одного человека не считаются." sortKey="clicked_count" active={sortKey === "clicked_count"} dir={sortDir} onClick={onSortClick} right />
