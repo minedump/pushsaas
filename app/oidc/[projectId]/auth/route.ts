@@ -438,7 +438,7 @@ async function attemptSend(
   projectId: string,
   session: SessionRow,
   key: OtpKey,
-  opts?: { forceChannel?: OtpChannel }
+  opts?: { forceChannel?: OtpChannel; excludeChannels?: OtpChannel[] }
 ): Promise<SendAttempt> {
   const firstSend = !session.otp_id;
   if (firstSend) {
@@ -770,10 +770,10 @@ export async function POST(req: Request, routeCtx: { params: Promise<{ projectId
   }
 
   // Провайдер подтвердил реальный провал доставки (см. otp-status/route.ts —
-  // Bytehand/SMSC), поллинг на экране кода это обнаружил. Дальше по каскаду
-  // для ЭТОГО ключа отступать некуда (остальные каналы уже не вышли на этапе
-  // send/send_email, иначе не дошли бы досюда) — пробуем второй ключ, если
-  // ещё не пробовали в этой сессии, точно так же, как при провале самой отправки.
+  // Bytehand/SMSC/МТС), поллинг на экране кода это обнаружил. Каскад мог остановиться на первом канале, который
+  // принял код (дальше по порядку каналы не пробовали), поэтому сперва продолжаем его для ЭТОГО же ключа, пропуская
+  // каналы с проваленной доставкой, и только когда они кончились, пробуем второй ключ (почту), если ещё не пробовали
+  // в этой сессии, точно так же, как при провале самой отправки.
   if (body.action === "delivery_failed") {
     if (!session.otp_id || !session.verifying_key) return new Response("bad session", { status: 400 });
     const key = session.verifying_key;
@@ -793,6 +793,29 @@ export async function POST(req: Request, routeCtx: { params: Promise<{ projectId
       const maskedTarget = key === "phone" ? maskPhone(target) : maskEmail(target);
       const expiresAt = otp?.expires_at || new Date(Date.now() + OTP_TTL_MS).toISOString();
       return codeForm(action, session.id, sig, (otp?.channel as OtpChannel) || "sms", otp?.provider ?? null, maskedTarget, key, expiresAt, ctx);
+    }
+
+    // Канал принял код, но доставка провалилась (например, у номера нет Telegram). Сначала идём дальше по каскаду
+    // для ЭТОГО же ключа (после Telegram SMS), пропуская каналы, где доставка уже провалилась в этой сессии, и только
+    // потом переходим ко второму ключу (почте).
+    {
+      const { data: failedRows } = await admin
+        .from("otp_requests")
+        .select("channel")
+        .eq("project_id", projectId)
+        .eq(key === "phone" ? "phone" : "email", target)
+        .eq("delivery_status", "failed")
+        .gte("created_at", new Date(Date.now() - SESSION_TTL_MS).toISOString());
+      const exclude = [...new Set([(otp?.channel as OtpChannel) || "sms", ...((failedRows ?? []).map((r) => r.channel as OtpChannel))])];
+      if (await allowCodeSend(req, projectId, session.id, target)) {
+        const retryKey: OtpKey = key === "phone" ? { phone: target } : { email: target };
+        const retry = await attemptSend(admin, projectId, session, retryKey, { excludeChannels: exclude });
+        if (retry.ok) {
+          await admin.from("oidc_auth_sessions").update({ otp_id: retry.otpId }).eq("id", session.id);
+          const maskedRetry = key === "phone" ? maskPhone(target) : maskEmail(target);
+          return codeForm(action, session.id, sig, retry.channel, retry.provider, maskedRetry, key, new Date(Date.now() + OTP_TTL_MS).toISOString(), ctx);
+        }
+      }
     }
 
     if (key === "phone") {

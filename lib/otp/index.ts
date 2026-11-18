@@ -189,7 +189,7 @@ export async function findIdentityByDevice(
 // связка ключ+устройство в identity_devices, появившаяся через реальный код
 // в этом же каскаде ранее). Самозаписи "это моё устройство, доверьтесь мне"
 // нет — это была бы лазейка для угона.
-export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChannel?: OtpChannel } = {}): Promise<SendOtpResult> {
+export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChannel?: OtpChannel; excludeChannels?: OtpChannel[] } = {}): Promise<SendOtpResult> {
   const admin = createAdminClient();
   const attempts: ChannelAttempt[] = [];
   const isPhone = "phone" in key;
@@ -255,7 +255,9 @@ export async function sendOtp(projectId: string, key: OtpKey, opts: { forceChann
 
   // Применимые для этого ключа каналы: phone → push/telegram/sms, email → push/email.
   const applicable: OtpChannel[] = isPhone ? ["push", "telegram", "sms"] : ["push", "email"];
-  const configuredOrder = resolveOrder(oidcClient?.config?.channel_order).filter((c) => applicable.includes(c));
+  // excludeChannels: каналы, по которым в этой сессии доставка уже провалилась (код принят провайдером, но не дошёл) — их пропускаем
+  const excluded = opts.excludeChannels || [];
+  const configuredOrder = resolveOrder(oidcClient?.config?.channel_order).filter((c) => applicable.includes(c) && !excluded.includes(c));
   // Явный запрос конкретного канала (кнопка "Отправить ещё раз"/альтернативный
   // канал) уважается, ПОКА у этого канала есть квота. Как только канал выбрал
   // свои 3 отправки за 10 минут — тем же каналом больше не шлём никого, даже
