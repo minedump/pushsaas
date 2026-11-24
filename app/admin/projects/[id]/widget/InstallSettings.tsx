@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconGripVertical, IconPlus, IconTrash, IconUpload } from "@tabler/icons-react";
-import { Button, Card, ColorField, Input, Label, SegmentedControl, Textarea, Toggle, useDialogs } from "@/app/ui";
+import { Button, Card, ColorField, Input, SegmentedControl, Textarea, Toggle, useDialogs } from "@/app/ui";
 import { CustomSelect } from "@/app/ui/CustomSelect";
 import {
   CUSTOM_IMAGE_SCENE,
@@ -17,6 +17,7 @@ import {
 import type { CornerRadius } from "@/lib/widget-config";
 import InstallPreview from "./InstallPreview";
 import SitePreviewLink from "./SitePreviewLink";
+import { Field, FieldGrid, FormSection } from "./FormSection";
 
 const RADIUS_LABEL: Record<CornerRadius, string> = {
   none: "Без закругления",
@@ -171,41 +172,36 @@ export default function InstallSettings({
         <Card className={`flex flex-col gap-3 ${busy ? "opacity-60" : ""}`}>
           <Toggle checked={enabled} onChange={setEnabled} label="Показывать окно" />
 
-          <div>
-            <Label>Заголовок окна</Label>
+          <Field label="Заголовок окна">
             <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Установите приложение" maxLength={60} />
-          </div>
-          <div>
-            <Label>Текст над шагами</Label>
+          </Field>
+          <Field label="Текст над шагами">
             <Textarea value={intro} onChange={(e) => setIntro(e.target.value)} rows={3} maxLength={240} placeholder="Зачем ставить приложение на экран телефона" />
-          </div>
+          </Field>
+          <Field label="Текст кнопки">
+            <Input value={buttonText} onChange={(e) => setButtonText(e.target.value)} placeholder="Понятно" maxLength={30} />
+          </Field>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <Label>Текст кнопки</Label>
-              <Input value={buttonText} onChange={(e) => setButtonText(e.target.value)} placeholder="Понятно" maxLength={30} />
-            </div>
-            <div>
-              <Label>Скругление кнопки</Label>
+          <FormSection title="Оформление">
+            <FieldGrid>
+              <Field label="Цвет кнопки">
+                <ColorField value={buttonColor} onChange={setButtonColor} presets={BG_COLOR_PRESETS} />
+              </Field>
+              <Field label="Цвет текста кнопки">
+                <ColorField value={buttonTextColor} onChange={setButtonTextColor} presets={TEXT_COLOR_PRESETS} />
+              </Field>
+            </FieldGrid>
+            <Field label="Скругление кнопки">
               <CustomSelect
                 value={buttonRadius}
                 onChange={(v) => setButtonRadius(v as CornerRadius)}
                 options={(Object.keys(RADIUS_LABEL) as CornerRadius[]).map((r) => ({ value: r, label: RADIUS_LABEL[r] }))}
                 className="w-full"
               />
-            </div>
-            <div>
-              <Label>Цвет кнопки</Label>
-              <ColorField value={buttonColor} onChange={setButtonColor} presets={BG_COLOR_PRESETS} />
-            </div>
-            <div>
-              <Label>Цвет текста кнопки</Label>
-              <ColorField value={buttonTextColor} onChange={setButtonTextColor} presets={TEXT_COLOR_PRESETS} />
-            </div>
-          </div>
+            </Field>
+          </FormSection>
 
-          <div className="border-t border-border pt-3">
-            <div className="text-sm font-semibold text-ink mb-2">Шаги инструкции</div>
+          <FormSection title="Шаги инструкции">
             <SegmentedControl
               value={platform}
               onChange={setPlatform}
@@ -213,7 +209,6 @@ export default function InstallSettings({
                 { value: "ios", label: "iPhone" },
                 { value: "android", label: "Android" },
               ]}
-              className="mb-3"
             />
 
             {list.length === 0 && (
@@ -302,14 +297,14 @@ export default function InstallSettings({
               ))}
             </div>
 
-            <div className="mt-2">
+            <div>
               <Button type="button" variant="secondary" size="sm" onClick={addStep}>
                 <IconPlus size={15} stroke={1.8} />
                 Добавить шаг
               </Button>
             </div>
             {!hasManifest && (
-              <p className="text-xs text-ink-faint mt-2 mb-0">
+              <p className="text-xs text-ink-faint m-0">
                 Манифест пока не создан — в схемах будет буква на плашке.{" "}
                 <a href={`/admin/projects/${projectId}/settings`} className="text-accent underline">
                   Создать манифест
@@ -317,7 +312,7 @@ export default function InstallSettings({
                 .
               </p>
             )}
-          </div>
+          </FormSection>
 
           <div>
             <Button size="md" disabled={busy} onClick={save}>

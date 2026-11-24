@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Card, ColorField, Input, Label, Textarea, Toggle, useDialogs } from "@/app/ui";
+import { Button, Card, ColorField, Input, Textarea, Toggle, useDialogs } from "@/app/ui";
 import { CustomSelect } from "@/app/ui/CustomSelect";
 import {
   DEFAULT_GUIDES,
@@ -16,6 +16,7 @@ import type { ButtonPosition, ButtonSize, CornerRadius } from "@/lib/widget-conf
 import NotifyPreview from "./NotifyPreview";
 import ShowRulesFields from "./ShowRulesFields";
 import SitePreviewLink from "./SitePreviewLink";
+import { Field, FieldGrid, FormSection } from "./FormSection";
 
 const POSITION_LABEL: Record<ButtonPosition, string> = {
   "bottom-right": "Справа внизу",
@@ -32,27 +33,6 @@ const RADIUS_LABEL: Record<CornerRadius, string> = {
 };
 const BG_COLOR_PRESETS = ["#2c4a66", "#111827", "#2563eb", "#7c3aed", "#16a34a", "#ea580c", "#dc2626", "#0d9488"];
 const TEXT_COLOR_PRESETS = ["#ffffff", "#0a0a0a", "#f5f5f5", "#374151"];
-
-function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-3 pt-3 border-t border-border">
-      <div>
-        <h3 className="text-sm font-semibold">{title}</h3>
-        {hint && <p className="text-xs text-ink-faint mt-0.5">{hint}</p>}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <Label>{label}</Label>
-      {children}
-    </div>
-  );
-}
 
 const toLines = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
 
@@ -121,7 +101,7 @@ export default function NotifySettings({
           <Toggle checked={cfg.windowEnabled} onChange={(v) => set({ windowEnabled: v })} label="Показывать окно с предложением" />
           <Toggle checked={cfg.bellEnabled} onChange={(v) => set({ bellEnabled: v })} label="Показывать иконку-колокольчик" />
 
-          <Section title="Окно с предложением">
+          <FormSection title="Окно с предложением">
             <Field label="Заголовок">
               <Input value={cfg.title} onChange={(e) => set({ title: e.target.value })} maxLength={60} />
             </Field>
@@ -149,35 +129,38 @@ export default function NotifySettings({
             <Field label="Мелкая подпись под кнопками">
               <Input value={cfg.note} onChange={(e) => set({ note: e.target.value })} maxLength={80} placeholder="Можно оставить пустой" />
             </Field>
-          </Section>
+          </FormSection>
 
-          <Section title="Оформление окна">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Цвет кнопки и акцентов">
-                <ColorField value={cfg.color} onChange={(v) => set({ color: v })} presets={BG_COLOR_PRESETS} />
-              </Field>
-              <Field label="Цвет текста на кнопке">
-                <ColorField value={cfg.textColor} onChange={(v) => set({ textColor: v })} presets={TEXT_COLOR_PRESETS} />
-              </Field>
+          <FormSection title="Оформление">
+            <FieldGrid>
               <Field label="Заливка окна">
                 <ColorField value={cfg.cardBg} onChange={(v) => set({ cardBg: v })} presets={["#ffffff", "#f8fafc", "#111827"]} />
               </Field>
               <Field label="Цвет текста окна">
                 <ColorField value={cfg.cardTextColor} onChange={(v) => set({ cardTextColor: v })} presets={["#16202a", "#0a0a0a", "#ffffff"]} />
               </Field>
-            </div>
+              <Field label="Цвет кнопки и акцентов">
+                <ColorField value={cfg.color} onChange={(v) => set({ color: v })} presets={BG_COLOR_PRESETS} />
+              </Field>
+              <Field label="Цвет текста кнопки">
+                <ColorField value={cfg.textColor} onChange={(v) => set({ textColor: v })} presets={TEXT_COLOR_PRESETS} />
+              </Field>
+            </FieldGrid>
             <Field label="Скругление">
               <CustomSelect value={cfg.borderRadius} onChange={(v) => set({ borderRadius: v as CornerRadius })} options={radiusOptions} className="w-full" />
             </Field>
-          </Section>
+          </FormSection>
 
           <ShowRulesFields title="Когда показывать окно" rules={cfg.show} onChange={(show) => set({ show })} />
 
-          <Section title="Иконка-колокольчик" hint="Появляется после «Не сейчас», когда пройдёт пауза, а также если уведомления запрещены в браузере. Нажатие открывает окно по состоянию устройства.">
+          <FormSection title="Иконка-колокольчик" hint="Появляется после «Не сейчас», когда пройдёт пауза, а также если уведомления запрещены в браузере. Нажатие открывает окно по состоянию устройства.">
             <Field label="Подпись для читалок экрана и всплывающая подсказка">
               <Input value={cfg.bellLabel} onChange={(e) => set({ bellLabel: e.target.value })} maxLength={40} />
             </Field>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          </FormSection>
+
+          <FormSection title="Оформление иконки">
+            <FieldGrid>
               <Field label="Угол экрана">
                 <CustomSelect
                   value={cfg.bellPosition}
@@ -194,21 +177,21 @@ export default function NotifySettings({
                   className="w-full"
                 />
               </Field>
-              <Field label="Цвет">
+              <Field label="Цвет иконки">
                 <ColorField value={cfg.bellColor} onChange={(v) => set({ bellColor: v })} presets={BG_COLOR_PRESETS} />
               </Field>
               <Field label="Цвет колокольчика">
                 <ColorField value={cfg.bellTextColor} onChange={(v) => set({ bellTextColor: v })} presets={TEXT_COLOR_PRESETS} />
               </Field>
-            </div>
+            </FieldGrid>
             <Field label="Скругление">
               <CustomSelect value={cfg.bellRadius} onChange={(v) => set({ bellRadius: v as CornerRadius })} options={radiusOptions} className="w-full" />
             </Field>
-          </Section>
+          </FormSection>
 
           <ShowRulesFields variant="bell" title="Когда показывать иконку" rules={cfg.bellShow} onChange={(bellShow) => set({ bellShow })} />
 
-          <Section
+          <FormSection
             title="Инструкции по устройствам"
             hint="Шаги без картинок. Название кнопки или пункта меню выделяйте **двумя звёздочками**: так оно станет жирным. Посетитель сразу видит инструкцию своего устройства и может переключиться на другое."
           >
@@ -233,7 +216,7 @@ export default function NotifySettings({
                 Вернуть стандартный текст
               </Button>
             </div>
-          </Section>
+          </FormSection>
 
           <details className="pt-3 border-t border-border">
             <summary className="text-sm font-semibold cursor-pointer">Тексты остальных экранов</summary>

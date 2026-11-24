@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Card, ColorField, Input, Label, SegmentedControl, Textarea, Toggle, useDialogs } from "@/app/ui";
+import { Button, Card, ColorField, Input, SegmentedControl, Textarea, Toggle, useDialogs } from "@/app/ui";
 import { CustomSelect } from "@/app/ui/CustomSelect";
 import type { ButtonConfig, ButtonPosition, ButtonSize, CornerRadius, PromptConfig } from "@/lib/widget-config";
 import ButtonPreview from "./ButtonPreview";
@@ -11,6 +11,7 @@ import { SenderaApiDocs } from "./SenderaApiDocs";
 import InstallSettings from "./InstallSettings";
 import SitePreviewLink from "./SitePreviewLink";
 import ShowRulesFields from "./ShowRulesFields";
+import { Field, FieldGrid, FormSection } from "./FormSection";
 import NotifySettings from "./NotifySettings";
 import type { NotifyConfig } from "@/lib/notify-config";
 import type { InstallConfig } from "@/lib/install-guide";
@@ -113,49 +114,45 @@ export default function WidgetSettings({
         <Card className={`flex flex-col gap-3 ${busyButton ? "opacity-60" : ""}`}>
           <Toggle checked={button.enabled} onChange={(v) => setButton({ ...button, enabled: v })} label="Показывать кнопку" />
 
-          <div>
-            <Label>Текст на кнопке</Label>
+          <Field label="Текст на кнопке">
             <Input value={button.text} onChange={(e) => setButton({ ...button, text: e.target.value })} placeholder="Уведомления" />
-          </div>
-          <div>
-            <Label>Скругление</Label>
-            <CustomSelect
-              value={button.borderRadius}
-              onChange={(v) => setButton({ ...button, borderRadius: v as CornerRadius })}
-              options={(Object.keys(RADIUS_LABEL) as CornerRadius[]).map((r) => ({ value: r, label: RADIUS_LABEL[r] }))}
-              className="w-full"
-            />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <Label>Цвет</Label>
-              <ColorField value={button.color} onChange={(v) => setButton({ ...button, color: v })} presets={BG_COLOR_PRESETS} />
-            </div>
-            <div>
-              <Label>Цвет текста</Label>
-              <ColorField value={button.textColor} onChange={(v) => setButton({ ...button, textColor: v })} presets={TEXT_COLOR_PRESETS} />
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <Label>Угол экрана</Label>
+          </Field>
+
+          <FormSection title="Оформление">
+            <FieldGrid>
+              <Field label="Угол экрана">
+                <CustomSelect
+                  value={button.position}
+                  onChange={(v) => setButton({ ...button, position: v as ButtonPosition })}
+                  options={(Object.keys(POSITION_LABEL) as ButtonPosition[]).map((p) => ({ value: p, label: POSITION_LABEL[p] }))}
+                  className="w-full"
+                />
+              </Field>
+              <Field label="Размер">
+                <CustomSelect
+                  value={button.size}
+                  onChange={(v) => setButton({ ...button, size: v as ButtonSize })}
+                  options={(Object.keys(SIZE_LABEL) as ButtonSize[]).map((s) => ({ value: s, label: SIZE_LABEL[s] }))}
+                  className="w-full"
+                />
+              </Field>
+              <Field label="Цвет кнопки">
+                <ColorField value={button.color} onChange={(v) => setButton({ ...button, color: v })} presets={BG_COLOR_PRESETS} />
+              </Field>
+              <Field label="Цвет текста кнопки">
+                <ColorField value={button.textColor} onChange={(v) => setButton({ ...button, textColor: v })} presets={TEXT_COLOR_PRESETS} />
+              </Field>
+            </FieldGrid>
+            <Field label="Скругление">
               <CustomSelect
-                value={button.position}
-                onChange={(v) => setButton({ ...button, position: v as ButtonPosition })}
-                options={(Object.keys(POSITION_LABEL) as ButtonPosition[]).map((p) => ({ value: p, label: POSITION_LABEL[p] }))}
+                value={button.borderRadius}
+                onChange={(v) => setButton({ ...button, borderRadius: v as CornerRadius })}
+                options={(Object.keys(RADIUS_LABEL) as CornerRadius[]).map((r) => ({ value: r, label: RADIUS_LABEL[r] }))}
                 className="w-full"
               />
-            </div>
-            <div>
-              <Label>Размер</Label>
-              <CustomSelect
-                value={button.size}
-                onChange={(v) => setButton({ ...button, size: v as ButtonSize })}
-                options={(Object.keys(SIZE_LABEL) as ButtonSize[]).map((s) => ({ value: s, label: SIZE_LABEL[s] }))}
-                className="w-full"
-              />
-            </div>
-          </div>
+            </Field>
+          </FormSection>
+
           <ShowRulesFields rules={button.show} onChange={(show) => setButton({ ...button, show })} />
 
           <div>
@@ -190,71 +187,64 @@ export default function WidgetSettings({
         <Card className={`flex flex-col gap-3 ${busyPrompt ? "opacity-60" : ""}`}>
           <Toggle checked={prompt.enabled} onChange={(v) => setPrompt({ ...prompt, enabled: v })} label="Показывать плашку" />
 
-          <div>
-            <Label>Заголовок</Label>
+          <Field label="Заголовок">
             <Input value={prompt.title} onChange={(e) => setPrompt({ ...prompt, title: e.target.value })} placeholder="Получайте уведомления" />
-          </div>
-          <div>
-            <Label>Текст</Label>
+          </Field>
+          <Field label="Текст">
             <Textarea
               value={prompt.body}
               onChange={(e) => setPrompt({ ...prompt, body: e.target.value })}
               rows={2}
               placeholder="Узнавайте первыми о заказах и акциях"
             />
-          </div>
-          <div>
-            <Label>Текст на iPhone (сайт не добавлен на «Домой»)</Label>
+          </Field>
+          <Field
+            label="Текст на iPhone (сайт не добавлен на «Домой»)"
+            hint="Safari на iPhone вне режима «На экране «Домой»» не умеет спрашивать разрешение на уведомления — вместо кнопки «Разрешить» показывается этот текст с подсказкой."
+          >
             <Textarea
               value={prompt.iosBody}
               onChange={(e) => setPrompt({ ...prompt, iosBody: e.target.value })}
               rows={2}
               placeholder="Добавьте сайт на экран «Домой», чтобы получать уведомления на iPhone."
             />
-            <p className="text-xs text-ink-faint mt-1">
-              Safari на iPhone вне режима «На экране «Домой»» не умеет спрашивать разрешение на уведомления — вместо
-              кнопки «Разрешить» показывается этот текст с подсказкой.
-            </p>
-          </div>
-          <div>
-            <Label>Скругление</Label>
-            <CustomSelect
-              value={prompt.borderRadius}
-              onChange={(v) => setPrompt({ ...prompt, borderRadius: v as CornerRadius })}
-              options={(Object.keys(RADIUS_LABEL) as CornerRadius[]).map((r) => ({ value: r, label: RADIUS_LABEL[r] }))}
-              className="w-full"
-            />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <Label>Заливка плашки</Label>
-              <ColorField value={prompt.cardBg} onChange={(v) => setPrompt({ ...prompt, cardBg: v })} presets={BG_COLOR_PRESETS} />
-            </div>
-            <div>
-              <Label>Основной цвет</Label>
-              <ColorField value={prompt.cardTextColor} onChange={(v) => setPrompt({ ...prompt, cardTextColor: v })} presets={TEXT_COLOR_PRESETS} />
-            </div>
-            <div>
-              <Label>Цвет кнопки «Разрешить»</Label>
-              <ColorField value={prompt.color} onChange={(v) => setPrompt({ ...prompt, color: v })} presets={BG_COLOR_PRESETS} />
-            </div>
-            <div>
-              <Label>Цвет текста «Разрешить»</Label>
-              <ColorField value={prompt.textColor} onChange={(v) => setPrompt({ ...prompt, textColor: v })} presets={TEXT_COLOR_PRESETS} />
-            </div>
-            <div>
-              <Label>Цвет заливки «Не сейчас»</Label>
-              <ColorField value={prompt.secondaryBg} onChange={(v) => setPrompt({ ...prompt, secondaryBg: v })} presets={BG_COLOR_PRESETS} />
-            </div>
-            <div>
-              <Label>Цвет текста «Не сейчас»</Label>
-              <ColorField
-                value={prompt.secondaryColor}
-                onChange={(v) => setPrompt({ ...prompt, secondaryColor: v })}
-                presets={TEXT_COLOR_PRESETS}
+          </Field>
+
+          <FormSection title="Оформление">
+            <FieldGrid>
+              <Field label="Заливка плашки">
+                <ColorField value={prompt.cardBg} onChange={(v) => setPrompt({ ...prompt, cardBg: v })} presets={BG_COLOR_PRESETS} />
+              </Field>
+              <Field label="Цвет текста плашки">
+                <ColorField value={prompt.cardTextColor} onChange={(v) => setPrompt({ ...prompt, cardTextColor: v })} presets={TEXT_COLOR_PRESETS} />
+              </Field>
+              <Field label="Цвет кнопки «Разрешить»">
+                <ColorField value={prompt.color} onChange={(v) => setPrompt({ ...prompt, color: v })} presets={BG_COLOR_PRESETS} />
+              </Field>
+              <Field label="Цвет текста «Разрешить»">
+                <ColorField value={prompt.textColor} onChange={(v) => setPrompt({ ...prompt, textColor: v })} presets={TEXT_COLOR_PRESETS} />
+              </Field>
+              <Field label="Цвет кнопки «Не сейчас»">
+                <ColorField value={prompt.secondaryBg} onChange={(v) => setPrompt({ ...prompt, secondaryBg: v })} presets={BG_COLOR_PRESETS} />
+              </Field>
+              <Field label="Цвет текста «Не сейчас»">
+                <ColorField
+                  value={prompt.secondaryColor}
+                  onChange={(v) => setPrompt({ ...prompt, secondaryColor: v })}
+                  presets={TEXT_COLOR_PRESETS}
+                />
+              </Field>
+            </FieldGrid>
+            <Field label="Скругление">
+              <CustomSelect
+                value={prompt.borderRadius}
+                onChange={(v) => setPrompt({ ...prompt, borderRadius: v as CornerRadius })}
+                options={(Object.keys(RADIUS_LABEL) as CornerRadius[]).map((r) => ({ value: r, label: RADIUS_LABEL[r] }))}
+                className="w-full"
               />
-            </div>
-          </div>
+            </Field>
+          </FormSection>
+
           <ShowRulesFields rules={prompt.show} onChange={(show) => setPrompt({ ...prompt, show })} />
 
           <div>

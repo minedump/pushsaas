@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { IconCopy, IconExternalLink } from "@tabler/icons-react";
-import { Button, Input, Label, useDialogs } from "@/app/ui";
+import { Button, Input, useDialogs } from "@/app/ui";
+import { FormSection } from "./FormSection";
 
 // «Посмотреть на сайте»: открывает страницу сайта клиента с параметром
 // sendera_preview=<токен> — основной скрипт на сайте по нему подгружает
@@ -125,8 +126,10 @@ export default function SitePreviewLink({
   }
 
   return (
-    <div className="border-t border-border pt-3 flex flex-col gap-2">
-      <Label>Предпросмотр на сайте</Label>
+    <FormSection
+      title="Предпросмотр на сайте"
+      hint="Покажет виджет на вашем сайте с сохранёнными настройками, даже если он выключен. Покупатели его не видят. Ссылка действует 30 минут."
+    >
       <div className="flex gap-2 flex-wrap items-stretch">
         <Input
           className="flex-1 min-w-[220px]"
@@ -153,10 +156,6 @@ export default function SitePreviewLink({
           className="w-full font-mono text-xs"
         />
       )}
-      <p className="text-xs text-ink-faint m-0">
-        Покажет виджет на вашем сайте с сохранёнными настройками, даже если он выключен. Покупатели его не видят. Ссылка
-        действует 30 минут.
-      </p>
-    </div>
+    </FormSection>
   );
 }
