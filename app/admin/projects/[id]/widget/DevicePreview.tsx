@@ -67,7 +67,7 @@ export function DeviceStage({ device, children, skeleton = true }: { device: Pre
           {children}
         </div>
       ) : (
-        <div className="relative w-full h-[340px] rounded-[10px] border border-border-strong bg-surface overflow-hidden">
+        <div className="relative w-full aspect-[16/9] min-h-[340px] rounded-[10px] border border-border-strong bg-surface overflow-hidden">
           {skeleton && <SiteSkeleton />}
           {children}
         </div>
