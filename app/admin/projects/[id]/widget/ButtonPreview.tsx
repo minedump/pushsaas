@@ -20,7 +20,6 @@ export default function ButtonPreview({ config }: { config: ButtonConfig }) {
         { value: "desktop", label: "Компьютер" },
       ]}
     >
-      {!config.enabled && <p className="text-xs text-ink-faint mt-2 mb-0">Кнопка выключена — на сайте её не будет, пока вы её не включите и не сохраните.</p>}
       <DeviceStage device={device}>
         <div
           className="absolute inline-flex items-center font-semibold"
