@@ -120,9 +120,6 @@ export default function NotifySettings({
         <Card className={`flex flex-col gap-3 ${busy ? "opacity-60" : ""}`}>
           <Toggle checked={cfg.windowEnabled} onChange={(v) => set({ windowEnabled: v })} label="Показывать окно с предложением" />
           <Toggle checked={cfg.bellEnabled} onChange={(v) => set({ bellEnabled: v })} label="Показывать иконку-колокольчик" />
-          <p className="text-xs text-ink-faint -mt-1">
-            Иконка и «Кнопка подписки» занимают один угол, поэтому обычно включают что-то одно.
-          </p>
 
           <Section title="Окно с предложением">
             <Field label="Заголовок">
