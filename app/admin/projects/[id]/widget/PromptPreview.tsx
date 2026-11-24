@@ -83,7 +83,10 @@ export default function PromptPreview({ config }: { config: PromptConfig }) {
         { value: "ios", label: "iPhone вне «Домой»" },
       ]}
     >
-      <DeviceStage device={view === "desktop" ? "desktop" : "phone"}>{config.enabled && <Card config={config} variant={view} />}</DeviceStage>
+      {!config.enabled && <p className="text-xs text-ink-faint mt-2 mb-0">Плашка выключена — на сайте её не будет, пока вы её не включите и не сохраните.</p>}
+      <DeviceStage device={view === "desktop" ? "desktop" : "phone"}>
+        <Card config={config} variant={view} />
+      </DeviceStage>
     </PreviewCard>
   );
 }

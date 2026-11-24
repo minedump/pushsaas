@@ -20,17 +20,16 @@ export default function ButtonPreview({ config }: { config: ButtonConfig }) {
         { value: "desktop", label: "Компьютер" },
       ]}
     >
+      {!config.enabled && <p className="text-xs text-ink-faint mt-2 mb-0">Кнопка выключена — на сайте её не будет, пока вы её не включите и не сохраните.</p>}
       <DeviceStage device={device}>
-        {config.enabled && (
-          <div
-            className="absolute inline-flex items-center font-semibold"
-            style={{ ...buttonBaseStyle(config), position: "absolute", zIndex: 1, cursor: "default" }}
-          >
-            <span className="shrink-0" dangerouslySetInnerHTML={{ __html: BELL_SVG }} />
-            <span className="ml-2">{config.text || "Уведомления"}</span>
-            <span className="ml-2 opacity-70 shrink-0" aria-hidden dangerouslySetInnerHTML={{ __html: CLOSE_SVG }} />
-          </div>
-        )}
+        <div
+          className="absolute inline-flex items-center font-semibold"
+          style={{ ...buttonBaseStyle(config), position: "absolute", zIndex: 1, cursor: "default" }}
+        >
+          <span className="shrink-0" dangerouslySetInnerHTML={{ __html: BELL_SVG }} />
+          <span className="ml-2">{config.text || "Уведомления"}</span>
+          <span className="ml-2 opacity-70 shrink-0" aria-hidden dangerouslySetInnerHTML={{ __html: CLOSE_SVG }} />
+        </div>
       </DeviceStage>
     </PreviewCard>
   );
