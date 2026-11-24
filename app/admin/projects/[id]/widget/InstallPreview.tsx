@@ -58,7 +58,6 @@ export default function InstallPreview({ config, projectId, version }: { config:
         />
       }
     >
-      {!config.enabled && <p className="text-xs text-ink-faint mt-2 mb-0">Виджет выключен — на сайте окно не откроется, пока вы его не включите и не сохраните.</p>}
 
       <DeviceStage device={device}>
         {open ? (
