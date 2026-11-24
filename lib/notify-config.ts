@@ -25,7 +25,7 @@ export const GUIDE_TAB_LABEL: Record<GuideKey, string> = {
 };
 // Названия в настройках (там iPhone разделён на два случая).
 export const GUIDE_ADMIN_LABEL: Record<GuideKey, string> = {
-  iosHome: "iPhone вне «Домой»",
+  iosHome: "iPhone: сайт ещё не на экране «Домой»",
   ios: "iPhone: сайт на экране «Домой»",
   android: "Android (Chrome и похожие)",
   chrome: "Компьютер: Chrome, Edge, Яндекс Браузер, Opera",
