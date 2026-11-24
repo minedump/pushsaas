@@ -147,9 +147,14 @@ export default function NotifySettings({
                 <ColorField value={cfg.textColor} onChange={(v) => set({ textColor: v })} presets={TEXT_COLOR_PRESETS} />
               </Field>
             </FieldGrid>
-            <Field label="Скругление">
-              <CustomSelect value={cfg.borderRadius} onChange={(v) => set({ borderRadius: v as CornerRadius })} options={radiusOptions} className="w-full" />
-            </Field>
+            <FieldGrid>
+              <Field label="Скругление окна">
+                <CustomSelect value={cfg.borderRadius} onChange={(v) => set({ borderRadius: v as CornerRadius })} options={radiusOptions} className="w-full" />
+              </Field>
+              <Field label="Скругление кнопок">
+                <CustomSelect value={cfg.buttonRadius} onChange={(v) => set({ buttonRadius: v as CornerRadius })} options={radiusOptions} className="w-full" />
+              </Field>
+            </FieldGrid>
           </FormSection>
 
           <ShowRulesFields title="Когда показывать окно" rules={cfg.show} onChange={(show) => set({ show })} />

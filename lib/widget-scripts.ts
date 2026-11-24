@@ -245,7 +245,7 @@ export function promptBlock(projectId: string, config: PromptConfig, preview = f
   const secondaryColor = config.secondaryColor;
   const secondaryBg = config.secondaryBg;
   const cardTextColor = config.cardTextColor;
-  const actionRadius = PROMPT_BUTTON_RADIUS_PX[config.borderRadius];
+  const actionRadius = PROMPT_BUTTON_RADIUS_PX[config.buttonRadius];
   const mobileCss = toCssText({ ...promptMobileStyle(config), transition: "transform .28s ease,opacity .28s ease", transform: "translateY(-100%)" });
   const desktopCss = toCssText({ ...promptDesktopStyle(config), transition: "transform .28s ease,opacity .28s ease", opacity: 0, transform: "translateY(-6px) scale(.96)" });
 

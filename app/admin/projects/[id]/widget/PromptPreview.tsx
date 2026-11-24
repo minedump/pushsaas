@@ -46,7 +46,7 @@ function Card({ config, variant }: { config: PromptConfig; variant: "mobile" | "
           style={{
             background: config.secondaryBg || "#f0f2f4",
             color: config.secondaryColor || "#5a6570",
-            borderRadius: PROMPT_BUTTON_RADIUS_PX[config.borderRadius],
+            borderRadius: PROMPT_BUTTON_RADIUS_PX[config.buttonRadius],
           }}
         >
           Не сейчас
@@ -58,7 +58,7 @@ function Card({ config, variant }: { config: PromptConfig; variant: "mobile" | "
             style={{
               background: config.color || "#2c4a66",
               color: config.textColor || "#ffffff",
-              borderRadius: PROMPT_BUTTON_RADIUS_PX[config.borderRadius],
+              borderRadius: PROMPT_BUTTON_RADIUS_PX[config.buttonRadius],
             }}
           >
             Разрешить

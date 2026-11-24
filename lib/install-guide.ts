@@ -21,6 +21,7 @@ export type InstallConfig = {
   buttonText: string;
   buttonColor: string;
   buttonTextColor: string;
+  windowRadius: CornerRadius;
   buttonRadius: CornerRadius;
   ios: InstallStep[];
   android: InstallStep[];
@@ -55,6 +56,7 @@ export const DEFAULT_INSTALL: InstallConfig = {
   buttonText: "Понятно",
   buttonColor: "#2c4a66",
   buttonTextColor: "#ffffff",
+  windowRadius: "md",
   buttonRadius: "md",
   ios: [
     { text: "Откройте сайт в **Safari**", scene: "ios-open", image: "" },
@@ -116,6 +118,7 @@ export function resolveInstallConfig(raw: unknown, projectId: string): InstallCo
     buttonText: str(c.buttonText, DEFAULT_INSTALL.buttonText, 30),
     buttonColor: hex(c.buttonColor, DEFAULT_INSTALL.buttonColor),
     buttonTextColor: hex(c.buttonTextColor, DEFAULT_INSTALL.buttonTextColor),
+    windowRadius: RADII.includes(c.windowRadius as CornerRadius) ? (c.windowRadius as CornerRadius) : DEFAULT_INSTALL.windowRadius,
     buttonRadius: RADII.includes(c.buttonRadius as CornerRadius) ? (c.buttonRadius as CornerRadius) : DEFAULT_INSTALL.buttonRadius,
     ios: resolveSteps(c.ios, "ios", DEFAULT_INSTALL.ios, projectId),
     android: resolveSteps(c.android, "android", DEFAULT_INSTALL.android, projectId),

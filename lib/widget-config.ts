@@ -35,7 +35,9 @@ export type PromptConfig = {
   secondaryBg: string;
   cardBg: string;
   cardTextColor: string;
+  // скругление самой плашки и её кнопок — отдельно, как у всех окон виджетов
   borderRadius: CornerRadius;
+  buttonRadius: CornerRadius;
   // когда показывать — единый стандарт для всех виджетов, см. lib/widget-rules.ts
   show: ShowRules;
 };
@@ -63,6 +65,7 @@ export const DEFAULT_PROMPT: PromptConfig = {
   cardBg: "#ffffff",
   cardTextColor: "#16202a",
   borderRadius: "lg",
+  buttonRadius: "lg",
   show: DEFAULT_SHOW_RULES,
 };
 
@@ -70,6 +73,12 @@ export const BUTTON_POSITIONS: ButtonPosition[] = ["bottom-right", "bottom-left"
 export const BUTTON_SIZES: ButtonSize[] = ["s", "m", "l"];
 export const CORNER_RADIUS_VALUES: CornerRadius[] = ["none", "sm", "md", "lg"];
 const HEX = /^#[0-9a-fA-F]{3,8}$/;
+
+// Единая шкала скругления окон виджетов (окно уведомлений, окно установки).
+// На телефоне окна выезжают снизу листом — скругляются только верхние углы.
+export const WINDOW_RADIUS_PX: Record<CornerRadius, string> = { none: "0", sm: "10px", md: "14px", lg: "18px" };
+// Кнопки внутри окон (высота 40–44px).
+export const WINDOW_BUTTON_RADIUS_PX: Record<CornerRadius, string> = { none: "0", sm: "8px", md: "12px", lg: "999px" };
 
 function resolveCornerRadius(raw: unknown, fallback: CornerRadius): CornerRadius {
   return CORNER_RADIUS_VALUES.includes(raw as CornerRadius) ? (raw as CornerRadius) : fallback;
@@ -104,6 +113,8 @@ export function resolvePromptConfig(raw: unknown): PromptConfig {
     cardBg: typeof c.cardBg === "string" && HEX.test(c.cardBg.trim()) ? c.cardBg.trim() : DEFAULT_PROMPT.cardBg,
     cardTextColor: typeof c.cardTextColor === "string" && HEX.test(c.cardTextColor.trim()) ? c.cardTextColor.trim() : DEFAULT_PROMPT.cardTextColor,
     borderRadius: resolveCornerRadius(c.borderRadius, DEFAULT_PROMPT.borderRadius),
+    // раньше одно скругление было общим для плашки и кнопок — для старых настроек берём его
+    buttonRadius: resolveCornerRadius(c.buttonRadius, resolveCornerRadius(c.borderRadius, DEFAULT_PROMPT.buttonRadius)),
     show: resolveShowRules(c.show, c),
   };
 }

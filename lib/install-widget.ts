@@ -6,6 +6,7 @@
 // же константах INSTALL_UI, чтобы предпросмотр не расходился со скриптом.
 
 import { CLOSE_SVG, WIDGET_Z_INDEX } from "./widget-scripts";
+import { WINDOW_RADIUS_PX } from "./widget-config";
 import { INSTALL_BUTTON_RADIUS_PX, installStepImageUrl, type InstallConfig, type InstallStep } from "./install-guide";
 
 // Цвета и размеры окна — одни и те же для скрипта и предпросмотра.
@@ -36,12 +37,13 @@ export function installTint(color: string): string {
 function installCss(config: InstallConfig): string {
   const u = INSTALL_UI;
   const radius = INSTALL_BUTTON_RADIUS_PX[config.buttonRadius];
+  const wr = WINDOW_RADIUS_PX[config.windowRadius];
   const c = config.buttonColor;
   return [
     `#sendera-install{position:fixed;top:0;right:0;bottom:0;left:0;z-index:${WIDGET_Z_INDEX};display:flex;align-items:center;justify-content:center;padding:16px;background:${u.overlay};opacity:0;transition:opacity .2s ease;font-family:${u.font};-webkit-text-size-adjust:100%}`,
     `#sendera-install *{box-sizing:border-box}`,
     `#sendera-install.pss-i-in{opacity:1}`,
-    `#sendera-install .pss-i-dlg{background:${u.dialogBg};color:${u.text};width:100%;max-width:460px;max-height:min(92vh,780px);border-radius:14px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3);transform:translateY(10px);transition:transform .22s ease;outline:none}`,
+    `#sendera-install .pss-i-dlg{background:${u.dialogBg};color:${u.text};width:100%;max-width:460px;max-height:min(92vh,780px);border-radius:${wr};display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3);transform:translateY(10px);transition:transform .22s ease;outline:none}`,
     `#sendera-install.pss-i-in .pss-i-dlg{transform:none}`,
     `#sendera-install .pss-i-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-bottom:1px solid ${u.line};flex:none}`,
     `#sendera-install .pss-i-title{font-size:16px;font-weight:600;line-height:1.25}`,
@@ -61,7 +63,7 @@ function installCss(config: InstallConfig): string {
     `#sendera-install .pss-i-empty{font-size:13.5px;color:${u.muted}}`,
     `#sendera-install .pss-i-foot{padding:12px 16px 16px;border-top:1px solid ${u.line};flex:none}`,
     `#sendera-install .pss-i-done{width:100%;height:40px;border:0;border-radius:${radius}px;background:${c};color:${config.buttonTextColor};font-family:inherit;font-size:14px;font-weight:600;line-height:1;cursor:pointer}`,
-    `@media (max-width:640px){#sendera-install{align-items:flex-end;padding:0}#sendera-install .pss-i-dlg{max-width:none;border-radius:18px 18px 0 0;max-height:90vh;transform:translateY(24px);padding-bottom:env(safe-area-inset-bottom,0px)}}`,
+    `@media (max-width:640px){#sendera-install{align-items:flex-end;padding:0}#sendera-install .pss-i-dlg{max-width:none;border-radius:${wr} ${wr} 0 0;max-height:90vh;transform:translateY(24px);padding-bottom:env(safe-area-inset-bottom,0px)}}`,
     `@media (prefers-reduced-motion:reduce){#sendera-install,#sendera-install .pss-i-dlg{transition:none}}`,
   ].join("");
 }

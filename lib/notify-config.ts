@@ -148,7 +148,8 @@ export type NotifyConfig = {
   textColor: string;
   cardBg: string;
   cardTextColor: string;
-  borderRadius: CornerRadius;
+  borderRadius: CornerRadius; // окно
+  buttonRadius: CornerRadius; // кнопки в окне
 
   // иконка
   bellLabel: string;
@@ -208,6 +209,7 @@ export const DEFAULT_NOTIFY: NotifyConfig = {
   cardBg: "#ffffff",
   cardTextColor: "#16202a",
   borderRadius: "lg",
+  buttonRadius: "lg",
 
   bellLabel: "Уведомления",
   bellPosition: "bottom-right",
@@ -294,6 +296,8 @@ export function resolveNotifyConfig(raw: unknown): NotifyConfig {
     cardBg: color(c.cardBg, d.cardBg),
     cardTextColor: color(c.cardTextColor, d.cardTextColor),
     borderRadius: radius(c.borderRadius, d.borderRadius),
+    // раньше скругление было общим для окна и кнопок — для старых настроек берём его
+    buttonRadius: radius(c.buttonRadius, radius(c.borderRadius, d.buttonRadius)),
 
     bellLabel: text(c.bellLabel, d.bellLabel, 40),
     bellPosition: BUTTON_POSITIONS.includes(c.bellPosition as ButtonPosition) ? (c.bellPosition as ButtonPosition) : d.bellPosition,

@@ -18,7 +18,7 @@
 import { CLOSE_SVG, BELL_SVG, CHECK_SVG, BUTTON_POSITION_STYLE, IOS_STANDALONE_CHECK, WIDGET_Z_INDEX, toCssText } from "./widget-scripts";
 import { gateScript } from "./widget-gate";
 import { GUIDE_TAB_LABEL, type NotifyConfig } from "./notify-config";
-import type { CornerRadius } from "./widget-config";
+import { WINDOW_BUTTON_RADIUS_PX, WINDOW_RADIUS_PX, type CornerRadius } from "./widget-config";
 
 export type NotifyMode = "live" | "preview" | "static";
 export const NOTIFY_QUERY_PARAM = "sendera_notify";
@@ -29,8 +29,6 @@ const BELL_SIZE_PX = { s: 40, m: 48, l: 56 } as const;
 const BELL_ICON_PX = { s: 18, m: 22, l: 26 } as const;
 // как у остальных виджетов: «большое» скругление — полностью круглая иконка
 const BELL_RADIUS: Record<CornerRadius, string> = { none: "0", sm: "10px", md: "16px", lg: "50%" };
-const BUTTON_RADIUS: Record<CornerRadius, string> = { none: "0", sm: "8px", md: "12px", lg: "999px" };
-const DIALOG_RADIUS: Record<CornerRadius, string> = { none: "0", sm: "10px", md: "14px", lg: "18px" };
 
 function tint(color: string): string {
   return /^#[0-9a-fA-F]{6}$/.test(color) ? `${color}1f` : "rgba(128,128,128,.16)";
@@ -39,8 +37,8 @@ function tint(color: string): string {
 // Одни и те же стили у скрипта и (через него же) у предпросмотра в админке.
 export function notifyCss(c: NotifyConfig): string {
   const accent = c.color;
-  const dr = DIALOG_RADIUS[c.borderRadius];
-  const br = BUTTON_RADIUS[c.borderRadius];
+  const dr = WINDOW_RADIUS_PX[c.borderRadius];
+  const br = WINDOW_BUTTON_RADIUS_PX[c.buttonRadius];
   const size = BELL_SIZE_PX[c.bellSize];
   const icon = BELL_ICON_PX[c.bellSize];
   const line = "rgba(128,128,128,.28)";

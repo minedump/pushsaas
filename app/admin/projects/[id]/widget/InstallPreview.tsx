@@ -5,6 +5,7 @@ import { Button, SegmentedControl } from "@/app/ui";
 import { INSTALL_BUTTON_RADIUS_PX, installStepImageUrl, type InstallConfig, type InstallPlatform } from "@/lib/install-guide";
 import { INSTALL_UI, PHONE_ANDROID_SVG, PHONE_IOS_SVG, installTint } from "@/lib/install-widget";
 import { CLOSE_SVG } from "@/lib/widget-scripts";
+import { WINDOW_RADIUS_PX } from "@/lib/widget-config";
 import { DeviceStage, PreviewCard, type PreviewDevice } from "./DevicePreview";
 
 type Mode = "tabs" | "ios" | "android";
@@ -32,6 +33,7 @@ export default function InstallPreview({ config, projectId, version }: { config:
   const shown: InstallPlatform = mode === "tabs" ? platform : mode;
   const steps = config[shown];
   const u = INSTALL_UI;
+  const wr = WINDOW_RADIUS_PX[config.windowRadius];
   const c = config.buttonColor;
 
   return (
@@ -82,7 +84,7 @@ export default function InstallPreview({ config, projectId, version }: { config:
                 width: "100%",
                 maxWidth: phone ? "none" : 460,
                 maxHeight: phone ? "90%" : "94%",
-                borderRadius: phone ? "18px 18px 0 0" : 14,
+                borderRadius: phone ? `${wr} ${wr} 0 0` : wr,
                 display: "flex",
                 flexDirection: "column",
                 overflow: "hidden",

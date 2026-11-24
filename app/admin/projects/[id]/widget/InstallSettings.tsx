@@ -59,6 +59,7 @@ export default function InstallSettings({
   const [buttonText, setButtonText] = useState(initial.buttonText);
   const [buttonColor, setButtonColor] = useState(initial.buttonColor);
   const [buttonTextColor, setButtonTextColor] = useState(initial.buttonTextColor);
+  const [windowRadius, setWindowRadius] = useState<CornerRadius>(initial.windowRadius);
   const [buttonRadius, setButtonRadius] = useState<CornerRadius>(initial.buttonRadius);
   const [rows, setRows] = useState<Rows>(() => ({ ios: initial.ios.map(withUid), android: initial.android.map(withUid) }));
   const [platform, setPlatform] = useState<InstallPlatform>("ios");
@@ -75,11 +76,12 @@ export default function InstallSettings({
       buttonText: buttonText.trim() || "Понятно",
       buttonColor,
       buttonTextColor,
+      windowRadius,
       buttonRadius,
       ios: rows.ios.map(({ text, scene, image }) => ({ text, scene, image })),
       android: rows.android.map(({ text, scene, image }) => ({ text, scene, image })),
     }),
-    [enabled, title, intro, buttonText, buttonColor, buttonTextColor, buttonRadius, rows]
+    [enabled, title, intro, buttonText, buttonColor, buttonTextColor, windowRadius, buttonRadius, rows]
   );
 
   const list = rows[platform];
@@ -191,14 +193,24 @@ export default function InstallSettings({
                 <ColorField value={buttonTextColor} onChange={setButtonTextColor} presets={TEXT_COLOR_PRESETS} />
               </Field>
             </FieldGrid>
-            <Field label="Скругление кнопки">
-              <CustomSelect
-                value={buttonRadius}
-                onChange={(v) => setButtonRadius(v as CornerRadius)}
-                options={(Object.keys(RADIUS_LABEL) as CornerRadius[]).map((r) => ({ value: r, label: RADIUS_LABEL[r] }))}
-                className="w-full"
-              />
-            </Field>
+            <FieldGrid>
+              <Field label="Скругление окна">
+                <CustomSelect
+                  value={windowRadius}
+                  onChange={(v) => setWindowRadius(v as CornerRadius)}
+                  options={(Object.keys(RADIUS_LABEL) as CornerRadius[]).map((r) => ({ value: r, label: RADIUS_LABEL[r] }))}
+                  className="w-full"
+                />
+              </Field>
+              <Field label="Скругление кнопки">
+                <CustomSelect
+                  value={buttonRadius}
+                  onChange={(v) => setButtonRadius(v as CornerRadius)}
+                  options={(Object.keys(RADIUS_LABEL) as CornerRadius[]).map((r) => ({ value: r, label: RADIUS_LABEL[r] }))}
+                  className="w-full"
+                />
+              </Field>
+            </FieldGrid>
           </FormSection>
 
           <FormSection title="Шаги инструкции">

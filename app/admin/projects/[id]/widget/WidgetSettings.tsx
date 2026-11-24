@@ -235,14 +235,24 @@ export default function WidgetSettings({
                 />
               </Field>
             </FieldGrid>
-            <Field label="Скругление">
-              <CustomSelect
-                value={prompt.borderRadius}
-                onChange={(v) => setPrompt({ ...prompt, borderRadius: v as CornerRadius })}
-                options={(Object.keys(RADIUS_LABEL) as CornerRadius[]).map((r) => ({ value: r, label: RADIUS_LABEL[r] }))}
-                className="w-full"
-              />
-            </Field>
+            <FieldGrid>
+              <Field label="Скругление плашки">
+                <CustomSelect
+                  value={prompt.borderRadius}
+                  onChange={(v) => setPrompt({ ...prompt, borderRadius: v as CornerRadius })}
+                  options={(Object.keys(RADIUS_LABEL) as CornerRadius[]).map((r) => ({ value: r, label: RADIUS_LABEL[r] }))}
+                  className="w-full"
+                />
+              </Field>
+              <Field label="Скругление кнопок">
+                <CustomSelect
+                  value={prompt.buttonRadius}
+                  onChange={(v) => setPrompt({ ...prompt, buttonRadius: v as CornerRadius })}
+                  options={(Object.keys(RADIUS_LABEL) as CornerRadius[]).map((r) => ({ value: r, label: RADIUS_LABEL[r] }))}
+                  className="w-full"
+                />
+              </Field>
+            </FieldGrid>
           </FormSection>
 
           <ShowRulesFields rules={prompt.show} onChange={(show) => setPrompt({ ...prompt, show })} />
