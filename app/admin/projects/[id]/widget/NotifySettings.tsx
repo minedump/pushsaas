@@ -121,13 +121,10 @@ export default function NotifySettings({
           <Toggle checked={cfg.windowEnabled} onChange={(v) => set({ windowEnabled: v })} label="Показывать окно с предложением" />
           <Toggle checked={cfg.bellEnabled} onChange={(v) => set({ bellEnabled: v })} label="Показывать иконку-колокольчик" />
           <p className="text-xs text-ink-faint -mt-1">
-            Если подписаться уже успели, виджет сам ничего не показывает. Окно с инструкцией открывается методом{" "}
-            <code className="font-mono">sendera.openNotifyWidget()</code> или ссылкой с параметром{" "}
-            <code className="font-mono">?sendera_notify=1</code> (например, из кнопки «Настройки уведомлений» в личном кабинете). Иконка и
-            «Кнопка подписки» занимают один угол, поэтому обычно включают что-то одно.
+            Иконка и «Кнопка подписки» занимают один угол, поэтому обычно включают что-то одно.
           </p>
 
-          <Section title="Окно с предложением" hint="Показывается до системного запроса браузера. «Не сейчас» ничего не тратит, а отказ в системном окне почти необратим.">
+          <Section title="Окно с предложением">
             <Field label="Заголовок">
               <Input value={cfg.title} onChange={(e) => set({ title: e.target.value })} maxLength={60} />
             </Field>
