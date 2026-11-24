@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { IconChevronDown } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { Button, Card, ColorField, Input, Textarea, Toggle, useDialogs } from "@/app/ui";
 import { CustomSelect } from "@/app/ui/CustomSelect";
@@ -193,7 +194,7 @@ export default function NotifySettings({
 
           <FormSection
             title="Инструкции по устройствам"
-            hint="Шаги без картинок. Название кнопки или пункта меню выделяйте **двумя звёздочками**: так оно станет жирным. Посетитель сразу видит инструкцию своего устройства и может переключиться на другое."
+            hint="Шаги без картинок. Название кнопки или пункта меню выделяйте **двумя звёздочками**: так оно станет жирным. Посетитель видит инструкцию только для своего устройства — оно определяется автоматически."
           >
             <Field label="Устройство">
               <CustomSelect
@@ -218,8 +219,11 @@ export default function NotifySettings({
             </div>
           </FormSection>
 
-          <details className="pt-3 border-t border-border">
-            <summary className="text-sm font-semibold cursor-pointer">Тексты остальных экранов</summary>
+          <details className="group pt-3 border-t border-border">
+            <summary className="inline-flex items-center gap-1.5 text-sm font-semibold cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+              Тексты остальных экранов
+              <IconChevronDown size={16} stroke={1.8} className="text-ink-faint transition-transform group-open:rotate-180" />
+            </summary>
             <div className="mt-3 flex flex-col gap-3">
               <Field label="Запрещено в браузере: заголовок">
                 <Input value={cfg.blockedTitle} onChange={(e) => set({ blockedTitle: e.target.value })} maxLength={60} />

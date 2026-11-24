@@ -240,6 +240,8 @@ export function notifyBlock(projectId: string, config: NotifyConfig, mode: Notif
     var title = h("div", "pss-n-title"); title.id = "sendera-notify-title";
     dlg.setAttribute("aria-labelledby", title.id);
 
+    // Вкладки устройств — только в предпросмотре админки (STATIC), чтобы переключать инструкции.
+    // Посетителю на сайте устройство определяется само (detectTab), выбор не показываем.
     function tabs(){
       var row = h("div", "pss-n-tabs"); row.setAttribute("role", "group");
       CFG.tabs.forEach(function(t){
@@ -277,7 +279,7 @@ export function notifyBlock(projectId: string, config: NotifyConfig, mode: Notif
       body.appendChild(badge(BELL));
       title.textContent = CFG.blockedTitle; body.appendChild(title);
       body.appendChild(h("p", "pss-n-intro", CFG.blockedIntro));
-      body.appendChild(tabs());
+      if(STATIC) body.appendChild(tabs());
       body.appendChild(stepsList(stepsFor(cur.tab, "enable")));
       cur.status = h("p", "pss-n-status"); cur.status.style.display = "none"; cur.status.setAttribute("role", "status"); body.appendChild(cur.status);
       var chk = h("button", "pss-n-primary", CFG.checkText); chk.type = "button";
@@ -287,7 +289,7 @@ export function notifyBlock(projectId: string, config: NotifyConfig, mode: Notif
       body.appendChild(badge(CHECK));
       title.textContent = CFG.subscribedTitle; body.appendChild(title);
       body.appendChild(h("p", "pss-n-intro", CFG.subscribedIntro));
-      body.appendChild(tabs());
+      if(STATIC) body.appendChild(tabs());
       body.appendChild(stepsList(stepsFor(cur.tab, "disable")));
       foot.appendChild(closeBtn(true));
     } else if(v === "home"){

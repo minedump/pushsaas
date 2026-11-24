@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { CustomSelect } from "@/app/ui/CustomSelect";
 import type { NotifyConfig } from "@/lib/notify-config";
 import { notifyBlock, type NotifyView } from "@/lib/notify-widget";
-import { GUIDE_TAB_LABEL } from "@/lib/notify-config";
 import { DeviceStage, PreviewCard, type PreviewDevice } from "./DevicePreview";
 
 // Предпросмотр окна уведомлений — настоящий скрипт виджета (lib/notify-widget.ts в режиме "static"),
@@ -23,7 +22,6 @@ const SCENE_LABEL: Record<PreviewScene, string> = {
   bell: "Иконка",
 };
 const SCENES: PreviewScene[] = ["offer", "blocked", "subscribed", "home", "done", "bell"];
-const TABS = ["ios", "android", "chrome", "firefox", "safari"] as const;
 
 function frameHtml(config: NotifyConfig, scene: PreviewScene, tab: string, installOn: boolean): string {
   const js = notifyBlock("preview", { ...config, windowEnabled: true, bellEnabled: true }, "static", installOn);
@@ -38,9 +36,9 @@ function frameHtml(config: NotifyConfig, scene: PreviewScene, tab: string, insta
 export default function NotifyPreview({ config, installEnabled }: { config: NotifyConfig; installEnabled: boolean }) {
   const [device, setDevice] = useState<PreviewDevice>("phone");
   const [scene, setScene] = useState<PreviewScene>("offer");
-  const [tab, setTab] = useState<string>("android");
+  // с какой инструкции начать; дальше устройство переключается вкладками внутри окна (они есть только в предпросмотре)
+  const tab = device === "phone" ? "ios" : "chrome";
   const html = useMemo(() => frameHtml(config, scene, tab, installEnabled), [config, scene, tab, installEnabled]);
-  const needsTab = scene === "blocked" || scene === "subscribed";
 
   return (
     <PreviewCard
@@ -51,22 +49,12 @@ export default function NotifyPreview({ config, installEnabled }: { config: Noti
         { value: "desktop", label: "Компьютер" },
       ]}
       controls={
-        <>
-          <CustomSelect
-            value={scene}
-            onChange={(v) => setScene(v as PreviewScene)}
-            options={SCENES.map((s) => ({ value: s, label: SCENE_LABEL[s] }))}
-            className="w-[210px]"
-          />
-          {needsTab && (
-            <CustomSelect
-              value={tab}
-              onChange={(v) => setTab(v)}
-              options={TABS.map((t) => ({ value: t, label: GUIDE_TAB_LABEL[t] }))}
-              className="w-[130px]"
-            />
-          )}
-        </>
+        <CustomSelect
+          value={scene}
+          onChange={(v) => setScene(v as PreviewScene)}
+          options={SCENES.map((s) => ({ value: s, label: SCENE_LABEL[s] }))}
+          className="w-[210px]"
+        />
       }
     >
       {/* тот же макет и заглушка витрины, что у остальных виджетов; рамка со скриптом прозрачная и лежит поверх */}
