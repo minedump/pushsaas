@@ -42,20 +42,22 @@ export default function InstallPreview({ config, projectId, version }: { config:
         { value: "phone", label: "Телефон" },
         { value: "desktop", label: "Компьютер" },
       ]}
+      controls={
+        <SegmentedControl
+          value={mode}
+          onChange={(v) => {
+            setMode(v);
+            setOpen(true);
+          }}
+          options={[
+            { value: "tabs", label: "С вкладками" },
+            { value: "ios", label: "Только iPhone" },
+            { value: "android", label: "Только Android" },
+          ]}
+          className="flex-wrap"
+        />
+      }
     >
-      <SegmentedControl
-        value={mode}
-        onChange={(v) => {
-          setMode(v);
-          setOpen(true);
-        }}
-        options={[
-          { value: "tabs", label: "С вкладками" },
-          { value: "ios", label: "Только iPhone" },
-          { value: "android", label: "Только Android" },
-        ]}
-        className="mt-3 flex-wrap"
-      />
       {!config.enabled && <p className="text-xs text-ink-faint mt-2 mb-0">Виджет выключен — на сайте окно не откроется, пока вы его не включите и не сохраните.</p>}
 
       <DeviceStage device={device}>

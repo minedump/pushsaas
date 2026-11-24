@@ -14,19 +14,23 @@ export function PreviewCard<T extends string>({
   value,
   onChange,
   options,
+  controls,
   children,
 }: {
   title?: string;
   value: T;
   onChange: (v: T) => void;
   options: { value: T; label: string }[];
+  // дополнительные переключатели предпросмотра (экран, устройство) — в одной строке с выбором телефон/компьютер
+  controls?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div>
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="text-sm font-semibold text-ink">{title}</div>
+      <div className="text-sm font-semibold text-ink">{title}</div>
+      <div className="mt-2 flex items-center gap-2 flex-wrap">
         <SegmentedControl value={value} onChange={onChange} options={options} className="flex-wrap" />
+        {controls}
       </div>
       {children}
     </div>

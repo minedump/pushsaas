@@ -54,23 +54,25 @@ export default function NotifyPreview({ config, installEnabled }: { config: Noti
         { value: "phone", label: "Телефон" },
         { value: "desktop", label: "Компьютер" },
       ]}
-    >
-      <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <CustomSelect
-          value={scene}
-          onChange={(v) => setScene(v as PreviewScene)}
-          options={SCENES.map((s) => ({ value: s, label: SCENE_LABEL[s] }))}
-          className="w-full"
-        />
-        {needsTab && (
+      controls={
+        <>
           <CustomSelect
-            value={tab}
-            onChange={(v) => setTab(v)}
-            options={TABS.map((t) => ({ value: t, label: GUIDE_TAB_LABEL[t] }))}
-            className="w-full"
+            value={scene}
+            onChange={(v) => setScene(v as PreviewScene)}
+            options={SCENES.map((s) => ({ value: s, label: SCENE_LABEL[s] }))}
+            className="w-[210px]"
           />
-        )}
-      </div>
+          {needsTab && (
+            <CustomSelect
+              value={tab}
+              onChange={(v) => setTab(v)}
+              options={TABS.map((t) => ({ value: t, label: GUIDE_TAB_LABEL[t] }))}
+              className="w-[130px]"
+            />
+          )}
+        </>
+      }
+    >
       <div className="mt-3 flex justify-center rounded-xl border border-border bg-surface-2 px-3 py-5">
         <div
           className={
