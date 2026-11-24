@@ -209,6 +209,7 @@ export default function InstallSettings({
                 { value: "ios", label: "iPhone" },
                 { value: "android", label: "Android" },
               ]}
+              className="self-start"
             />
 
             {list.length === 0 && (
