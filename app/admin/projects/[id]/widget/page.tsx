@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { ensureProjectAccessible } from "@/lib/guards";
 import { resolveButtonConfig, resolvePromptConfig } from "@/lib/widget-config";
 import { resolveInstallConfig } from "@/lib/install-guide";
+import { resolveNotifyConfig } from "@/lib/notify-config";
 import WidgetSettings from "./WidgetSettings";
 
 export default async function WidgetPage({ params }: { params: Promise<{ id: string }> }) {
@@ -13,7 +14,7 @@ export default async function WidgetPage({ params }: { params: Promise<{ id: str
   if (!project) notFound();
   await ensureProjectAccessible(project.id, project.is_active);
 
-  const config = (project.widget_config as { button?: unknown; prompt?: unknown; install?: unknown } | null) || {};
+  const config = (project.widget_config as { button?: unknown; prompt?: unknown; install?: unknown; notify?: unknown } | null) || {};
   // версия схем в окне «Установка приложения» — метка последней генерации манифеста
   const manifest = project.manifest_config as { generated_at?: string } | null;
   const installVersion = String(manifest?.generated_at || "0").replace(/\D/g, "");
@@ -28,6 +29,7 @@ export default async function WidgetPage({ params }: { params: Promise<{ id: str
         initialButton={resolveButtonConfig(config.button)}
         initialPrompt={resolvePromptConfig(config.prompt)}
         initialInstall={resolveInstallConfig(config.install, id)}
+        initialNotify={resolveNotifyConfig(config.notify)}
         installVersion={installVersion}
         hasManifest={!!manifest}
       />

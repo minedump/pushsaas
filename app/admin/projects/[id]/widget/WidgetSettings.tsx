@@ -10,6 +10,9 @@ import PromptPreview from "./PromptPreview";
 import { SenderaApiDocs } from "./SenderaApiDocs";
 import InstallSettings from "./InstallSettings";
 import SitePreviewLink from "./SitePreviewLink";
+import ShowRulesFields from "./ShowRulesFields";
+import NotifySettings from "./NotifySettings";
+import type { NotifyConfig } from "@/lib/notify-config";
 import type { InstallConfig } from "@/lib/install-guide";
 
 const POSITION_LABEL: Record<ButtonPosition, string> = {
@@ -29,81 +32,13 @@ const RADIUS_LABEL: Record<CornerRadius, string> = {
 const BG_COLOR_PRESETS = ["#2c4a66", "#111827", "#2563eb", "#7c3aed", "#16a34a", "#ea580c", "#dc2626", "#0d9488"];
 const TEXT_COLOR_PRESETS = ["#ffffff", "#0a0a0a", "#f5f5f5", "#374151"];
 
-function DismissDaysField({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  return (
-    <div>
-      <Label>Пауза показа, дней</Label>
-      <Input
-        type="number"
-        min={1}
-        max={30}
-        value={value}
-        onChange={(e) => onChange(Math.min(30, Math.max(1, Number(e.target.value) || 1)))}
-      />
-    </div>
-  );
-}
-
-function DelaySecondsField({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  return (
-    <div>
-      <Label>Задержка, сек</Label>
-      <Input
-        type="number"
-        min={0}
-        max={120}
-        value={value}
-        onChange={(e) => onChange(Math.min(120, Math.max(0, Number(e.target.value) || 0)))}
-      />
-    </div>
-  );
-}
-
-function MinPageViewsField({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  return (
-    <div>
-      <Label>Показать со страницы</Label>
-      <Input
-        type="number"
-        min={1}
-        max={20}
-        value={value}
-        onChange={(e) => onChange(Math.min(20, Math.max(1, Number(e.target.value) || 1)))}
-      />
-    </div>
-  );
-}
-
-function ShowConditionsRow({
-  dismissDays,
-  onDismissDaysChange,
-  delaySeconds,
-  onDelaySecondsChange,
-  minPageViews,
-  onMinPageViewsChange,
-}: {
-  dismissDays: number;
-  onDismissDaysChange: (v: number) => void;
-  delaySeconds: number;
-  onDelaySecondsChange: (v: number) => void;
-  minPageViews: number;
-  onMinPageViewsChange: (v: number) => void;
-}) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-      <DismissDaysField value={dismissDays} onChange={onDismissDaysChange} />
-      <DelaySecondsField value={delaySeconds} onChange={onDelaySecondsChange} />
-      <MinPageViewsField value={minPageViews} onChange={onMinPageViewsChange} />
-    </div>
-  );
-}
-
 export default function WidgetSettings({
   projectId,
   domain,
   initialButton,
   initialPrompt,
   initialInstall,
+  initialNotify,
   installVersion,
   hasManifest,
 }: {
@@ -112,6 +47,7 @@ export default function WidgetSettings({
   initialButton: ButtonConfig;
   initialPrompt: PromptConfig;
   initialInstall: InstallConfig;
+  initialNotify: NotifyConfig;
   installVersion: string;
   hasManifest: boolean;
 }) {
@@ -121,7 +57,7 @@ export default function WidgetSettings({
   const [prompt, setPrompt] = useState(initialPrompt);
   const [busyButton, setBusyButton] = useState(false);
   const [busyPrompt, setBusyPrompt] = useState(false);
-  const [tab, setTab] = useState<"button" | "prompt" | "install">("button");
+  const [tab, setTab] = useState<"button" | "prompt" | "notify" | "install">("button");
 
   async function saveButton() {
     setBusyButton(true);
@@ -163,6 +99,7 @@ export default function WidgetSettings({
         options={[
           { value: "button", label: "Кнопка подписки" },
           { value: "prompt", label: "Плашка перед запросом" },
+          { value: "notify", label: "Окно уведомлений" },
           { value: "install", label: "Установка приложения" },
         ]}
         className="mt-4 sm:mt-8 mb-5 flex-wrap"
@@ -219,14 +156,7 @@ export default function WidgetSettings({
               />
             </div>
           </div>
-          <ShowConditionsRow
-            dismissDays={button.dismissDays}
-            onDismissDaysChange={(v) => setButton({ ...button, dismissDays: v })}
-            delaySeconds={button.delaySeconds}
-            onDelaySecondsChange={(v) => setButton({ ...button, delaySeconds: v })}
-            minPageViews={button.minPageViews}
-            onMinPageViewsChange={(v) => setButton({ ...button, minPageViews: v })}
-          />
+          <ShowRulesFields rules={button.show} onChange={(show) => setButton({ ...button, show })} />
 
           <div>
             <Button size="md" disabled={busyButton} onClick={saveButton}>
@@ -242,6 +172,8 @@ export default function WidgetSettings({
 
         </>
       )}
+
+      {tab === "notify" && <NotifySettings projectId={projectId} domain={domain} initial={initialNotify} installEnabled={initialInstall.enabled} />}
 
       {tab === "install" && (
         <InstallSettings projectId={projectId} domain={domain} initial={initialInstall} version={installVersion} hasManifest={hasManifest} />
@@ -323,14 +255,7 @@ export default function WidgetSettings({
               />
             </div>
           </div>
-          <ShowConditionsRow
-            dismissDays={prompt.dismissDays}
-            onDismissDaysChange={(v) => setPrompt({ ...prompt, dismissDays: v })}
-            delaySeconds={prompt.delaySeconds}
-            onDelaySecondsChange={(v) => setPrompt({ ...prompt, delaySeconds: v })}
-            minPageViews={prompt.minPageViews}
-            onMinPageViewsChange={(v) => setPrompt({ ...prompt, minPageViews: v })}
-          />
+          <ShowRulesFields rules={prompt.show} onChange={(show) => setPrompt({ ...prompt, show })} />
 
           <div>
             <Button size="md" disabled={busyPrompt} onClick={savePrompt}>

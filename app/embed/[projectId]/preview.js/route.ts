@@ -3,6 +3,8 @@ import { resolveButtonConfig, resolvePromptConfig } from "@/lib/widget-config";
 import { buttonBlock, promptBlock } from "@/lib/widget-scripts";
 import { resolveInstallConfig } from "@/lib/install-guide";
 import { installBlock } from "@/lib/install-widget";
+import { resolveNotifyConfig } from "@/lib/notify-config";
+import { notifyBlock } from "@/lib/notify-widget";
 import { minifyJs } from "@/lib/minify-js";
 import { PREVIEW_PARAM, readPreviewToken, type PreviewWidget } from "@/lib/widget-preview";
 
@@ -32,13 +34,17 @@ export async function GET(req: Request, ctx: { params: Promise<{ projectId: stri
   if (!project) return new Response("", { status: 404, headers: HEADERS });
 
   const api = process.env.NEXT_PUBLIC_APP_URL || "";
-  const cfg = (project.widget_config as { button?: unknown; prompt?: unknown; install?: unknown } | null) || {};
+  const cfg = (project.widget_config as { button?: unknown; prompt?: unknown; install?: unknown; notify?: unknown } | null) || {};
   const installVersion = String((project.manifest_config as { generated_at?: string } | null)?.generated_at || "0").replace(/\D/g, "");
 
   let block: string;
   if (widget === "button") block = buttonBlock(project.id, resolveButtonConfig(cfg.button), true);
   else if (widget === "prompt") block = promptBlock(project.id, resolvePromptConfig(cfg.prompt), true);
-  else block = installBlock(api, project.id, resolveInstallConfig(cfg.install, project.id), installVersion);
+  else if (widget === "notify") {
+    // в «Посмотреть на сайте» показываем и окно, и иконку, даже если какая-то часть выключена
+    const n = resolveNotifyConfig(cfg.notify);
+    block = notifyBlock(project.id, { ...n, windowEnabled: true, bellEnabled: true }, "preview", resolveInstallConfig(cfg.install, project.id).enabled);
+  } else block = installBlock(api, project.id, resolveInstallConfig(cfg.install, project.id), installVersion);
 
   const js = [previewShell(project.id, widget), block, previewTail(widget)].join("\n");
   return new Response(await minifyJs(js), { headers: HEADERS });
@@ -51,7 +57,7 @@ function previewShell(projectId: string, widget: PreviewWidget) {
   const atBottom = widget === "prompt";
   return `(function(){
   var PID = ${JSON.stringify(projectId)};
-  var IDS = ["sendera-btn", "sendera-prompt", "sendera-install"];
+  var IDS = ["sendera-btn", "sendera-prompt", "sendera-install", "sendera-notify", "sendera-notify-bell"];
   var orig = window.sendera;
   if(!orig){ console.error("[sendera] подключите скрипт /embed/{projectId}.js"); return; }
   if(window.__pssPreview) return;

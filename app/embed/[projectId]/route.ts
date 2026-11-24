@@ -3,6 +3,8 @@ import { resolveButtonConfig, resolvePromptConfig, type ButtonConfig, type Promp
 import { buttonBlock, promptBlock } from "@/lib/widget-scripts";
 import { resolveInstallConfig, type InstallConfig } from "@/lib/install-guide";
 import { installBlock } from "@/lib/install-widget";
+import { resolveNotifyConfig, type NotifyConfig } from "@/lib/notify-config";
+import { notifyBlock } from "@/lib/notify-widget";
 import { minifyJs } from "@/lib/minify-js";
 import { authButtonBlockFromConfig } from "@/lib/authButtonScript";
 
@@ -72,10 +74,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ projectId: str
     .select("widget_config, manifest_config")
     .eq("id", projectId)
     .maybeSingle();
-  const widgetConfig = (!widgetErr && (widgetRow?.widget_config as { button?: unknown; prompt?: unknown; install?: unknown } | null)) || {};
+  const widgetConfig = (!widgetErr && (widgetRow?.widget_config as { button?: unknown; prompt?: unknown; install?: unknown; notify?: unknown } | null)) || {};
   const button = resolveButtonConfig(widgetConfig.button);
   const prompt = resolvePromptConfig(widgetConfig.prompt);
   const install = resolveInstallConfig(widgetConfig.install, project.id);
+  const notify = resolveNotifyConfig(widgetConfig.notify);
   // версия схем окна «Установка приложения»: меняется при перегенерации манифеста
   // (иконка/название/цвет), чтобы сайты не держали старые картинки в кэше
   const installVersion = String((!widgetErr && (widgetRow?.manifest_config as { generated_at?: string } | null)?.generated_at) || "0").replace(/\D/g, "");
@@ -84,7 +87,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ projectId: str
   const { data: oidcRow, error: oidcErr } = await admin.from("oidc_clients").select("is_enabled, config, client_id").eq("project_id", projectId).maybeSingle();
   const authBlock = !oidcErr && oidcRow?.client_id ? authButtonBlockFromConfig(!!oidcRow.is_enabled, oidcRow.config, project.id, (() => { try { return new URL(api).origin; } catch { return ""; } })()) : "";
 
-  const js = widget(project.id, project.vapid_public_key, api, attribution, ymCounterId, button, prompt, install, installVersion, project.is_active !== false, authBlock);
+  const js = widget(project.id, project.vapid_public_key, api, attribution, ymCounterId, button, prompt, install, notify, installVersion, project.is_active !== false, authBlock);
   return new Response(await minifyJs(js), {
     headers: {
       "Content-Type": "application/javascript; charset=utf-8",
@@ -103,6 +106,7 @@ function widget(
   button: ButtonConfig,
   prompt: PromptConfig,
   install: InstallConfig,
+  notify: NotifyConfig,
   installVersion: string,
   isActive: boolean,
   authBlock: string
@@ -403,12 +407,14 @@ function widget(
   // а не ошибка "is not a function" в коде магазина. Включённое окно подменяет
   // их своими в блоке installBlock ниже.
   function installOff(){ console.warn("[sendera] окно «Установка приложения» выключено в разделе «Виджеты»"); }
+  function notifyOff(){ console.warn("[sendera] окно уведомлений выключено в разделе «Виджеты»"); }
 
   window.sendera = {
     subscribe: subscribe, event: track, identify: identify,
     isSubscribed: isSubscribed, isAuthenticated: isAuthenticated,
     openInstallGuide: installOff, openInstallGuideIos: installOff,
-    openInstallGuideAndroid: installOff, closeInstallGuide: function(){}
+    openInstallGuideAndroid: installOff, closeInstallGuide: function(){},
+    openNotifyWidget: notifyOff, closeNotifyWidget: function(){}
   };
 
   // Предпросмотр виджета из админки: страница открыта по подписанной ссылке
@@ -433,6 +439,7 @@ function widget(
 })();
 ${isActive && button.enabled ? buttonBlock(projectId, button) : ""}
 ${isActive && prompt.enabled ? promptBlock(projectId, prompt) : ""}
+${isActive && (notify.windowEnabled || notify.bellEnabled) ? notifyBlock(projectId, notify, "live", install.enabled) : ""}
 ${isActive && install.enabled ? installBlock(api, projectId, install, installVersion) : ""}
 ${isActive ? authBlock : ""}`;
 }

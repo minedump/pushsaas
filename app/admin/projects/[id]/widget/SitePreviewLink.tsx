@@ -20,7 +20,7 @@ export default function SitePreviewLink({
 }: {
   projectId: string;
   domain: string | null;
-  widget: "button" | "prompt" | "install";
+  widget: "button" | "prompt" | "notify" | "install";
 }) {
   const { toast } = useDialogs();
   const [url, setUrl] = useState(domain ? `https://${domain}/` : "");

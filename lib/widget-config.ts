@@ -6,6 +6,8 @@
 // валидация, используются и настройками (перед записью), и самим скриптом
 // (при чтении — защита на случай кривых данных в колонке).
 
+import { DEFAULT_SHOW_RULES, resolveShowRules, type ShowRules } from "./widget-rules";
+
 export type ButtonPosition = "bottom-right" | "bottom-left" | "top-right" | "top-left";
 export type ButtonSize = "s" | "m" | "l";
 export type CornerRadius = "none" | "sm" | "md" | "lg";
@@ -18,9 +20,8 @@ export type ButtonConfig = {
   position: ButtonPosition;
   size: ButtonSize;
   borderRadius: CornerRadius;
-  dismissDays: number;
-  delaySeconds: number;
-  minPageViews: number;
+  // когда показывать — единый стандарт для всех виджетов, см. lib/widget-rules.ts
+  show: ShowRules;
 };
 
 export type PromptConfig = {
@@ -35,9 +36,8 @@ export type PromptConfig = {
   cardBg: string;
   cardTextColor: string;
   borderRadius: CornerRadius;
-  dismissDays: number;
-  delaySeconds: number;
-  minPageViews: number;
+  // когда показывать — единый стандарт для всех виджетов, см. lib/widget-rules.ts
+  show: ShowRules;
 };
 
 export const DEFAULT_BUTTON: ButtonConfig = {
@@ -48,9 +48,7 @@ export const DEFAULT_BUTTON: ButtonConfig = {
   position: "bottom-right",
   size: "m",
   borderRadius: "lg",
-  dismissDays: 1,
-  delaySeconds: 0,
-  minPageViews: 1,
+  show: DEFAULT_SHOW_RULES,
 };
 
 export const DEFAULT_PROMPT: PromptConfig = {
@@ -65,9 +63,7 @@ export const DEFAULT_PROMPT: PromptConfig = {
   cardBg: "#ffffff",
   cardTextColor: "#16202a",
   borderRadius: "lg",
-  dismissDays: 1,
-  delaySeconds: 0,
-  minPageViews: 1,
+  show: DEFAULT_SHOW_RULES,
 };
 
 export const BUTTON_POSITIONS: ButtonPosition[] = ["bottom-right", "bottom-left", "top-right", "top-left"];
@@ -77,29 +73,6 @@ const HEX = /^#[0-9a-fA-F]{3,8}$/;
 
 function resolveCornerRadius(raw: unknown, fallback: CornerRadius): CornerRadius {
   return CORNER_RADIUS_VALUES.includes(raw as CornerRadius) ? (raw as CornerRadius) : fallback;
-}
-
-// И у кнопки, и у плашки — сколько дней молчать после того, как посетитель
-// закрыл/отклонил виджет на этом устройстве (localStorage-метка времени +
-// TTL, см. lib/widget-scripts.ts). 0 и меньше не допускаем — "не показывать
-// больше никогда" отдельно уже покрыт полной проверкой sendera.isSubscribed(),
-// а не нулевой паузой.
-function resolveDismissDays(raw: unknown, fallback: number): number {
-  const n = Number(raw);
-  return Number.isFinite(n) ? Math.min(30, Math.max(1, Math.round(n))) : fallback;
-}
-
-// Задержка показа (сек. после того, как выполнены остальные условия — не
-// заблокирован, не в паузе) и минимум просмотренных страниц за визит,
-// прежде чем виджет вообще имеет право показаться. 0/1 — прежнее поведение
-// "сразу на первой странице", менять не обязан никто.
-function resolveDelaySeconds(raw: unknown, fallback: number): number {
-  const n = Number(raw);
-  return Number.isFinite(n) ? Math.min(120, Math.max(0, Math.round(n))) : fallback;
-}
-function resolveMinPageViews(raw: unknown, fallback: number): number {
-  const n = Number(raw);
-  return Number.isFinite(n) ? Math.min(20, Math.max(1, Math.round(n))) : fallback;
 }
 
 export function resolveButtonConfig(raw: unknown): ButtonConfig {
@@ -112,9 +85,7 @@ export function resolveButtonConfig(raw: unknown): ButtonConfig {
     position: BUTTON_POSITIONS.includes(c.position as ButtonPosition) ? (c.position as ButtonPosition) : DEFAULT_BUTTON.position,
     size: BUTTON_SIZES.includes(c.size as ButtonSize) ? (c.size as ButtonSize) : DEFAULT_BUTTON.size,
     borderRadius: resolveCornerRadius(c.borderRadius, DEFAULT_BUTTON.borderRadius),
-    dismissDays: resolveDismissDays(c.dismissDays, DEFAULT_BUTTON.dismissDays),
-    delaySeconds: resolveDelaySeconds(c.delaySeconds, DEFAULT_BUTTON.delaySeconds),
-    minPageViews: resolveMinPageViews(c.minPageViews, DEFAULT_BUTTON.minPageViews),
+    show: resolveShowRules(c.show, c),
   };
 }
 
@@ -133,8 +104,6 @@ export function resolvePromptConfig(raw: unknown): PromptConfig {
     cardBg: typeof c.cardBg === "string" && HEX.test(c.cardBg.trim()) ? c.cardBg.trim() : DEFAULT_PROMPT.cardBg,
     cardTextColor: typeof c.cardTextColor === "string" && HEX.test(c.cardTextColor.trim()) ? c.cardTextColor.trim() : DEFAULT_PROMPT.cardTextColor,
     borderRadius: resolveCornerRadius(c.borderRadius, DEFAULT_PROMPT.borderRadius),
-    dismissDays: resolveDismissDays(c.dismissDays, DEFAULT_PROMPT.dismissDays),
-    delaySeconds: resolveDelaySeconds(c.delaySeconds, DEFAULT_PROMPT.delaySeconds),
-    minPageViews: resolveMinPageViews(c.minPageViews, DEFAULT_PROMPT.minPageViews),
+    show: resolveShowRules(c.show, c),
   };
 }

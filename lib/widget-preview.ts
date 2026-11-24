@@ -8,7 +8,7 @@ import { signParam, verifyParam } from "@/lib/oidc";
 // выключенные виджеты по-прежнему не попадают в публичную выдачу, а показать
 // их по чужой ссылке нельзя: нужна подпись, привязанная к проекту, виджету
 // и сроку.
-export const PREVIEW_WIDGETS = ["button", "prompt", "install"] as const;
+export const PREVIEW_WIDGETS = ["button", "prompt", "notify", "install"] as const;
 export type PreviewWidget = (typeof PREVIEW_WIDGETS)[number];
 
 export const PREVIEW_PARAM = "sendera_preview";

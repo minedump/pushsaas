@@ -4,6 +4,7 @@ import { useState } from "react";
 import { IconX, IconBook2 } from "@tabler/icons-react";
 import { Modal } from "@/app/ui";
 import { INSTALL_QUERY_PARAM } from "@/lib/install-widget";
+import { NOTIFY_QUERY_PARAM } from "@/lib/notify-widget";
 
 // Справка по методам window.sendera.* — раньше единственное упоминание было
 // вскользь в «Настройках» (sendera.subscribe() + завязка на
@@ -101,6 +102,41 @@ function SenderaApiDocsModal({ onClose }: { onClose: () => void }) {
             Promise&lt;{"{ authenticated, phone, email }"}&gt; — привязано ли устройство к телефону и/или email через вход по коду
             (раздел «Авторизация»). Без самих значений, только факт привязки.
           </p>
+        </section>
+
+        <section>
+          <div className="font-semibold text-ink mb-1">Окно уведомлений</div>
+          <p className="m-0">
+            Окно подписки с пользой от уведомлений, иконка-колокольчик и инструкции «как включить» и «как отключить» под устройство
+            посетителя. Настраивается в «Виджеты» → «Окно уведомлений». Если устройство уже подписано, сам виджет ничего не показывает:
+            окно с инструкцией открывает код сайта, например кнопкой «Настройки уведомлений» в личном кабинете. Пока виджет выключен,
+            методы ничего не делают и пишут предупреждение в консоль.
+          </p>
+          <div className="mt-2 flex flex-col gap-2">
+            <div>
+              <div className="font-mono text-[12px] text-ink">sendera.openNotifyWidget()</div>
+              <p className="m-0">
+                Открывает окно по состоянию устройства: ещё не решило — предложение подписаться, запретило в браузере — как включить,
+                подписано — как отключить, iPhone без значка на экране «Домой» — как добавить сайт.
+              </p>
+            </div>
+            <div>
+              <div className="font-mono text-[12px] text-ink">sendera.closeNotifyWidget()</div>
+              <p className="m-0">Закрывает окно. Если оно не открыто, ничего не происходит.</p>
+            </div>
+            <div>
+              <div className="font-mono text-[12px] text-ink">?{NOTIFY_QUERY_PARAM}=1</div>
+              <p className="m-0">
+                Открытие по ссылке: окно открывается само один раз после загрузки страницы, параметр сразу убирается из адреса.
+                Подходит для ссылок в письмах и SMS.
+              </p>
+            </div>
+          </div>
+          <pre className="mt-1.5 mb-0 text-[12px] bg-surface-2 border border-border rounded-lg p-2.5 overflow-x-auto">
+            {`document.getElementById('notify-settings').addEventListener('click', function(){
+  sendera.openNotifyWidget();
+});`}
+          </pre>
         </section>
 
         <section>

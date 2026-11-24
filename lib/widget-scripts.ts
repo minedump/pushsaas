@@ -11,6 +11,7 @@
 // чтобы их можно было напрямую передать в React `style={...}` И собрать в
 // cssText() для скрипта — см. toCssText ниже.
 
+import { gateScript } from "./widget-gate";
 import type { ButtonConfig, ButtonPosition, ButtonSize, CornerRadius, PromptConfig } from "./widget-config";
 
 export type StyleMap = Record<string, string | number>;
@@ -146,27 +147,6 @@ export const IOS_STANDALONE_CHECK = `
   function needsHomeScreen(){ return isIos() && !isStandalone(); }
 `;
 
-// Счётчик просмотренных страниц за визит (sessionStorage — сбрасывается с
-// закрытием вкладки/браузера, не копится вечно). Общий на кнопку и плашку:
-// обе механики независимо оборачиваются в свой IIFE, поэтому дедуп через
-// window.__pssPvCounted — какая бы механика ни запустилась первой на этой
-// странице, счётчик увеличится только один раз.
-function pageViewsCheck(projectId: string): string {
-  return `
-  var PV_KEY = ${JSON.stringify(`pss_pv_${projectId}`)};
-  function pageViews(){
-    try {
-      if(!window.__pssPvCounted){
-        window.__pssPvCounted = true;
-        var n = Number(sessionStorage.getItem(PV_KEY) || "0") + 1;
-        sessionStorage.setItem(PV_KEY, String(n));
-      }
-      return Number(sessionStorage.getItem(PV_KEY) || "1");
-    } catch(e){ return 1; }
-  }
-`;
-}
-
 function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
 }
@@ -174,7 +154,7 @@ function escapeHtml(s: string) {
 // Плавающая кнопка — при клике сразу вызывает sendera.subscribe() (значит и
 // системный диалог сразу, без промежуточного шага). Скрывается: если уже
 // подписан (проверка при рендере, не только пост-фактум клика), если
-// закрыта крестиком (пауза config.dismissDays), и на iOS вне standalone —
+// закрыта крестиком (пауза и лимит закрытий — config.show, см. lib/widget-rules.ts), и на iOS вне standalone —
 // там подписка технически невозможна (см. needsHomeScreen), кнопка вообще
 // не показывается, а не подменяется инструкцией.
 // preview=true — режим «Посмотреть на сайте» (см. lib/widget-preview.ts): виджет
@@ -186,26 +166,21 @@ export function buttonBlock(projectId: string, config: ButtonConfig, preview = f
   return `(function(){
   function ready(fn){ if(document.readyState!=="loading") fn(); else document.addEventListener("DOMContentLoaded", fn); }
   ${IOS_STANDALONE_CHECK}
-  ${pageViewsCheck(projectId)}
-  var DISMISS_KEY = ${JSON.stringify(`pss_button_dismissed_${projectId}`)};
-  var DISMISS_DAYS = ${config.dismissDays};
-  var DELAY_SECONDS = ${preview ? 0 : config.delaySeconds};
-  var MIN_PAGE_VIEWS = ${config.minPageViews};
+  ${gateScript(projectId, "button", config.show, preview)}
 
   ready(function(){
     if(!window.sendera){ console.error("[sendera] подключите скрипт /embed/{projectId}.js"); return; }
     ${preview ? "" : `if(needsHomeScreen()) return; // iOS вне standalone — подписка технически невозможна, кнопку не показываем
-    if(!("serviceWorker" in navigator && "PushManager" in window && "Notification" in window)) return;`}
+    if(!("serviceWorker" in navigator && "PushManager" in window && "Notification" in window)) return;
+    if(Notification.permission === "denied") return; // отказ в системном окне: нажатие ничего не даст, окно с инструкцией — отдельный виджет
+    if(G.blocked()) return;`}
     if(document.getElementById("sendera-btn")) return;
 
-    function dismissed(){ try { var raw = localStorage.getItem(DISMISS_KEY); if(!raw) return false; return (Date.now() - Number(raw)) < DISMISS_DAYS * 86400000; } catch(e){ return false; } }
-    ${preview ? "" : `if(dismissed()) return;
-    if(pageViews() < MIN_PAGE_VIEWS) return;`}
 
     function render(){
       window.sendera.isSubscribed().then(function(already){
         if(already) return;
-        if(document.getElementById("sendera-prompt")) return; // плашка уже занимает экран — не спорим за один и тот же момент
+        if(document.getElementById("sendera-prompt") || document.getElementById("sendera-notify")) return; // плашка или окно уведомлений уже занимают экран — не спорим за один и тот же момент
         if(document.getElementById("sendera-btn")) return; // могли успеть показать за время задержки (второй вызов render на другой странице SPA)
 
         var btn = document.createElement("button");
@@ -219,7 +194,7 @@ export function buttonBlock(projectId: string, config: ButtonConfig, preview = f
         closeBtn.innerHTML = '${CLOSE_SVG}';
         closeBtn.addEventListener("click", function(e){
           e.stopPropagation();
-          ${preview ? "" : "try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch(err){}"}
+          G.dismiss();
           window.sendera.event("widget_button_dismissed", {});
           btn.remove();
         });
@@ -249,7 +224,7 @@ export function buttonBlock(projectId: string, config: ButtonConfig, preview = f
         window.sendera.event("widget_button_shown", {});
       });
     }
-    if(DELAY_SECONDS > 0) setTimeout(render, DELAY_SECONDS * 1000); else render();
+    G.whenReady(render);
   });
 })();`;
 }
@@ -262,7 +237,6 @@ export function buttonBlock(projectId: string, config: ButtonConfig, preview = f
 // всегда показывается в обычном виде (с кнопкой «Разрешить»), без варианта
 // для iPhone.
 export function promptBlock(projectId: string, config: PromptConfig, preview = false): string {
-  const DISMISS_KEY = `pss_prompt_dismissed_${projectId}`;
   const title = escapeHtml(config.title);
   const body = escapeHtml(config.body);
   const iosBody = escapeHtml(config.iosBody);
@@ -279,33 +253,26 @@ export function promptBlock(projectId: string, config: PromptConfig, preview = f
   function ready(fn){ if(document.readyState!=="loading") fn(); else document.addEventListener("DOMContentLoaded", fn); }
   function supported(){ return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window; }
   ${IOS_STANDALONE_CHECK}
-  ${pageViewsCheck(projectId)}
+  ${gateScript(projectId, "prompt", config.show, preview)}
   var BELL = '${BELL_SVG}';
-  var DISMISS_KEY = ${JSON.stringify(DISMISS_KEY)};
-  var DISMISS_DAYS = ${config.dismissDays};
-  var DELAY_SECONDS = ${preview ? 0 : config.delaySeconds};
-  var MIN_PAGE_VIEWS = ${config.minPageViews};
-  function dismissed(){ try { var raw = localStorage.getItem(DISMISS_KEY); if(!raw) return false; return (Date.now() - Number(raw)) < DISMISS_DAYS * 86400000; } catch(e){ return false; } }
-  function dismiss(){ ${preview ? "" : "try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch(e){}"} }
 
   ready(function(){
     if(!window.sendera){ console.error("[sendera] подключите скрипт /embed/{projectId}.js"); return; }
     ${
       preview
         ? "var homeScreen = false;"
-        : `if(dismissed()) return;
+        : `if(G.blocked()) return;
     var homeScreen = needsHomeScreen();
     if(!homeScreen){
       if(!supported() || Notification.permission !== "default") return;
     }`
     }
     if(document.getElementById("sendera-prompt")) return;
-    ${preview ? "" : "if(pageViews() < MIN_PAGE_VIEWS) return;"}
 
     function render(){
       window.sendera.isSubscribed().then(function(already){
         if(already) return;
-        if(document.getElementById("sendera-prompt")) return;
+        if(document.getElementById("sendera-prompt") || document.getElementById("sendera-notify")) return;
 
         var mobile = window.matchMedia("(max-width: 640px)").matches;
         var card = document.createElement("div");
@@ -353,16 +320,20 @@ export function promptBlock(projectId: string, config: PromptConfig, preview = f
           setTimeout(function(){ card.remove(); style.remove(); if(btnFloating) btnFloating.style.display = ""; }, 280);
         }
 
-        card.querySelector(".pss-p-later").addEventListener("click", function(){ window.sendera.event("widget_prompt_dismissed", {}); dismiss(); close(); });
+        card.querySelector(".pss-p-later").addEventListener("click", function(){ window.sendera.event("widget_prompt_dismissed", {}); G.dismiss(); close(); });
         var allow = card.querySelector(".pss-p-allow");
         if(allow) allow.addEventListener("click", function(){
           window.sendera.event("widget_prompt_clicked", {});
           card.querySelectorAll("button").forEach(function(b){ b.disabled = true; });
-          window.sendera.subscribe().finally(close);
+          window.sendera.subscribe().finally(function(){
+            close();
+            // закрыл системное окно, ничего не выбрав: это тоже отказ, считаем его, иначе плашка вернётся на следующей же странице
+            try { if(Notification.permission === "default") G.dismiss(); } catch(e){}
+          });
         });
       });
     }
-    if(DELAY_SECONDS > 0) setTimeout(render, DELAY_SECONDS * 1000); else render();
+    G.whenReady(render);
   });
 })();`;
 }
