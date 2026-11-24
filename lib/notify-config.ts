@@ -222,7 +222,8 @@ export const DEFAULT_NOTIFY: NotifyConfig = {
   guides: DEFAULT_GUIDES,
 };
 
-export const NOTIFY_LIMITS = { benefits: 4, steps: 8, stepLength: 220 } as const;
+// benefits — не ограничение для магазина, а защита от мусора в колонке: столько пунктов в окне не поместится
+export const NOTIFY_LIMITS = { benefits: 20, steps: 8, stepLength: 220 } as const;
 const HEX = /^#[0-9a-fA-F]{3,8}$/;
 
 function text(raw: unknown, fallback: string, max: number): string {

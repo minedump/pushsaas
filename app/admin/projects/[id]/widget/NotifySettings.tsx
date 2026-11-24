@@ -128,12 +128,12 @@ export default function NotifySettings({
             <Field label="Текст">
               <Textarea value={cfg.intro} onChange={(e) => set({ intro: e.target.value })} rows={2} maxLength={200} />
             </Field>
-            <Field label={`Что получит подписчик (по одному в строке, до ${NOTIFY_LIMITS.benefits})`}>
+            <Field label="Преимущества, каждое с новой строки">
               <Textarea
                 value={benefitsText}
                 onChange={(e) => {
                   setBenefitsText(e.target.value);
-                  set({ benefits: toLines(e.target.value).slice(0, NOTIFY_LIMITS.benefits) });
+                  set({ benefits: toLines(e.target.value) });
                 }}
                 rows={4}
               />
