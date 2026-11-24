@@ -62,7 +62,7 @@ function NumberField({
   );
 }
 
-function PauseField({ hours, onChange, label, hint }: { hours: number; onChange: (v: number) => void; label: string; hint: string }) {
+function PauseField({ hours, onChange, label }: { hours: number; onChange: (v: number) => void; label: string }) {
   const [unit, setUnit] = useState<"h" | "d">(hours >= 24 && hours % 24 === 0 ? "d" : "h");
   const mult = unit === "d" ? 24 : 1;
   const [draft, setDraft] = useState<string | null>(null);
@@ -103,7 +103,6 @@ function PauseField({ hours, onChange, label, hint }: { hours: number; onChange:
           className="w-28 shrink-0"
         />
       </div>
-      <p className="text-xs text-ink-faint mt-1">{hint}</p>
     </div>
   );
 }
@@ -161,7 +160,6 @@ export default function ShowRulesFields({
         />
         <NumberField
           label="Показывать со страницы №"
-          hint="Сколько страниц сайта посетитель должен открыть за визит. 1 — с первой."
           value={rules.minPageViews}
           min={SHOW_LIMITS.minPageViews.min}
           max={SHOW_LIMITS.minPageViews.max}
@@ -169,7 +167,6 @@ export default function ShowRulesFields({
         />
         <NumberField
           label="Минимум времени на сайте, сек"
-          hint="Суммарно за визит, пока вкладка открыта. 0 — не учитывать."
           value={rules.minTimeOnSiteSeconds}
           min={SHOW_LIMITS.minTimeOnSiteSeconds.min}
           max={SHOW_LIMITS.minTimeOnSiteSeconds.max}
@@ -179,12 +176,10 @@ export default function ShowRulesFields({
           hours={rules.pauseHours}
           onChange={(v) => set({ pauseHours: v })}
           label={bell ? "Показать иконку через" : "Пауза после закрытия"}
-          hint={bell ? "Сколько ждать после того, как посетитель закрыл окно «Не сейчас»." : "Сколько молчать, после того как посетитель нажал «закрыть»."}
         />
         {!bell && (
           <NumberField
             label="Перестать показывать после закрытий"
-            hint="Сколько раз посетитель может закрыть, прежде чем окно замолчит насовсем (иконка при этом остаётся). 0 — не прекращать."
             value={rules.maxDismissals}
             min={SHOW_LIMITS.maxDismissals.min}
             max={SHOW_LIMITS.maxDismissals.max}
@@ -219,11 +214,6 @@ export default function ShowRulesFields({
             страница — просто /.
             {rules.pagesMode === "except" && " Для корзины и оформления заказа обычно: /cart_items и /new_order."}
           </p>
-          {rules.pagePatterns.length === 0 && (
-            <p className="text-xs text-warn mt-1">
-              Список пуст, поэтому ограничение не действует: виджет показывается на всех страницах.
-            </p>
-          )}
         </div>
       )}
     </div>
