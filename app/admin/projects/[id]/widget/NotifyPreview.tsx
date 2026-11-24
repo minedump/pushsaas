@@ -16,7 +16,7 @@ const SCENE_LABEL: Record<PreviewScene, string> = {
   offer: "Предложение",
   blocked: "Выключено в браузере",
   subscribed: "Подписан",
-  home: "iPhone без «Домой»",
+  home: "iPhone вне «Домой»",
   done: "Готово",
   unsupported: "Не поддерживается",
   bell: "Иконка",

@@ -6,7 +6,7 @@
 //   запретил в браузере        → окно не предлагается; иконка открывает инструкцию «как включить»
 //                                 под устройство и браузер посетителя;
 //   подписан                   → сам ничего не показывает; метод открывает инструкцию «как отключить»;
-//   iPhone без «Домой»         → окно с шагами «добавить на экран Домой».
+//   iPhone вне «Домой»         → окно с шагами «добавить на экран Домой».
 //
 // Методы: sendera.openNotifyWidget() — открыть окно по текущему состоянию устройства,
 // sendera.closeNotifyWidget(), ссылка с параметром ?sendera_notify=1.
@@ -171,7 +171,7 @@ export function notifyBlock(projectId: string, config: NotifyConfig, mode: Notif
   }
   function onIphoneOutsideHome(){ return needsHomeScreen(); }
 
-  // Состояние устройства: home — iPhone без «Домой»; unsupported; subscribed; denied; default.
+  // Состояние устройства: home — iPhone вне «Домой»; unsupported; subscribed; denied; default.
   function status(){
     if(PREVIEW){ return window.sendera.isSubscribed().then(function(s){ return s ? "subscribed" : "default"; }); }
     if(needsHomeScreen()) return Promise.resolve("home");
@@ -222,7 +222,7 @@ export function notifyBlock(projectId: string, config: NotifyConfig, mode: Notif
     });
     return ol;
   }
-  // Шаги для вкладки: «включить» на iPhone без «Домой» — сначала добавить сайт на экран.
+  // Шаги для вкладки: «включить» на iPhone вне «Домой» — сначала добавить сайт на экран.
   function stepsFor(tab, kind){
     var g = CFG.guides;
     if(tab === "ios") return (kind === "enable" && onIphoneOutsideHome() ? g.iosHome : g.ios)[kind];
@@ -431,7 +431,7 @@ export function notifyBlock(projectId: string, config: NotifyConfig, mode: Notif
     status().then(function(st){
       if(st === "unsupported" || st === "subscribed") return;
 
-      // Окно с предложением: по правилам показа, пока устройство ещё не решило (или iPhone без «Домой»).
+      // Окно с предложением: по правилам показа, пока устройство ещё не решило (или iPhone вне «Домой»).
       if(CFG.windowEnabled && st !== "denied" && !GW.blocked()){
         GW.whenReady(function(){
           // не спорим за один и тот же момент с плашкой, кнопкой-окном и другим открытым окном

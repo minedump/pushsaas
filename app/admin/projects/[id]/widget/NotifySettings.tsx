@@ -248,10 +248,10 @@ export default function NotifySettings({
               <Field label="После подписки в окне">
                 <Input value={cfg.doneTitle} onChange={(e) => set({ doneTitle: e.target.value })} maxLength={60} />
               </Field>
-              <Field label="iPhone без «Домой»: заголовок">
+              <Field label="iPhone вне «Домой»: заголовок">
                 <Input value={cfg.homeTitle} onChange={(e) => set({ homeTitle: e.target.value })} maxLength={60} />
               </Field>
-              <Field label="iPhone без «Домой»: текст">
+              <Field label="iPhone вне «Домой»: текст">
                 <Textarea value={cfg.homeIntro} onChange={(e) => set({ homeIntro: e.target.value })} rows={2} maxLength={220} />
               </Field>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

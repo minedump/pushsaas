@@ -2,7 +2,7 @@
 //   · окно с пользой от уведомлений до системного запроса («Включить» / «Не сейчас»);
 //   · маленькая иконка-колокольчик, которая остаётся на странице после «Не сейчас»;
 //   · режимы-инструкции: уведомления запрещены в браузере (как включить), устройство уже
-//     подписано (как отключить), iPhone без значка на экране «Домой» (как добавить).
+//     подписано (как отключить), iPhone вне «Домой» (как добавить).
 // Живёт в projects.widget_config.notify. Модуль без серверных зависимостей: им пользуются
 // настройки (перед записью), скрипт (при чтении) и предпросмотр в админке.
 
@@ -25,7 +25,7 @@ export const GUIDE_TAB_LABEL: Record<GuideKey, string> = {
 };
 // Названия в настройках (там iPhone разделён на два случая).
 export const GUIDE_ADMIN_LABEL: Record<GuideKey, string> = {
-  iosHome: "iPhone: сайт ещё не на экране «Домой»",
+  iosHome: "iPhone вне «Домой»",
   ios: "iPhone: сайт на экране «Домой»",
   android: "Android (Chrome и похожие)",
   chrome: "Компьютер: Chrome, Edge, Яндекс Браузер, Opera",
@@ -136,7 +136,7 @@ export type NotifyConfig = {
   subscribedIntro: string;
   doneTitle: string;
 
-  // iPhone без иконки на экране «Домой»
+  // iPhone вне «Домой»
   homeTitle: string;
   homeIntro: string;
   homeMoreText: string;
