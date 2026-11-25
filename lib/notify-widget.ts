@@ -328,6 +328,11 @@ export function notifyBlock(projectId: string, config: NotifyConfig, mode: Notif
     root.appendChild(dlg);
     cur = { view: view, auto: !!o.auto, via: o.via || "api", tab: o.tab || detectTab(), status: null };
     paint();
+    // Окно может появиться прямо под пальцем, пока посетитель листает или нажимает что-то на странице:
+    // такое касание попадает в крестик или мимо окна и закрывает его, не дав прочитать. Первые полсекунды
+    // после появления нажатия внутри окна и по подложке не принимаем.
+    var openedAt = Date.now();
+    root.addEventListener("click", function(e){ if(Date.now() - openedAt < 500){ e.stopImmediatePropagation(); e.preventDefault(); } }, true);
     root.addEventListener("click", function(e){ if(e.target === root) dismissClose("overlay"); });
     onKey = function(e){ if(e.key === "Escape") dismissClose("esc"); };
     document.addEventListener("keydown", onKey);

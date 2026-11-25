@@ -103,7 +103,7 @@ export default async function AnalyticsPage({
     // счётчиков для них нет, это первая метрика такого рода на странице.
     supabase
       .from("events")
-      .select("name, payload, created_at")
+      .select("name, payload, subscriber_id, created_at")
       .eq("project_id", id)
       .like("name", "widget_%")
       .gte("created_at", sinceIso)
@@ -193,9 +193,16 @@ export default async function AnalyticsPage({
   };
   const paidSum = orderStats.paid.total;
 
-  const widgetStats = computeWidgetStats(widgetEvents ?? []);
+  // События виджетов без устройств тестовых контактов (флаг «не учитывать в аналитике» в Подписчиках)
+  const excludedDevices = new Set<string>();
+  if (excludedIds.size) {
+    const { data: links } = await supabase.from("identity_devices").select("subscriber_id").in("identity_id", [...excludedIds]).limit(5000);
+    for (const l of links ?? []) if (l.subscriber_id) excludedDevices.add(l.subscriber_id as string);
+  }
+  const widgetRows = (widgetEvents ?? []).filter((r) => !r.subscriber_id || !excludedDevices.has(r.subscriber_id as string));
+  const widgetStats = computeWidgetStats(widgetRows);
   // Инструкция по установке (iPhone/Android): считаем только показы, то есть сколько раз её открыли
-  const installOpened = (widgetEvents ?? []).filter((r) => r.name === "widget_install_opened").length;
+  const installOpened = widgetRows.filter((r) => r.name === "widget_install_opened").length;
 
   return (
     <main className="max-w-4xl mx-auto">
