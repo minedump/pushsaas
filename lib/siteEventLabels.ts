@@ -47,6 +47,7 @@ const NOTIFY_VIA: Record<string, string> = {
   later: "«Не сейчас»",
   esc: "клавишей Esc",
   overlay: "кликом мимо окна",
+  leave: "ушёл со страницы",
 };
 const NOTIFY_RESULT: Record<string, string> = {
   granted: "разрешил",
@@ -58,8 +59,9 @@ const PLATFORM: Record<string, string> = { ios: "iPhone", android: "Android", ch
 export function widgetEventDetail(name: string, payload: Record<string, unknown>): string {
   const str = (v: unknown) => (typeof v === "string" ? v : "");
   if (name === "widget_notify_opened" || name === "widget_notify_dismissed") {
-    const parts = [NOTIFY_VIEW[str(payload.view)], NOTIFY_VIA[str(payload.via)]].filter(Boolean);
-    return parts.join(", ");
+    const ms = typeof payload.ms === "number" ? payload.ms : null;
+    const shown = ms !== null ? `окно было открыто ${(ms / 1000).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} с` : "";
+    return [NOTIFY_VIEW[str(payload.view)], NOTIFY_VIA[str(payload.via)], shown].filter(Boolean).join(", ");
   }
   if (name === "widget_notify_result") {
     const via = NOTIFY_VIA[str(payload.via)];

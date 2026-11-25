@@ -204,7 +204,8 @@ export function notifyBlock(projectId: string, config: NotifyConfig, mode: Notif
   function dismissClose(via){
     if(cur && (cur.view === "offer" || cur.view === "home")){
       if(cur.auto) GW.dismiss();
-      ev("widget_notify_dismissed", { via: via, auto: !!cur.auto, view: cur.view });
+      // ms — сколько окно было на экране у посетителя (по его часам, без задержек сети)
+      ev("widget_notify_dismissed", { via: via, auto: !!cur.auto, view: cur.view, ms: Date.now() - cur.openedAt });
     }
     closeWin();
   }
@@ -326,12 +327,12 @@ export function notifyBlock(projectId: string, config: NotifyConfig, mode: Notif
     root = h("div"); root.id = "sendera-notify";
     var dlg = h("div", "pss-n-dlg"); dlg.setAttribute("role", "dialog"); dlg.setAttribute("aria-modal", "true"); dlg.tabIndex = -1;
     root.appendChild(dlg);
-    cur = { view: view, auto: !!o.auto, via: o.via || "api", tab: o.tab || detectTab(), status: null };
+    var openedAt = Date.now();
+    cur = { view: view, auto: !!o.auto, via: o.via || "api", tab: o.tab || detectTab(), status: null, openedAt: openedAt };
     paint();
     // Окно может появиться прямо под пальцем, пока посетитель листает или нажимает что-то на странице:
     // такое касание попадает в крестик или мимо окна и закрывает его, не дав прочитать. Первые полсекунды
     // после появления нажатия внутри окна и по подложке не принимаем.
-    var openedAt = Date.now();
     root.addEventListener("click", function(e){ if(Date.now() - openedAt < 500){ e.stopImmediatePropagation(); e.preventDefault(); } }, true);
     root.addEventListener("click", function(e){ if(e.target === root) dismissClose("overlay"); });
     onKey = function(e){ if(e.key === "Escape") dismissClose("esc"); };
@@ -416,6 +417,10 @@ export function notifyBlock(projectId: string, config: NotifyConfig, mode: Notif
     window.__pssNotify = { show: function(view, tab){ openWin(view, { via: "static", tab: tab }); }, bell: showBell, hide: function(){ removeNow(); removeBell(); } };
     return;
   }
+
+  // Ушёл со страницы, не закрыв предложение: это тоже «не сейчас». Иначе пауза не начнётся
+  // и окно покажется снова на следующей же странице.
+  window.addEventListener("pagehide", function(){ if(root && cur) dismissClose("leave"); });
 
   // Открытие по ссылке: ?${NOTIFY_QUERY_PARAM}=1 — окно по состоянию устройства, один раз; параметр убираем из адреса.
   (function(){
