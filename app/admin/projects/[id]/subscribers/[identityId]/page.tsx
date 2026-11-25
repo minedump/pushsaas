@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureProjectAccessible } from "@/lib/guards";
-import { eventLabel } from "@/lib/siteEventLabels";
+import { eventLabel, widgetEventDetail } from "@/lib/siteEventLabels";
 import { resolveCatalogRefs } from "@/lib/productFeed";
 import { catalogFullName } from "@/lib/catalogName";
 import SubscriberProfile from "./SubscriberProfile";
@@ -205,7 +205,9 @@ export default async function SubscriberProfilePage({ params }: { params: Promis
     siteEvents = (rawEvents ?? []).map((e) => ({
       id: String(e.id),
       label: eventLabel(e.name),
-      detail: eventDetail((e.payload || {}) as Record<string, unknown>, productNames, categoryNames),
+      detail:
+        eventDetail((e.payload || {}) as Record<string, unknown>, productNames, categoryNames) ||
+        widgetEventDetail(e.name, (e.payload || {}) as Record<string, unknown>),
       created_at: e.created_at,
     }));
   }

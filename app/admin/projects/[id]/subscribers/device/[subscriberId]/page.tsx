@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ensureProjectAccessible } from "@/lib/guards";
-import { eventLabel } from "@/lib/siteEventLabels";
+import { eventLabel, widgetEventDetail } from "@/lib/siteEventLabels";
 import DeviceCard from "./DeviceCard";
 
 // Карточка устройства без контакта (анонимный подписчик): открывается из списка «Подписчики».
@@ -35,7 +35,7 @@ export default async function DevicePage({ params }: { params: Promise<{ id: str
 
   const events = (rawEvents ?? []).map((e) => {
     const payload = (e.payload || {}) as Record<string, unknown>;
-    const detail = Object.entries(payload)
+    const detail = widgetEventDetail(e.name, payload) || Object.entries(payload)
       .filter(([, v]) => v !== null && v !== undefined && typeof v !== "object")
       .map(([k, v]) => `${k}: ${String(v)}`)
       .join(", ");

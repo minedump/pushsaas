@@ -103,7 +103,7 @@ export default async function AnalyticsPage({
     // счётчиков для них нет, это первая метрика такого рода на странице.
     supabase
       .from("events")
-      .select("name, created_at")
+      .select("name, payload, created_at")
       .eq("project_id", id)
       .like("name", "widget_%")
       .gte("created_at", sinceIso)
@@ -270,8 +270,8 @@ export default async function AnalyticsPage({
       {/* widget funnel */}
       <Card className="mt-4 sm:mt-8">
         <div className="text-[13px] text-ink-muted mb-3">Виджеты подписки</div>
-        {widgetStats.button.shown === 0 && widgetStats.prompt.shown === 0 ? (
-          <div className="text-ink-faint text-sm">Пока пусто — появится после первых показов кнопки/плашки.</div>
+        {Object.values(widgetStats).every((s) => s.shown === 0) ? (
+          <div className="text-ink-faint text-sm">Пока пусто — появится после первых показов виджетов.</div>
         ) : (
           <div className="overflow-x-auto pretty-scroll">
             <table className="w-full border-collapse text-[13.5px] min-w-[480px]">
@@ -289,6 +289,8 @@ export default async function AnalyticsPage({
                   [
                     { key: "button" as const, label: "Плавающая кнопка" },
                     { key: "prompt" as const, label: "Плашка" },
+                    { key: "notifyWindow" as const, label: "Окно уведомлений: окно" },
+                    { key: "notifyBell" as const, label: "Окно уведомлений: иконка" },
                   ] as const
                 ).map((w) => {
                   const s = widgetStats[w.key];
@@ -299,12 +301,15 @@ export default async function AnalyticsPage({
                       <td className="py-2 text-right tabular-nums">{s.shown}</td>
                       <td className="py-2 text-right tabular-nums">{s.clicked}</td>
                       <td className="py-2 text-right tabular-nums">{s.shown ? `${ctr}%` : "—"}</td>
-                      <td className="py-2 text-right tabular-nums">{s.dismissed}</td>
+                      <td className="py-2 text-right tabular-nums">{s.dismissed ?? "—"}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+            <p className="text-[12px] text-ink-faint mt-3 mb-0">
+              Окно уведомлений: показ — окно с предложением подписаться (само по правилам, по иконке, по ссылке или из кода сайта), клик — «Включить», закрыто — «Не сейчас», крестик, Esc или клик мимо окна. Иконка: показ считается на каждой странице, где она появилась, клик открывает окно; закрыть иконку нельзя.
+            </p>
           </div>
         )}
       </Card>
@@ -322,22 +327,39 @@ export default async function AnalyticsPage({
   );
 }
 
-type WidgetStat = { shown: number; clicked: number; dismissed: number };
+// dismissed: null — у виджета нет закрытия (иконка-колокольчик), в таблице «—»
+type WidgetStat = { shown: number; clicked: number; dismissed: number | null };
+type WidgetKey = "button" | "prompt" | "notifyWindow" | "notifyBell";
 // Агрегация "показано/кликнули/закрыли" по сырым events (widget_button_*/
-// widget_prompt_*, см. lib/widget-scripts.ts) — денормализованных счётчиков
-// для виджетов нет, считаем на лету, как и остальные период-зависимые
-// метрики на этой странице.
-function computeWidgetStats(rows: { name: string }[]): { button: WidgetStat; prompt: WidgetStat } {
-  const button: WidgetStat = { shown: 0, clicked: 0, dismissed: 0 };
-  const prompt: WidgetStat = { shown: 0, clicked: 0, dismissed: 0 };
+// widget_prompt_*, см. lib/widget-scripts.ts; widget_notify_*, см. lib/notify-widget.ts) —
+// денормализованных счётчиков для виджетов нет, считаем на лету, как и остальные
+// период-зависимые метрики на этой странице.
+function computeWidgetStats(rows: { name: string; payload?: unknown }[]): Record<WidgetKey, WidgetStat> {
+  const s: Record<WidgetKey, WidgetStat> = {
+    button: { shown: 0, clicked: 0, dismissed: 0 },
+    prompt: { shown: 0, clicked: 0, dismissed: 0 },
+    notifyWindow: { shown: 0, clicked: 0, dismissed: 0 },
+    notifyBell: { shown: 0, clicked: 0, dismissed: null },
+  };
   for (const r of rows) {
-    const target = r.name.startsWith("widget_button_") ? button : r.name.startsWith("widget_prompt_") ? prompt : null;
-    if (!target) continue;
-    if (r.name.endsWith("_shown")) target.shown++;
-    else if (r.name.endsWith("_clicked")) target.clicked++;
-    else if (r.name.endsWith("_dismissed")) target.dismissed++;
+    const view = ((r.payload ?? {}) as { view?: unknown }).view;
+    switch (r.name) {
+      // окно: только экран с предложением подписаться — у остальных экранов (инструкции) нет кнопки «Включить»
+      case "widget_notify_opened": if (view === "offer") s.notifyWindow.shown++; break;
+      case "widget_notify_enable_clicked": s.notifyWindow.clicked++; break;
+      case "widget_notify_dismissed": if (view === "offer") s.notifyWindow.dismissed!++; break;
+      case "widget_notify_bell_shown": s.notifyBell.shown++; break;
+      case "widget_notify_bell_clicked": s.notifyBell.clicked++; break;
+      default: {
+        const t = r.name.startsWith("widget_button_") ? s.button : r.name.startsWith("widget_prompt_") ? s.prompt : null;
+        if (!t) break;
+        if (r.name.endsWith("_shown")) t.shown++;
+        else if (r.name.endsWith("_clicked")) t.clicked++;
+        else if (r.name.endsWith("_dismissed")) t.dismissed!++;
+      }
+    }
   }
-  return { button, prompt };
+  return s;
 }
 
 function BarChart({
