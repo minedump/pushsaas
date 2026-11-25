@@ -15,7 +15,7 @@
 // посетителя ничего не запоминается); "static" — предпросмотр в админке: сам ничего не делает,
 // окном управляет window.__pssNotify.show(view, tab) (код админки, тот же скрипт, что на сайте).
 
-import { CLOSE_SVG, BELL_SVG, CHECK_SVG, BUTTON_POSITION_STYLE, IOS_STANDALONE_CHECK, WIDGET_Z_INDEX, toCssText } from "./widget-scripts";
+import { CLOSE_SVG, BELL_SVG, CHECK_SVG, BUTTON_POSITION_STYLE, IOS_STANDALONE_CHECK, WIDGET_FLOAT_Z_INDEX, WIDGET_WINDOW_Z_INDEX, toCssText } from "./widget-scripts";
 import { gateScript } from "./widget-gate";
 import { GUIDE_TAB_LABEL, type NotifyConfig } from "./notify-config";
 import { WINDOW_BUTTON_RADIUS_PX, WINDOW_RADIUS_PX, type CornerRadius } from "./widget-config";
@@ -43,7 +43,7 @@ export function notifyCss(c: NotifyConfig): string {
   const icon = BELL_ICON_PX[c.bellSize];
   const line = "rgba(128,128,128,.28)";
   return [
-    `#sendera-notify{position:fixed;top:0;right:0;bottom:0;left:0;z-index:${WIDGET_Z_INDEX};display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(14,22,34,.45);opacity:0;transition:opacity .2s ease;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-text-size-adjust:100%}`,
+    `#sendera-notify{position:fixed;top:0;right:0;bottom:0;left:0;z-index:${WIDGET_WINDOW_Z_INDEX};display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(14,22,34,.45);opacity:0;transition:opacity .2s ease;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-text-size-adjust:100%}`,
     `#sendera-notify *{box-sizing:border-box}`,
     `#sendera-notify.pss-n-in{opacity:1}`,
     `#sendera-notify .pss-n-dlg{position:relative;background:${c.cardBg};color:${c.cardTextColor};width:100%;max-width:400px;max-height:min(92vh,720px);border-radius:${dr};display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3);transform:translateY(10px);transition:transform .22s ease;outline:none}`,
@@ -78,7 +78,7 @@ export function notifyCss(c: NotifyConfig): string {
     `#sendera-notify button:focus-visible{outline:2px solid ${accent};outline-offset:2px}`,
     `@media (max-width:640px){#sendera-notify{align-items:flex-end;padding:0}#sendera-notify .pss-n-dlg{max-width:none;border-radius:${dr} ${dr} 0 0;max-height:90vh;transform:translateY(24px);padding-bottom:env(safe-area-inset-bottom,0px)}}`,
     `@media (prefers-reduced-motion:reduce){#sendera-notify,#sendera-notify .pss-n-dlg,#sendera-notify-bell{transition:none}}`,
-    `#sendera-notify-bell{position:fixed;${toCssText(BUTTON_POSITION_STYLE[c.bellPosition])};z-index:${WIDGET_Z_INDEX};width:${size}px;height:${size}px;border:0;border-radius:${BELL_RADIUS[c.bellRadius]};background:${c.bellColor};color:${c.bellTextColor};display:flex;align-items:center;justify-content:center;padding:0;box-shadow:0 4px 14px rgba(0,0,0,.2);cursor:pointer;opacity:0;transition:opacity .3s ease,transform .15s ease}`,
+    `#sendera-notify-bell{position:fixed;${toCssText(BUTTON_POSITION_STYLE[c.bellPosition])};z-index:${WIDGET_FLOAT_Z_INDEX};width:${size}px;height:${size}px;border:0;border-radius:${BELL_RADIUS[c.bellRadius]};background:${c.bellColor};color:${c.bellTextColor};display:flex;align-items:center;justify-content:center;padding:0;box-shadow:0 4px 14px rgba(0,0,0,.2);cursor:pointer;opacity:0;transition:opacity .3s ease,transform .15s ease}`,
     `#sendera-notify-bell.pss-n-in{opacity:1}`,
     `#sendera-notify-bell:hover{transform:scale(1.06)}`,
     `#sendera-notify-bell:focus-visible{outline:2px solid ${c.bellColor};outline-offset:3px}`,

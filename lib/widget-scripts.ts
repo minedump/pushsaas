@@ -25,6 +25,12 @@ export function toCssText(style: StyleMap): string {
 // Общий z-index для обеих механик — раньше был повторяющимся литералом
 // 99999 в двух местах, теперь одна именованная константа.
 export const WIDGET_Z_INDEX = 999999;
+// Плавающие значки (кнопка подписки, иконка-колокольчик) уступают окнам и плашкам самого сайта:
+// cookie-баннер, меню, корзина обычно лежат на слоях 1000–10000, и значок не должен закрывать их кнопки.
+export const WIDGET_FLOAT_Z_INDEX = 1000;
+// Окна виджетов (окно уведомлений, окно установки) — модальные: пока открыты, поверх них не должно быть
+// ничего из сайта, даже чатов поддержки, которые ставят себе слой 10000000 и выше.
+export const WIDGET_WINDOW_Z_INDEX = 2147483647;
 
 export const BELL_SVG =
   '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5a2 2 0 0 1 4 0a7 7 0 0 1 4 6v3a4 4 0 0 0 2 3h-16a4 4 0 0 0 2 -3v-3a7 7 0 0 1 4 -6"></path><path d="M9 17v1a3 3 0 0 0 6 0v-1"></path></svg>';
@@ -80,7 +86,7 @@ export function buttonBaseStyle(config: Pick<ButtonConfig, "position" | "size" |
   return {
     position: "fixed",
     ...BUTTON_POSITION_STYLE[config.position],
-    zIndex: WIDGET_Z_INDEX,
+    zIndex: WIDGET_FLOAT_Z_INDEX,
     display: "inline-flex",
     alignItems: "center",
     ...BUTTON_SIZE_STYLE[config.size],

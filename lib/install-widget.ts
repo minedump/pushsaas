@@ -5,7 +5,7 @@
 // сайта. Разметка и стили продублированы в InstallPreview.tsx (админка) на тех
 // же константах INSTALL_UI, чтобы предпросмотр не расходился со скриптом.
 
-import { CLOSE_SVG, WIDGET_Z_INDEX } from "./widget-scripts";
+import { CLOSE_SVG, WIDGET_WINDOW_Z_INDEX } from "./widget-scripts";
 import { WINDOW_RADIUS_PX } from "./widget-config";
 import { INSTALL_BUTTON_RADIUS_PX, installStepImageUrl, type InstallConfig, type InstallStep } from "./install-guide";
 
@@ -40,7 +40,7 @@ function installCss(config: InstallConfig): string {
   const wr = WINDOW_RADIUS_PX[config.windowRadius];
   const c = config.buttonColor;
   return [
-    `#sendera-install{position:fixed;top:0;right:0;bottom:0;left:0;z-index:${WIDGET_Z_INDEX};display:flex;align-items:center;justify-content:center;padding:16px;background:${u.overlay};opacity:0;transition:opacity .2s ease;font-family:${u.font};-webkit-text-size-adjust:100%}`,
+    `#sendera-install{position:fixed;top:0;right:0;bottom:0;left:0;z-index:${WIDGET_WINDOW_Z_INDEX};display:flex;align-items:center;justify-content:center;padding:16px;background:${u.overlay};opacity:0;transition:opacity .2s ease;font-family:${u.font};-webkit-text-size-adjust:100%}`,
     `#sendera-install *{box-sizing:border-box}`,
     `#sendera-install.pss-i-in{opacity:1}`,
     `#sendera-install .pss-i-dlg{background:${u.dialogBg};color:${u.text};width:100%;max-width:460px;max-height:min(92vh,780px);border-radius:${wr};display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3);transform:translateY(10px);transition:transform .22s ease;outline:none}`,
