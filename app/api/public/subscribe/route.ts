@@ -99,6 +99,19 @@ export async function POST(req: Request) {
       await withYmMerged(byToken.attributes);
       const { error: updErr } = await admin.from("subscribers").update(row).eq("id", byToken.id);
       if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500, headers: CORS });
+      // Анонимное устройство (строка с первого визита, без push, см. миграцию 0071) впервые
+      // включило push — это новая подписка: событие подписки и приветственные автоматизации,
+      // как в ветке ниже. Ротация endpoint у уже подписанного устройства сюда не попадает.
+      if (!byToken.endpoint) {
+        await admin
+          .from("push_events")
+          .insert({ project_id: projectId, subscriber_id: byToken.id, type: "subscribed" })
+          .then(
+            () => {},
+            () => {}
+          );
+        await fireWelcomeAutomations(projectId, "push", { subscriberId: byToken.id });
+      }
       return NextResponse.json({ ok: true }, { headers: CORS });
     }
   }

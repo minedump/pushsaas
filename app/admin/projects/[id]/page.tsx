@@ -58,13 +58,15 @@ export default async function DashboardPage({ params }: { params: Promise<{ id: 
   ] = await Promise.all([
     supabase
       .from("subscribers")
-      .select("platform, created_at")
+      // дата подписки — push_subscribed_at (миграция 0131), а не created_at: строка устройства
+      // появляется при первом визите, задолго до того, как посетитель включит push
+      .select("platform, push_subscribed_at")
       .eq("project_id", id)
       .eq("is_active", true)
       .eq("paused", false)
       // анонимные записи (устройство без push-подписки) — контакты, не подписчики
       .not("endpoint", "is", null)
-      .gte("created_at", startOfMonth.toISOString()),
+      .gte("push_subscribed_at", startOfMonth.toISOString()),
     supabase
       .from("identities")
       .select("sms_marketing_active_at")
@@ -114,14 +116,14 @@ export default async function DashboardPage({ params }: { params: Promise<{ id: 
   }
 
   function activeSince(since: Date): ActiveCounts {
-    const push = (pushRows ?? []).filter((r) => r.created_at && new Date(r.created_at) >= since).length;
+    const push = (pushRows ?? []).filter((r) => r.push_subscribed_at && new Date(r.push_subscribed_at) >= since).length;
     const sms = (smsRows ?? []).filter((r) => r.sms_marketing_active_at && new Date(r.sms_marketing_active_at) >= since).length;
     const email = (emailRows ?? []).filter((r) => r.email_marketing_active_at && new Date(r.email_marketing_active_at) >= since).length;
     return { push, sms, email };
   }
 
   function platformsSince(since: Date): PlatformCounts {
-    const rows = (pushRows ?? []).filter((r) => r.created_at && new Date(r.created_at) >= since);
+    const rows = (pushRows ?? []).filter((r) => r.push_subscribed_at && new Date(r.push_subscribed_at) >= since);
     const byPlatform = rows.reduce<Record<string, number>>((acc, r) => {
       acc[r.platform] = (acc[r.platform] || 0) + 1;
       return acc;
