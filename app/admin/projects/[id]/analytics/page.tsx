@@ -274,13 +274,15 @@ export default async function AnalyticsPage({
           <div className="text-ink-faint text-sm">Пока пусто — появится после первых показов виджетов.</div>
         ) : (
           <div className="overflow-x-auto pretty-scroll">
-            <table className="w-full border-collapse text-[13.5px] min-w-[480px]">
+            <table className="w-full border-collapse text-[13.5px] min-w-[600px]">
               <thead>
                 <tr className="text-left">
                   <th className="pb-2 text-[11px] text-ink-muted font-normal">Виджет</th>
                   <th className="pb-2 text-[11px] text-ink-muted font-normal text-right">Показано</th>
                   <th className="pb-2 text-[11px] text-ink-muted font-normal text-right">Клики</th>
                   <th className="pb-2 text-[11px] text-ink-muted font-normal text-right">CTR</th>
+                  <th className="pb-2 text-[11px] text-ink-muted font-normal text-right">Подписались</th>
+                  <th className="pb-2 text-[11px] text-ink-muted font-normal text-right">Конверсия</th>
                   <th className="pb-2 text-[11px] text-ink-muted font-normal text-right">Закрыто</th>
                 </tr>
               </thead>
@@ -295,12 +297,15 @@ export default async function AnalyticsPage({
                 ).map((w) => {
                   const s = widgetStats[w.key];
                   const ctr = s.shown ? Math.round((s.clicked / s.shown) * 100) : 0;
+                  const conv = s.shown ? Math.round((s.subscribed / s.shown) * 1000) / 10 : 0;
                   return (
                     <tr key={w.key} className="border-t border-border row-hover">
                       <td className="py-2">{w.label}</td>
                       <td className="py-2 text-right tabular-nums">{s.shown}</td>
                       <td className="py-2 text-right tabular-nums">{s.clicked}</td>
                       <td className="py-2 text-right tabular-nums">{s.shown ? `${ctr}%` : "—"}</td>
+                      <td className="py-2 text-right tabular-nums">{s.subscribed}</td>
+                      <td className="py-2 text-right tabular-nums">{s.shown ? `${conv}%` : "—"}</td>
                       <td className="py-2 text-right tabular-nums">{s.dismissed ?? "—"}</td>
                     </tr>
                   );
@@ -308,7 +313,7 @@ export default async function AnalyticsPage({
               </tbody>
             </table>
             <p className="text-[12px] text-ink-faint mt-3 mb-0">
-              Окно уведомлений: показ — окно с предложением подписаться (само по правилам, по иконке, по ссылке или из кода сайта), клик — «Включить», закрыто — «Не сейчас», крестик, Esc или клик мимо окна. Иконка: показ считается на каждой странице, где она появилась, клик открывает окно; закрыть иконку нельзя.
+              Окно уведомлений: показ — окно с предложением подписаться (само по правилам, по иконке, по ссылке или из кода сайта), клик — «Включить», закрыто — «Не сейчас», крестик, Esc или клик мимо окна. Иконка: показ считается на каждой странице, где она появилась, клик открывает окно; закрыть иконку нельзя. Подписались — устройство действительно подписалось после клика по виджету (разрешило уведомления в браузере), конверсия — подписались от показов. Подписки по иконке входят и в строку окна, если подписались с экрана предложения. Подписки считаются с 25.11.2026, раньше этого события не было.
             </p>
           </div>
         )}
@@ -328,7 +333,7 @@ export default async function AnalyticsPage({
 }
 
 // dismissed: null — у виджета нет закрытия (иконка-колокольчик), в таблице «—»
-type WidgetStat = { shown: number; clicked: number; dismissed: number | null };
+type WidgetStat = { shown: number; clicked: number; subscribed: number; dismissed: number | null };
 type WidgetKey = "button" | "prompt" | "notifyWindow" | "notifyBell";
 // Агрегация "показано/кликнули/закрыли" по сырым events (widget_button_*/
 // widget_prompt_*, см. lib/widget-scripts.ts; widget_notify_*, см. lib/notify-widget.ts) —
@@ -336,13 +341,14 @@ type WidgetKey = "button" | "prompt" | "notifyWindow" | "notifyBell";
 // период-зависимые метрики на этой странице.
 function computeWidgetStats(rows: { name: string; payload?: unknown }[]): Record<WidgetKey, WidgetStat> {
   const s: Record<WidgetKey, WidgetStat> = {
-    button: { shown: 0, clicked: 0, dismissed: 0 },
-    prompt: { shown: 0, clicked: 0, dismissed: 0 },
-    notifyWindow: { shown: 0, clicked: 0, dismissed: 0 },
-    notifyBell: { shown: 0, clicked: 0, dismissed: null },
+    button: { shown: 0, clicked: 0, subscribed: 0, dismissed: 0 },
+    prompt: { shown: 0, clicked: 0, subscribed: 0, dismissed: 0 },
+    notifyWindow: { shown: 0, clicked: 0, subscribed: 0, dismissed: 0 },
+    notifyBell: { shown: 0, clicked: 0, subscribed: 0, dismissed: null },
   };
   for (const r of rows) {
-    const view = ((r.payload ?? {}) as { view?: unknown }).view;
+    const p = (r.payload ?? {}) as { view?: unknown; via?: unknown; result?: unknown };
+    const view = p.view;
     switch (r.name) {
       // окно: только экран с предложением подписаться — у остальных экранов (инструкции) нет кнопки «Включить»
       case "widget_notify_opened": if (view === "offer") s.notifyWindow.shown++; break;
@@ -350,11 +356,18 @@ function computeWidgetStats(rows: { name: string; payload?: unknown }[]): Record
       case "widget_notify_dismissed": if (view === "offer") s.notifyWindow.dismissed!++; break;
       case "widget_notify_bell_shown": s.notifyBell.shown++; break;
       case "widget_notify_bell_clicked": s.notifyBell.clicked++; break;
+      // подписка: окну — с экрана предложения, иконке — если окно открыли по ней (в т.ч. «Проверить» в инструкции)
+      case "widget_notify_result":
+        if (p.result !== "granted") break;
+        if (view === "offer") s.notifyWindow.subscribed++;
+        if (p.via === "bell") s.notifyBell.subscribed++;
+        break;
       default: {
         const t = r.name.startsWith("widget_button_") ? s.button : r.name.startsWith("widget_prompt_") ? s.prompt : null;
         if (!t) break;
         if (r.name.endsWith("_shown")) t.shown++;
         else if (r.name.endsWith("_clicked")) t.clicked++;
+        else if (r.name.endsWith("_subscribed")) t.subscribed++;
         else if (r.name.endsWith("_dismissed")) t.dismissed!++;
       }
     }

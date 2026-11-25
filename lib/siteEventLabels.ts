@@ -9,9 +9,11 @@ export const EVENT_LABEL: Record<string, string> = {
   widget_button_shown: "Показ кнопки подписки",
   widget_button_clicked: "Клик по кнопке подписки",
   widget_button_dismissed: "Закрыл кнопку подписки",
+  widget_button_subscribed: "Подписался через кнопку подписки",
   widget_prompt_shown: "Показ плашки подписки",
   widget_prompt_clicked: "Клик «Разрешить» на плашке",
   widget_prompt_dismissed: "Закрыл плашку подписки",
+  widget_prompt_subscribed: "Подписался через плашку",
   widget_install_opened: "Открыл инструкцию по установке",
   widget_install_platform: "Переключил платформу в инструкции",
   widget_install_done: "Нажал «Готово» в инструкции",
@@ -59,7 +61,10 @@ export function widgetEventDetail(name: string, payload: Record<string, unknown>
     const parts = [NOTIFY_VIEW[str(payload.view)], NOTIFY_VIA[str(payload.via)]].filter(Boolean);
     return parts.join(", ");
   }
-  if (name === "widget_notify_result") return NOTIFY_RESULT[str(payload.result)] || "";
+  if (name === "widget_notify_result") {
+    const via = NOTIFY_VIA[str(payload.via)];
+    return [NOTIFY_RESULT[str(payload.result)], via && `окно открыто ${via}`].filter(Boolean).join(", ");
+  }
   if (name === "widget_notify_platform" || name === "widget_install_platform" || name === "widget_install_done" || name === "widget_install_opened") {
     return PLATFORM[str(payload.platform)] || "";
   }

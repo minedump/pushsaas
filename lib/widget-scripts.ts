@@ -210,6 +210,7 @@ export function buttonBlock(projectId: string, config: ButtonConfig, preview = f
           window.sendera.event("widget_button_clicked", {});
           window.sendera.subscribe().then(function(){ return window.sendera.isSubscribed(); }).then(function(yes){
             if(yes){
+              window.sendera.event("widget_button_subscribed", {});
               btn.innerHTML = '${CHECK_SVG}';
               var s=document.createElement("span"); s.textContent="Вы подписаны"; btn.appendChild(s);
               btn.disabled = true;
@@ -325,7 +326,9 @@ export function promptBlock(projectId: string, config: PromptConfig, preview = f
         if(allow) allow.addEventListener("click", function(){
           window.sendera.event("widget_prompt_clicked", {});
           card.querySelectorAll("button").forEach(function(b){ b.disabled = true; });
-          window.sendera.subscribe().finally(function(){
+          window.sendera.subscribe().then(function(){ return window.sendera.isSubscribed(); }).then(function(yes){
+            if(yes) window.sendera.event("widget_prompt_subscribed", {});
+          }).catch(function(){}).then(function(){
             close();
             // закрыл системное окно, ничего не выбрав: это тоже отказ, считаем его, иначе плашка вернётся на следующей же странице
             try { if(Notification.permission === "default") G.dismiss(); } catch(e){}

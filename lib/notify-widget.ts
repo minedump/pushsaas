@@ -326,7 +326,7 @@ export function notifyBlock(projectId: string, config: NotifyConfig, mode: Notif
     root = h("div"); root.id = "sendera-notify";
     var dlg = h("div", "pss-n-dlg"); dlg.setAttribute("role", "dialog"); dlg.setAttribute("aria-modal", "true"); dlg.tabIndex = -1;
     root.appendChild(dlg);
-    cur = { view: view, auto: !!o.auto, tab: o.tab || detectTab(), status: null };
+    cur = { view: view, auto: !!o.auto, via: o.via || "api", tab: o.tab || detectTab(), status: null };
     paint();
     root.addEventListener("click", function(e){ if(e.target === root) dismissClose("overlay"); });
     onKey = function(e){ if(e.key === "Escape") dismissClose("esc"); };
@@ -344,8 +344,10 @@ export function notifyBlock(projectId: string, config: NotifyConfig, mode: Notif
   }
 
   // ——— действия ———
+  // view и via — с какого экрана и как было открыто окно: по ним аналитика делит подписки между окном и иконкой
+  function resultEv(result){ ev("widget_notify_result", { result: result, view: cur ? cur.view : "", via: cur ? cur.via : "" }); }
   function finishSubscribed(){
-    ev("widget_notify_result", { result: "granted" });
+    resultEv("granted");
     removeBell();
     if(cur){ cur.view = "done"; paint(); }
     setTimeout(function(){ if(cur && cur.view === "done") closeWin(); }, 2200);
@@ -359,12 +361,12 @@ export function notifyBlock(projectId: string, config: NotifyConfig, mode: Notif
       if(st === "subscribed") return finishSubscribed();
       if(st === "denied"){
         // запретил в системном окне — предложение больше не нужно, остаётся иконка с инструкцией
-        ev("widget_notify_result", { result: "denied" });
+        resultEv("denied");
         closeWin(); showBell();
         return;
       }
       // закрыл системное окно, ничего не выбрав: для окна это тоже «не сейчас»
-      ev("widget_notify_result", { result: "dismissed" });
+      resultEv("dismissed");
       GW.dismiss();
       closeWin();
     });
