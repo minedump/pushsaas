@@ -7,6 +7,9 @@
 //                      загружена и прошла задержка, просмотрено нужное число страниц, набрано
 //                      нужное время на сайте, вкладка открыта;
 //   G.dismiss()      — запоминает закрытие (время и счётчик) — от него считаются пауза и лимит;
+//   G.shown()        — запоминает время автоматического показа, не трогая счётчик: пауза начинается
+//                      уже с показа, и соседние вкладки не покажут виджет второй раз, даже если
+//                      в первой его так и не закрыли;
 //   G.state()        — { t: время последнего закрытия, n: сколько раз закрывали }.
 // Счётчики страниц и времени общие для всех виджетов на странице (window.__pssM) и живут в
 // sessionStorage — то есть считаются за визит, а не копятся годами. Время идёт только пока вкладка
@@ -100,6 +103,11 @@ export function gateScript(
       var s = state();
       try { localStorage.setItem(KEY, JSON.stringify({ t: Date.now(), n: s.n + 1 })); } catch(e){}
     }
+    function shown(){
+      if(PREVIEW) return;
+      var s = state();
+      try { localStorage.setItem(KEY, JSON.stringify({ t: Date.now(), n: s.n })); } catch(e){}
+    }
     function blocked(){
       if(PREVIEW) return false;
       var s = state();
@@ -131,7 +139,7 @@ export function gateScript(
       if(document.readyState === "complete") onLoad(); else window.addEventListener("load", onLoad);
     }
 
-    return { blocked: blocked, whenReady: whenReady, dismiss: dismiss, state: state };
+    return { blocked: blocked, whenReady: whenReady, dismiss: dismiss, shown: shown, state: state };
   })();
 `;
 }

@@ -446,7 +446,14 @@ export function notifyBlock(projectId: string, config: NotifyConfig, mode: Notif
         GW.whenReady(function(){
           // не спорим за один и тот же момент с плашкой, кнопкой-окном и другим открытым окном
           if(root || document.getElementById("sendera-prompt") || document.getElementById("sendera-install")) return;
-          status().then(function(s2){ if(s2 === "default" || s2 === "home") openWin(viewFor(s2), { auto: true, via: "auto" }); });
+          status().then(function(s2){
+            if(s2 !== "default" && s2 !== "home") return;
+            // пока проверяли состояние, окно могли показать в соседней вкладке
+            if(root || GW.blocked()) return;
+            // пауза идёт с показа: в другой вкладке окно уже не всплывёт, даже если это так и не закроют
+            GW.shown();
+            openWin(viewFor(s2), { auto: true, via: "auto" });
+          });
         });
       }
 
