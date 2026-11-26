@@ -56,7 +56,11 @@ export const SHOW_PRESETS: Record<ShowPresetId, { label: string; hint: string; r
   },
 };
 
-export const DEFAULT_SHOW_RULES: ShowRules = SHOW_PRESETS.standard.rules;
+// Корзина и оформление заказа (адреса InSales): здесь человек уже покупает, всплывающий виджет только
+// мешает. Новые виджеты исключают их сразу; у сохранённых настроек список страниц не меняется.
+export const DEFAULT_EXCLUDED_PAGES: string[] = ["/cart_items*", "/new_order*", "/orders/*"];
+
+export const DEFAULT_SHOW_RULES: ShowRules = { ...SHOW_PRESETS.standard.rules, pagesMode: "except", pagePatterns: DEFAULT_EXCLUDED_PAGES };
 
 function clampInt(raw: unknown, min: number, max: number, fallback: number): number {
   const n = Number(raw);
@@ -132,9 +136,7 @@ export function matchShowPreset(rules: ShowRules): ShowPresetId | null {
       p.minPageViews === rules.minPageViews &&
       p.minTimeOnSiteSeconds === rules.minTimeOnSiteSeconds &&
       p.pauseHours === rules.pauseHours &&
-      p.maxDismissals === rules.maxDismissals &&
-      p.pagesMode === rules.pagesMode &&
-      p.pagePatterns.length === rules.pagePatterns.length
+      p.maxDismissals === rules.maxDismissals
     ) {
       return id;
     }

@@ -6,7 +6,7 @@
 // Живёт в projects.widget_config.notify. Модуль без серверных зависимостей: им пользуются
 // настройки (перед записью), скрипт (при чтении) и предпросмотр в админке.
 
-import { DEFAULT_SHOW_RULES, resolveShowRules, type ShowRules } from "./widget-rules";
+import { DEFAULT_EXCLUDED_PAGES, DEFAULT_SHOW_RULES, resolveShowRules, type ShowRules } from "./widget-rules";
 import { CORNER_RADIUS_VALUES, BUTTON_POSITIONS, BUTTON_SIZES, type ButtonPosition, type ButtonSize, type CornerRadius } from "./widget-config";
 
 // Инструкции по типам устройств. iosHome — iPhone, где сайт ещё не добавлен на экран «Домой»
@@ -174,8 +174,8 @@ export const DEFAULT_BELL_SHOW: ShowRules = {
   minTimeOnSiteSeconds: 0,
   pauseHours: 24,
   maxDismissals: 0,
-  pagesMode: "all",
-  pagePatterns: [],
+  pagesMode: "except",
+  pagePatterns: DEFAULT_EXCLUDED_PAGES,
 };
 
 export const DEFAULT_NOTIFY: NotifyConfig = {

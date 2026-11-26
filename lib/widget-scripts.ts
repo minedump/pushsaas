@@ -260,7 +260,7 @@ export function promptBlock(projectId: string, config: PromptConfig, preview = f
   function ready(fn){ if(document.readyState!=="loading") fn(); else document.addEventListener("DOMContentLoaded", fn); }
   function supported(){ return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window; }
   ${IOS_STANDALONE_CHECK}
-  ${gateScript(projectId, "prompt", config.show, preview)}
+  ${gateScript(projectId, "prompt", config.show, preview, { yieldToPopups: true })}
   var BELL = '${BELL_SVG}';
 
   ready(function(){
@@ -280,6 +280,9 @@ export function promptBlock(projectId: string, config: PromptConfig, preview = f
       window.sendera.isSubscribed().then(function(already){
         if(already) return;
         if(document.getElementById("sendera-prompt") || document.getElementById("sendera-notify")) return;
+        ${preview ? "" : `if(G.blocked()) return; // пока ждали, плашку могли показать в соседней вкладке
+        // пауза идёт с показа: в другой вкладке и на следующей странице плашка не всплывёт, даже если её так и не закроют
+        G.shown();`}
 
         var mobile = window.matchMedia("(max-width: 640px)").matches;
         var card = document.createElement("div");

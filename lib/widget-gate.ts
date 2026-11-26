@@ -11,6 +11,8 @@
 //                      уже с показа, и соседние вкладки не покажут виджет второй раз, даже если
 //                      в первой его так и не закрыли;
 //   G.state()        — { t: время последнего закрытия, n: сколько раз закрывали }.
+// opts.yieldToPopups — окна и плашки: если на экране чужое всплывающее окно (Mindbox, форма
+// сайта, открытое меню), whenReady ждёт, пока его закроют, и срабатывает через 3 секунды после этого.
 // Счётчики страниц и времени общие для всех виджетов на странице (window.__pssM) и живут в
 // sessionStorage — то есть считаются за визит, а не копятся годами. Время идёт только пока вкладка
 // видима. Закрытия хранятся в localStorage на устройстве.
@@ -26,7 +28,7 @@ export function gateScript(
   key: string,
   rules: ShowRules,
   preview: boolean,
-  opts: { name?: string; stateKey?: string } = {}
+  opts: { name?: string; stateKey?: string; yieldToPopups?: boolean } = {}
 ): string {
   const name = opts.name || "G";
   const cfg = {
@@ -42,6 +44,7 @@ export function gateScript(
   var ${name} = (function(){
     var R = ${JSON.stringify(cfg)};
     var PREVIEW = ${preview ? "true" : "false"};
+    var YIELD = ${opts.yieldToPopups ? "true" : "false"};
     var KEY = ${JSON.stringify(`pss_${opts.stateKey || key}_dismissed_${projectId}`)};
     var PV = ${JSON.stringify(`pss_pv_${projectId}`)};
     var TM = ${JSON.stringify(`pss_tm_${projectId}`)};
@@ -116,6 +119,25 @@ export function gateScript(
       return !pageOk();
     }
 
+    // Чужое окно на экране: в центре или в нижней части экрана (там выезжают листы на телефоне)
+    // верхний элемент лежит внутри большого закреплённого блока. Шапка, полоска про cookie и
+    // кнопка чата сюда не попадают: они маленькие или не в этих точках. Свои виджеты не считаем.
+    function foreignPopup(){
+      var vw = window.innerWidth, vh = window.innerHeight, pts = [[0.5, 0.5], [0.5, 0.8]];
+      for(var i = 0; i < pts.length; i++){
+        var el = document.elementFromPoint(vw * pts[i][0], vh * pts[i][1]);
+        for(var n = el; n && n !== document.body && n !== document.documentElement; n = n.parentElement){
+          if(n.id && n.id.indexOf("sendera-") === 0) break;
+          var cs = getComputedStyle(n);
+          if(cs.position !== "fixed") continue;
+          var r = n.getBoundingClientRect();
+          if(r.width >= vw * 0.4 && r.height >= vh * 0.3 && cs.visibility !== "hidden" && Number(cs.opacity) > 0.05) return true;
+          break;
+        }
+      }
+      return false;
+    }
+
     function loadedAt(){
       try {
         var n = performance.getEntriesByType("navigation")[0];
@@ -125,13 +147,23 @@ export function gateScript(
     }
     function whenReady(fn){
       if(PREVIEW){ fn(); return; }
-      var done = false, timer = null, t0 = 0;
+      var done = false, timer = null, t0 = 0, waited = false, freeSince = 0;
       function check(){
         clearTimeout(timer);
         if(done || !t0 || document.hidden || blocked()) return;
         if(M.pv < R.p) return;
         var wait = Math.max(t0 + R.d - Date.now(), R.t - M.active(), 0);
         if(wait > 0){ timer = setTimeout(check, wait + 30); return; }
+        if(YIELD){
+          var busy = false;
+          try { busy = foreignPopup(); } catch(e){}
+          if(busy){ waited = true; freeSince = 0; timer = setTimeout(check, 1000); return; }
+          if(waited){
+            if(!freeSince) freeSince = Date.now();
+            var rest = freeSince + 3000 - Date.now();
+            if(rest > 0){ timer = setTimeout(check, rest + 30); return; }
+          }
+        }
         done = true; fn();
       }
       document.addEventListener("visibilitychange", check);
@@ -139,7 +171,7 @@ export function gateScript(
       if(document.readyState === "complete") onLoad(); else window.addEventListener("load", onLoad);
     }
 
-    return { blocked: blocked, whenReady: whenReady, dismiss: dismiss, shown: shown, state: state };
+    return { blocked: blocked, whenReady: whenReady, dismiss: dismiss, shown: shown, state: state, foreignPopup: foreignPopup };
   })();
 `;
 }

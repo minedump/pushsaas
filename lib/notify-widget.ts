@@ -132,7 +132,7 @@ export function notifyBlock(projectId: string, config: NotifyConfig, mode: Notif
   if(!window.sendera) return;
   function ready(fn){ if(document.readyState!=="loading") fn(); else document.addEventListener("DOMContentLoaded", fn); }
   ${IOS_STANDALONE_CHECK}
-  ${gateScript(projectId, "window", config.show, preview, { name: "GW" })}
+  ${gateScript(projectId, "window", config.show, preview, { name: "GW", yieldToPopups: true })}
   ${gateScript(projectId, "bell", config.bellShow, preview, { name: "GB", stateKey: "window" })}
   var CFG = ${jsLiteral(data)};
   var CSS = ${jsLiteral(notifyCss(config))};
